@@ -1,0 +1,12 @@
+{
+  "name": "fibmind-visualizer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "serve": "python3 -m http.server 5173"
+  },
+  "dependencies": {
+    "three": "^0.167.1"
+  }
+}

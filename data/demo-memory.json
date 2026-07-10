@@ -1,0 +1,210 @@
+{
+  "nodes": [
+    {
+      "id": "node_90a92157d6a04469b769c2ae6a822411",
+      "title": "code root",
+      "content": "",
+      "category": "code",
+      "node_type": "root",
+      "layer": "long_term",
+      "created_at": "2026-07-08T12:23:15.813144+00:00",
+      "updated_at": "2026-07-08T12:23:15.813249+00:00",
+      "tree_ids": [
+        "tree_e00b32c7d23b40bea2876932d7fd770b"
+      ],
+      "tags": [],
+      "metadata": {},
+      "importance": 1.0,
+      "access_count": 0,
+      "memory_weight": 0
+    },
+    {
+      "id": "node_0d2e28b9def24e0fb768e75676e559e5",
+      "title": "Login API returns 401",
+      "content": "The login endpoint returns 401 after token expiry.",
+      "category": "code",
+      "node_type": "root",
+      "layer": "raw",
+      "created_at": "2026-07-08T12:23:15.813269+00:00",
+      "updated_at": "2026-07-08T12:23:15.813343+00:00",
+      "tree_ids": [
+        "tree_aa0fb63df9c84436a83a2a0e8798c1a1",
+        "tree_e00b32c7d23b40bea2876932d7fd770b"
+      ],
+      "tags": [
+        "auth",
+        "bug",
+        "login"
+      ],
+      "metadata": {},
+      "importance": 0.9,
+      "access_count": 1,
+      "memory_weight": 1
+    },
+    {
+      "id": "node_bd1b9f6aab1f4bc792b1fe09a4d1f3e3",
+      "title": "requirement root",
+      "content": "",
+      "category": "requirement",
+      "node_type": "root",
+      "layer": "long_term",
+      "created_at": "2026-07-08T12:23:15.813300+00:00",
+      "updated_at": "2026-07-08T12:23:15.813300+00:00",
+      "tree_ids": [
+        "tree_6e362a95551e4d12b0ee86b4c5960b47"
+      ],
+      "tags": [],
+      "metadata": {},
+      "importance": 1.0,
+      "access_count": 0,
+      "memory_weight": 0
+    },
+    {
+      "id": "node_6d0833b4a0074b9e8755d5edcf36237e",
+      "title": "Refresh token automatically",
+      "content": "The product requires silent token refresh before API calls fail.",
+      "category": "requirement",
+      "node_type": "raw",
+      "layer": "raw",
+      "created_at": "2026-07-08T12:23:15.813308+00:00",
+      "updated_at": "2026-07-08T12:23:15.813308+00:00",
+      "tree_ids": [
+        "tree_6e362a95551e4d12b0ee86b4c5960b47"
+      ],
+      "tags": [
+        "auth",
+        "login",
+        "token"
+      ],
+      "metadata": {},
+      "importance": 0.0,
+      "access_count": 0,
+      "memory_weight": 1
+    },
+    {
+      "id": "node_cf03823125c045b6bcf9d581869e4406",
+      "title": "Add request interceptor",
+      "content": "Generate a request interceptor that refreshes tokens before retrying requests.",
+      "category": "code",
+      "node_type": "raw",
+      "layer": "raw",
+      "created_at": "2026-07-08T12:23:15.813321+00:00",
+      "updated_at": "2026-07-08T12:23:15.813321+00:00",
+      "tree_ids": [
+        "tree_e00b32c7d23b40bea2876932d7fd770b"
+      ],
+      "tags": [
+        "auth",
+        "fix",
+        "login"
+      ],
+      "metadata": {},
+      "importance": 0.0,
+      "access_count": 0,
+      "memory_weight": 1
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_a939b33764dc43bf98922d6de4f5447c",
+      "from_node_id": "node_90a92157d6a04469b769c2ae6a822411",
+      "to_node_id": "node_0d2e28b9def24e0fb768e75676e559e5",
+      "relation_type": "tree_child",
+      "weight": 1.0,
+      "direction": "directed",
+      "created_at": "2026-07-08T12:23:15.813279+00:00",
+      "metadata": {}
+    },
+    {
+      "id": "edge_6c2aa43149cc4164bae220f268b670a5",
+      "from_node_id": "node_bd1b9f6aab1f4bc792b1fe09a4d1f3e3",
+      "to_node_id": "node_6d0833b4a0074b9e8755d5edcf36237e",
+      "relation_type": "tree_child",
+      "weight": 1.0,
+      "direction": "directed",
+      "created_at": "2026-07-08T12:23:15.813312+00:00",
+      "metadata": {}
+    },
+    {
+      "id": "edge_a1f1be42864a402da568fe407d499f57",
+      "from_node_id": "node_90a92157d6a04469b769c2ae6a822411",
+      "to_node_id": "node_cf03823125c045b6bcf9d581869e4406",
+      "relation_type": "tree_child",
+      "weight": 1.0,
+      "direction": "directed",
+      "created_at": "2026-07-08T12:23:15.813324+00:00",
+      "metadata": {}
+    },
+    {
+      "id": "edge_edcb746b5f6c4f1fb339a0d29ef1a7ec",
+      "from_node_id": "node_0d2e28b9def24e0fb768e75676e559e5",
+      "to_node_id": "node_6d0833b4a0074b9e8755d5edcf36237e",
+      "relation_type": "caused_by",
+      "weight": 0.85,
+      "direction": "directed",
+      "created_at": "2026-07-08T12:23:15.813332+00:00",
+      "metadata": {}
+    },
+    {
+      "id": "edge_97e4b30021f046a8bac56fb85738d637",
+      "from_node_id": "node_cf03823125c045b6bcf9d581869e4406",
+      "to_node_id": "node_0d2e28b9def24e0fb768e75676e559e5",
+      "relation_type": "answer_to",
+      "weight": 0.95,
+      "direction": "directed",
+      "created_at": "2026-07-08T12:23:15.813335+00:00",
+      "metadata": {}
+    },
+    {
+      "id": "edge_a2bb95267cdd43bda9d0ac7f05822866",
+      "from_node_id": "node_cf03823125c045b6bcf9d581869e4406",
+      "to_node_id": "node_6d0833b4a0074b9e8755d5edcf36237e",
+      "relation_type": "derived_from",
+      "weight": 0.9,
+      "direction": "directed",
+      "created_at": "2026-07-08T12:23:15.813338+00:00",
+      "metadata": {}
+    },
+    {
+      "id": "edge_7d284a7c82384210a2775039fb3c3bc5",
+      "from_node_id": "node_0d2e28b9def24e0fb768e75676e559e5",
+      "to_node_id": "node_cf03823125c045b6bcf9d581869e4406",
+      "relation_type": "related_to",
+      "weight": 0.7,
+      "direction": "bidirectional",
+      "created_at": "2026-07-08T12:23:15.813341+00:00",
+      "metadata": {}
+    }
+  ],
+  "trees": [
+    {
+      "id": "tree_e00b32c7d23b40bea2876932d7fd770b",
+      "category": "code",
+      "title": "code",
+      "root_node_id": "node_90a92157d6a04469b769c2ae6a822411",
+      "created_at": "2026-07-08T12:23:15.813261+00:00",
+      "metadata": {}
+    },
+    {
+      "id": "tree_6e362a95551e4d12b0ee86b4c5960b47",
+      "category": "requirement",
+      "title": "requirement",
+      "root_node_id": "node_bd1b9f6aab1f4bc792b1fe09a4d1f3e3",
+      "created_at": "2026-07-08T12:23:15.813304+00:00",
+      "metadata": {}
+    },
+    {
+      "id": "tree_aa0fb63df9c84436a83a2a0e8798c1a1",
+      "category": "code:login_api_returns_401",
+      "title": "Login API returns 401",
+      "root_node_id": "node_0d2e28b9def24e0fb768e75676e559e5",
+      "created_at": "2026-07-08T12:23:15.813349+00:00",
+      "metadata": {}
+    }
+  ],
+  "category_roots": {
+    "code": "tree_e00b32c7d23b40bea2876932d7fd770b",
+    "requirement": "tree_6e362a95551e4d12b0ee86b4c5960b47",
+    "code:login_api_returns_401": "tree_aa0fb63df9c84436a83a2a0e8798c1a1"
+  }
+}
