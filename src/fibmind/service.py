@@ -1,10 +1,8 @@
 """Persistence and orchestration layer for FibMind.
 
-``MemoryService`` owns a single :class:`FibMind` instance backed by a JSON
-store. It loads existing state on construction, guards all access with a lock
-(the MCP server may dispatch tool calls from a worker thread), and persists
-after every mutation. Every method returns plain JSON-serializable dicts so the
-MCP tool layer can stay a thin wrapper.
+``MemoryService`` coordinates access to a JSON or SQLite store, guards calls
+with a process-local lock, and uses store transactions for every mutation.
+Every method returns plain JSON-serializable dicts so the MCP layer stays thin.
 """
 
 from __future__ import annotations
@@ -15,9 +13,17 @@ from typing import Any
 
 from fibmind.context import build_context
 from fibmind.graph import FibMind, SearchHit
-from fibmind.models import EdgeDirection, MemoryNode, RelationType
+from fibmind.models import (
+    EdgeDirection,
+    MemoryNode,
+    MemoryScope,
+    MemoryStatus,
+    RelationType,
+    TraversalDirection,
+    Verdict,
+)
 from fibmind.ranking import ScoredHit
-from fibmind.storage import JsonStore
+from fibmind.storage import MemoryStore, open_store
 
 
 def _node_summary(node: MemoryNode) -> dict[str, Any]:
@@ -28,7 +34,13 @@ def _node_summary(node: MemoryNode) -> dict[str, Any]:
         "layer": node.layer,
         "node_type": node.node_type.value,
         "tags": sorted(node.tags),
-        "importance": round(node.importance, 4),
+        "scope": node.scope.value,
+        "owner": node.owner,
+        "status": node.status.value,
+        "status_reason": node.status_reason,
+        "confidence": round(node.confidence, 4),
+        "confidence_source": node.confidence_source,
+        "familiarity": round(node.familiarity, 4),
         "access_count": node.access_count,
     }
 
@@ -44,6 +56,7 @@ def _search_hit_dict(hit: SearchHit) -> dict[str, Any]:
     data = _node_summary(hit.node)
     data["depth"] = hit.depth
     data["via_relation"] = hit.via_relation.value if hit.via_relation else None
+    data["via_direction"] = hit.via_direction.value if hit.via_direction else None
     return data
 
 
@@ -63,17 +76,62 @@ def _parse_relation_types(relation_types: list[str] | None) -> set[RelationType]
         raise ValueError(f"Unknown relation type. Valid values: {valid}") from exc
 
 
+def _parse_traversal_direction(direction: str) -> TraversalDirection:
+    try:
+        return TraversalDirection(direction)
+    except ValueError as exc:
+        valid = ", ".join(item.value for item in TraversalDirection)
+        raise ValueError(f"Unknown traversal direction. Valid values: {valid}") from exc
+
+
+def _parse_scopes(scopes: list[str] | None) -> set[MemoryScope] | None:
+    if not scopes:
+        return None
+    try:
+        return {MemoryScope(value) for value in scopes}
+    except ValueError as exc:
+        valid = ", ".join(item.value for item in MemoryScope)
+        raise ValueError(f"Unknown scope. Valid values: {valid}") from exc
+
+
+def _parse_statuses(statuses: list[str] | None) -> set[MemoryStatus] | None:
+    if not statuses:
+        return None
+    try:
+        return {MemoryStatus(value) for value in statuses}
+    except ValueError as exc:
+        valid = ", ".join(item.value for item in MemoryStatus)
+        raise ValueError(f"Unknown status. Valid values: {valid}") from exc
+
+
+def _parse_scope(scope: str) -> MemoryScope:
+    try:
+        return MemoryScope(scope)
+    except ValueError as exc:
+        valid = ", ".join(item.value for item in MemoryScope)
+        raise ValueError(f"Unknown scope. Valid values: {valid}") from exc
+
+
+def _parse_verdict(verdict: str) -> Verdict:
+    try:
+        return Verdict(verdict)
+    except ValueError as exc:
+        valid = ", ".join(item.value for item in Verdict)
+        raise ValueError(f"Unknown verdict. Valid values: {valid}") from exc
+
+
+def _require_weight(weight: float) -> float:
+    if not 0.0 <= weight <= 1.0:
+        raise ValueError("weight must be between 0.0 and 1.0")
+    return weight
+
+
 class MemoryService:
     """Thread-safe facade over a persisted FibMind memory forest."""
 
     def __init__(self, store_path: str | Path) -> None:
-        self._store = JsonStore(store_path)
-        self._lock = threading.Lock()
-        path = Path(store_path)
-        self._memory = self._store.load() if path.exists() else FibMind()
-
-    def _save(self) -> None:
-        self._store.save(self._memory)
+        self._store: MemoryStore = open_store(store_path)
+        self._lock = threading.RLock()
 
     def append(
         self,
@@ -82,23 +140,114 @@ class MemoryService:
         content: str,
         tags: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
+        scope: str = MemoryScope.PERSONAL.value,
+        owner: str | None = None,
     ) -> dict[str, Any]:
         """Store a new memory and persist it. Returns the created node summary."""
         _require_text(category, "category")
         _require_text(title, "title")
         _require_text(content, "content")
+        parsed_scope = _parse_scope(scope)
+        if parsed_scope == MemoryScope.KNOWLEDGE:
+            raise ValueError(
+                "knowledge scope is reached through promote_knowledge, which requires "
+                "supporting observations; append writes personal or session memories"
+            )
 
-        with self._lock:
-            node_id = self._memory.append(
+        with self._lock, self._store.transaction() as memory:
+            node_id = memory.append(
                 category=category,
                 title=title,
                 content=content,
                 tags=tags,
                 metadata=metadata,
+                scope=parsed_scope,
+                owner=owner,
             )
-            tree_id = self._memory.category_roots[category]
-            self._save()
-            return {**_node_summary(self._memory.nodes[node_id]), "tree_id": tree_id}
+            tree_id = memory.category_roots[category]
+            return {**_node_summary(memory.nodes[node_id]), "tree_id": tree_id}
+
+    def record_outcome(
+        self,
+        node_id: str,
+        verdict: str,
+        source: str,
+        note: str | None = None,
+    ) -> dict[str, Any]:
+        """Attach external evidence for or against a memory.
+
+        The only way ``confidence`` — the single trust signal ranking uses —
+        ever moves.
+        """
+        parsed = _parse_verdict(verdict)
+        _require_text(source, "source")
+        with self._lock, self._store.transaction() as memory:
+            try:
+                node = memory.record_outcome(node_id, parsed, source=source, note=note)
+            except KeyError as exc:
+                raise ValueError(str(exc)) from exc
+            return _node_summary(node)
+
+    def revise(
+        self,
+        node_id: str,
+        title: str | None = None,
+        content: str | None = None,
+        tags: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Correct a memory. Its accumulated confidence is reset."""
+        if title is None and content is None and tags is None:
+            raise ValueError("revise needs at least one of title, content, or tags")
+        with self._lock, self._store.transaction() as memory:
+            try:
+                node = memory.revise(node_id, title=title, content=content, tags=tags)
+            except KeyError as exc:
+                raise ValueError(str(exc)) from exc
+            return _node_summary(node)
+
+    def mark_stale(self, node_id: str, reason: str) -> dict[str, Any]:
+        """Retire an outdated memory while preserving its provenance."""
+        _require_text(reason, "reason")
+        with self._lock, self._store.transaction() as memory:
+            try:
+                return _node_summary(memory.mark_stale(node_id, reason))
+            except KeyError as exc:
+                raise ValueError(str(exc)) from exc
+
+    def forget(self, node_id: str, reason: str) -> dict[str, Any]:
+        """Delete a memory and redact it from the event log."""
+        _require_text(reason, "reason")
+        with self._lock, self._store.transaction() as memory:
+            try:
+                return memory.forget(node_id, reason=reason)
+            except KeyError as exc:
+                raise ValueError(str(exc)) from exc
+
+    def promote_knowledge(
+        self,
+        title: str,
+        content: str,
+        supporting_node_ids: list[str],
+        category: str = "knowledge",
+        tags: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Distil several observations into one shareable claim."""
+        _require_text(title, "title")
+        _require_text(content, "content")
+        if not supporting_node_ids:
+            raise ValueError("supporting_node_ids must list the observations behind the claim")
+        with self._lock, self._store.transaction() as memory:
+            try:
+                node_id = memory.promote_to_knowledge(
+                    title=title,
+                    content=content,
+                    supporting_node_ids=supporting_node_ids,
+                    category=category,
+                    tags=tags,
+                )
+            except KeyError as exc:
+                raise ValueError(str(exc)) from exc
+            return _node_summary(memory.nodes[node_id])
 
     def link(
         self,
@@ -107,24 +256,34 @@ class MemoryService:
         relation_type: str,
         weight: float = 1.0,
         bidirectional: bool = False,
+        metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Create a typed edge between two existing nodes and persist it."""
         relation = _parse_relation_types([relation_type])
-        assert relation is not None  # relation_type is required here
+        assert relation is not None
+        weight = _require_weight(weight)
         direction = EdgeDirection.BIDIRECTIONAL if bidirectional else EdgeDirection.DIRECTED
-        with self._lock:
+        with self._lock, self._store.transaction() as memory:
             try:
-                edge_id = self._memory.link_nodes(
+                edge_id = memory.link_nodes(
                     from_node_id,
                     to_node_id,
                     next(iter(relation)),
                     weight=weight,
                     direction=direction,
+                    metadata=metadata,
                 )
             except KeyError as exc:
                 raise ValueError(str(exc)) from exc
-            self._save()
-            return {"edge_id": edge_id}
+            edge = memory.edges[edge_id]
+            return {
+                "edge_id": edge.id,
+                "from_node_id": edge.from_node_id,
+                "to_node_id": edge.to_node_id,
+                "relation_type": edge.relation_type.value,
+                "weight": edge.weight,
+                "direction": edge.direction.value,
+            }
 
     def search(
         self,
@@ -132,16 +291,25 @@ class MemoryService:
         top_k: int = 5,
         categories: list[str] | None = None,
         min_score: float = 0.0,
+        scopes: list[str] | None = None,
+        owner: str | None = None,
+        statuses: list[str] | None = None,
     ) -> dict[str, Any]:
         """Read-only keyword search over the whole forest."""
         _require_text(query, "query")
         category_set = set(categories) if categories else None
+        scope_set = _parse_scopes(scopes)
+        status_set = _parse_statuses(statuses)
         with self._lock:
-            hits = self._memory.search(
+            memory = self._store.load()
+            hits = memory.search(
                 query,
                 top_k=top_k,
                 categories=category_set,
                 min_score=min_score,
+                scopes=scope_set,
+                owner=owner,
+                statuses=status_set,
             )
             return {"query": query, "results": [_scored_hit_dict(hit) for hit in hits]}
 
@@ -151,22 +319,34 @@ class MemoryService:
         depth: int = 2,
         relation_types: list[str] | None = None,
         reinforce: bool = False,
+        direction: str = TraversalDirection.BOTH.value,
     ) -> dict[str, Any]:
-        """Expand the association tree rooted at ``node_id``."""
+        """Expand the association graph rooted at ``node_id``."""
         relations = _parse_relation_types(relation_types)
-        with self._lock:
+        traversal = _parse_traversal_direction(direction)
+
+        def execute(memory: FibMind) -> dict[str, Any]:
             try:
-                hits = self._memory.search_from(
+                hits = memory.search_from(
                     node_id,
                     depth=depth,
                     relation_types=relations,
                     reinforce=reinforce,
+                    direction=traversal,
                 )
             except KeyError as exc:
                 raise ValueError(str(exc)) from exc
+            return {
+                "root": node_id,
+                "direction": traversal.value,
+                "hits": [_search_hit_dict(hit) for hit in hits],
+            }
+
+        with self._lock:
             if reinforce:
-                self._save()
-            return {"root": node_id, "hits": [_search_hit_dict(hit) for hit in hits]}
+                with self._store.transaction() as memory:
+                    return execute(memory)
+            return execute(self._store.load())
 
     def context(
         self,
@@ -175,18 +355,36 @@ class MemoryService:
         depth: int = 1,
         max_chars: int = 2000,
         reinforce: bool = False,
+        scopes: list[str] | None = None,
+        owner: str | None = None,
+        statuses: list[str] | None = None,
     ) -> dict[str, Any]:
         """Build a context-window-ready memory pack for a task goal."""
         _require_text(goal, "goal")
+        scope_set = _parse_scopes(scopes)
+        status_set = _parse_statuses(statuses)
         with self._lock:
-            pack = build_context(
-                self._memory,
+            if reinforce:
+                with self._store.transaction() as memory:
+                    return build_context(
+                        memory,
+                        goal,
+                        top_k=top_k,
+                        depth=depth,
+                        max_chars=max_chars,
+                        reinforce=True,
+                        scopes=scope_set,
+                        owner=owner,
+                        statuses=status_set,
+                    ).to_dict()
+            return build_context(
+                self._store.load(),
                 goal,
                 top_k=top_k,
                 depth=depth,
                 max_chars=max_chars,
-                reinforce=reinforce,
-            )
-            if reinforce:
-                self._save()
-            return pack.to_dict()
+                reinforce=False,
+                scopes=scope_set,
+                owner=owner,
+                statuses=status_set,
+            ).to_dict()

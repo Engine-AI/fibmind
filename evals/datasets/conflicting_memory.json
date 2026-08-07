@@ -1,0 +1,62 @@
+{
+  "name": "conflicting_memory",
+  "description": "Measures retrieval when an older recommendation conflicts with the current decision.",
+  "memories": [
+    {
+      "id": "old_json_recommendation",
+      "category": "decision",
+      "title": "Use JSON for persistent agent memory",
+      "content": "JSON is the recommended persistent backend because it is easy to inspect and copy.",
+      "tags": ["storage", "json", "recommendation"],
+      "scope": "personal",
+      "owner": "fibmind-team",
+      "stale": true
+    },
+    {
+      "id": "current_sqlite_recommendation",
+      "category": "decision",
+      "title": "Use SQLite for persistent agent memory",
+      "content": "SQLite is the recommended persistent backend. It provides WAL mode and BEGIN IMMEDIATE transactions; JSON remains for demos.",
+      "tags": ["storage", "sqlite", "recommendation"],
+      "scope": "personal",
+      "owner": "fibmind-team",
+      "hot": true
+    },
+    {
+      "id": "event_source_truth",
+      "category": "architecture",
+      "title": "Event log is the source of truth",
+      "content": "Nodes, edges, and trees are rebuildable materialized state. The append-only event log is the semantic source of truth.",
+      "tags": ["events", "architecture", "rebuild"],
+      "scope": "knowledge",
+      "hot": true
+    },
+    {
+      "id": "sqlite_schema_v2",
+      "category": "implementation",
+      "title": "SQLite schema version two",
+      "content": "Schema v2 added owner, scope, confidence, familiarity, folded_into, and event_log fields.",
+      "tags": ["sqlite", "schema"],
+      "scope": "personal",
+      "owner": "fibmind-team"
+    }
+  ],
+  "cases": [
+    {
+      "id": "persistent_backend",
+      "query": "Which backend is currently recommended for persistent agent memory?",
+      "relevant_ids": ["current_sqlite_recommendation"],
+      "stale_ids": ["old_json_recommendation"],
+      "forbidden_ids": ["old_json_recommendation"],
+      "expected_answer_terms": ["SQLite", "WAL", "BEGIN IMMEDIATE"],
+      "owner": "fibmind-team"
+    },
+    {
+      "id": "source_of_truth",
+      "query": "What is the source of truth and which state can be rebuilt?",
+      "relevant_ids": ["event_source_truth"],
+      "expected_answer_terms": ["event log", "nodes", "edges", "trees"],
+      "owner": "fibmind-team"
+    }
+  ]
+}

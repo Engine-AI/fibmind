@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from fibmind.graph import FibMind
-from fibmind.models import MemoryNode
+from fibmind.models import MemoryNode, MemoryScope, MemoryStatus, NodeType
 
 DEFAULT_TOP_K = 5
 DEFAULT_DEPTH = 1
@@ -92,6 +92,9 @@ def build_context(
     depth: int = DEFAULT_DEPTH,
     max_chars: int = DEFAULT_MAX_CHARS,
     reinforce: bool = False,
+    scopes: set[MemoryScope] | None = None,
+    owner: str | None = None,
+    statuses: set[MemoryStatus] | None = None,
 ) -> ContextPack:
     """Assemble a context pack for ``goal``.
 
@@ -100,7 +103,13 @@ def build_context(
     (a direct search hit outranks an expansion hit). Read-only unless
     ``reinforce`` is set, in which case traversed nodes are activated.
     """
-    seeds = memory.search(goal, top_k=top_k)
+    seeds = memory.search(
+        goal,
+        top_k=top_k,
+        scopes=scopes,
+        owner=owner,
+        statuses=statuses,
+    )
     if not seeds:
         return ContextPack(goal=goal, hits=[], text="")
 
@@ -125,6 +134,18 @@ def build_context(
                 if expansion.node.id in seen:
                     continue
                 seen.add(expansion.node.id)
+                if expansion.node.node_type == NodeType.ROOT:
+                    continue
+                # Expansion uses exactly the same status/scope/owner rules as a
+                # direct hit, or graph edges become a side door around recall
+                # isolation.
+                if not memory.is_visible(
+                    expansion.node,
+                    scopes=scopes,
+                    owner=owner,
+                    statuses=statuses,
+                ):
+                    continue
                 hits.append(
                     ContextHit(
                         node=expansion.node,

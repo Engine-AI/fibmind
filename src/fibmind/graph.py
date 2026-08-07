@@ -4,11 +4,45 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Iterable
 
 from fibmind.fibonacci import DEFAULT_LAYER_POLICY, FibonacciLayerPolicy
-from fibmind.models import Edge, EdgeDirection, MemoryNode, MemoryTree, NodeType, RelationType
+from fibmind.models import (
+    Edge,
+    EdgeDirection,
+    EventOp,
+    MemoryEvent,
+    MemoryNode,
+    MemoryScope,
+    MemoryStatus,
+    MemoryTree,
+    NodeType,
+    RelationType,
+    TraversalDirection,
+    Verdict,
+    utc_now,
+)
 from fibmind.ranking import ScoredHit, rank_nodes
+
+# How much a single confirmation/refutation moves a node's confidence. Evidence
+# accumulates rather than deciding outright, so one lucky pass does not make a
+# memory authoritative and one flake does not erase it.
+CONFIDENCE_STEP = 0.25
+
+# Content stored in the log in place of a forgotten node's text. Replay must not
+# resurrect what a user asked to have deleted.
+TOMBSTONE = "[forgotten]"
+
+# Minimum number of distinct personal observations required before a claim may
+# be promoted to shared knowledge. A statistical bar, not a model's opinion:
+# "this generalizes" is a claim about a population, so it needs a population.
+DEFAULT_PROMOTION_THRESHOLD = 3
+
+# Similarity edges are only auto-created above this relevance score, so that
+# appending a memory does not wire it to everything sharing a common word.
+AUTO_LINK_MIN_SCORE = 0.5
+AUTO_LINK_TOP_K = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,6 +50,7 @@ class SearchHit:
     node: MemoryNode
     depth: int
     via_relation: RelationType | None = None
+    via_direction: TraversalDirection | None = None
 
 
 class FibMind:
@@ -27,8 +62,16 @@ class FibMind:
         self.edges: dict[str, Edge] = {}
         self.trees: dict[str, MemoryTree] = {}
         self.category_roots: dict[str, str] = {}
+        self.events: list[MemoryEvent] = []
         self.adjacency: dict[str, set[str]] = {}
+        self.reverse_adjacency: dict[str, set[str]] = {}
         self.by_cat_layer: dict[tuple[str, str], set[str]] = {}
+
+    def _record(self, op: EventOp, payload: dict) -> MemoryEvent:
+        """Append one entry to the log. Every semantic mutation goes through here."""
+        event = MemoryEvent(op=op, payload=payload, seq=len(self.events) + 1)
+        self.events.append(event)
+        return event
 
     def create_tree(self, category: str, title: str | None = None, content: str = "") -> str:
         if category in self.category_roots:
@@ -40,7 +83,8 @@ class FibMind:
             category=category,
             node_type=NodeType.ROOT,
             layer="long_term",
-            importance=1.0,
+            confidence=1.0,
+            confidence_source="structural",
             memory_weight=0,
         )
         tree = MemoryTree(category=category, title=title or category, root_node_id=root.id)
@@ -49,6 +93,16 @@ class FibMind:
         self._add_node(root)
         self.trees[tree.id] = tree
         self.category_roots[category] = tree.id
+        self._record(
+            EventOp.CREATE_TREE,
+            {
+                "tree_id": tree.id,
+                "category": category,
+                "title": tree.title,
+                "created_at": tree.created_at.isoformat(),
+                "root": root.to_dict(),
+            },
+        )
         return tree.id
 
     def append(
@@ -58,6 +112,9 @@ class FibMind:
         content: str,
         tags: Iterable[str] | None = None,
         metadata: dict | None = None,
+        scope: MemoryScope = MemoryScope.PERSONAL,
+        owner: str | None = None,
+        auto_link: bool = True,
     ) -> str:
         tree_id = self.create_tree(category)
         tree = self.trees[tree_id]
@@ -70,9 +127,12 @@ class FibMind:
             layer="raw",
             tags=set(tags or []),
             metadata=metadata or {},
+            scope=MemoryScope(scope),
+            owner=owner,
         )
         node.tree_ids.add(tree_id)
         self._add_node(node)
+        self._record(EventOp.CREATE_NODE, {"node": node.to_dict()})
 
         self.link_nodes(
             tree.root_node_id,
@@ -81,8 +141,44 @@ class FibMind:
             weight=1.0,
             direction=EdgeDirection.DIRECTED,
         )
+        if auto_link:
+            self._auto_link_similar(node)
         self.compress_overflow(category)
         return node.id
+
+    def _auto_link_similar(self, node: MemoryNode) -> None:
+        """Connect a new node to its nearest existing neighbours.
+
+        Without this the forest is a star: every node hangs off its tree root and
+        nothing else, so a one-hop expansion reaches only the root — which
+        context building filters out — and yields nothing.
+        """
+        candidates = rank_nodes(
+            (
+                other
+                for other in self.nodes.values()
+                if other.id != node.id
+                and other.scope == node.scope
+                and other.status == MemoryStatus.ACTIVE
+                and (
+                    node.scope == MemoryScope.KNOWLEDGE
+                    or other.owner == node.owner
+                )
+                and other.folded_into is None
+            ),
+            f"{node.title} {node.content}",
+            top_k=AUTO_LINK_TOP_K,
+            min_score=AUTO_LINK_MIN_SCORE,
+        )
+        for hit in candidates:
+            self.link_nodes(
+                node.id,
+                hit.node.id,
+                RelationType.SIMILAR_TO,
+                weight=min(1.0, round(hit.score / 2, 4)),
+                direction=EdgeDirection.BIDIRECTIONAL,
+                metadata={"auto": True, "score": round(hit.score, 4)},
+            )
 
     def link_nodes(
         self,
@@ -104,20 +200,236 @@ class FibMind:
             metadata=metadata or {},
         )
         self._add_edge(edge)
+        self._record(EventOp.LINK, {"edge": edge.to_dict()})
         return edge.id
 
+    def record_outcome(
+        self,
+        node_id: str,
+        verdict: Verdict,
+        source: str,
+        note: str | None = None,
+    ) -> MemoryNode:
+        """Attach external evidence about whether a memory is correct.
+
+        This is the only path that moves ``confidence``, and it demands a
+        ``source`` — the point of the field is that something outside the model
+        checked the claim. Recall alone never qualifies, which is what keeps
+        familiar-but-wrong memories from rising.
+        """
+        node = self._require_node(node_id)
+        verdict = Verdict(verdict)
+        if not source or not source.strip():
+            raise ValueError("source must name what produced the verdict")
+
+        step = CONFIDENCE_STEP if verdict == Verdict.CONFIRMED else -CONFIDENCE_STEP
+        node.confidence = max(0.0, min(1.0, node.confidence + step))
+        node.confidence_source = source
+        if verdict == Verdict.REFUTED:
+            node.status = MemoryStatus.REFUTED
+            node.status_reason = note or f"refuted by {source}"
+        node.updated_at = utc_now()
+        self._record(
+            EventOp.OBSERVE,
+            {
+                "node_id": node_id,
+                "verdict": verdict.value,
+                "source": source,
+                "note": note,
+                "confidence": node.confidence,
+                "status": node.status.value,
+                "status_reason": node.status_reason,
+            },
+        )
+        return node
+
+    def mark_stale(self, node_id: str, reason: str) -> MemoryNode:
+        """Retire an outdated memory without deleting its provenance."""
+        node = self._require_node(node_id)
+        if not reason or not reason.strip():
+            raise ValueError("reason must explain why the memory is stale")
+        node.status = MemoryStatus.STALE
+        node.status_reason = reason
+        node.updated_at = utc_now()
+        self._record(
+            EventOp.SET_STATUS,
+            {
+                "node_id": node_id,
+                "status": node.status.value,
+                "reason": reason,
+            },
+        )
+        return node
+
+    def revise(
+        self,
+        node_id: str,
+        title: str | None = None,
+        content: str | None = None,
+        tags: Iterable[str] | None = None,
+    ) -> MemoryNode:
+        """Correct a memory in place, resetting the evidence that backed it.
+
+        Confidence is earned by the old content, so it does not transfer: a
+        revised claim starts unproven again.
+        """
+        node = self._require_node(node_id)
+        before = {"title": node.title, "content": node.content, "tags": sorted(node.tags)}
+        if title is not None:
+            node.title = title
+        if content is not None:
+            node.content = content
+        if tags is not None:
+            node.tags = set(tags)
+        node.confidence = 0.0
+        node.confidence_source = None
+        node.status = MemoryStatus.ACTIVE
+        node.status_reason = None
+        node.updated_at = utc_now()
+        self._record(
+            EventOp.REVISE,
+            {
+                "node_id": node_id,
+                "before": before,
+                "after": {
+                    "title": node.title,
+                    "content": node.content,
+                    "tags": sorted(node.tags),
+                    "status": node.status.value,
+                },
+            },
+        )
+        return node
+
+    def forget(self, node_id: str, reason: str) -> dict:
+        """Delete a memory and redact it from the log.
+
+        Dropping the row is not enough: the log is the source of truth, so any
+        content left in earlier ``create_node``/``revise`` entries would come
+        back on the next replay. Those payloads are tombstoned here, which is
+        what makes deletion actually hold.
+        """
+        node = self._require_node(node_id)
+        if not reason or not reason.strip():
+            raise ValueError("reason must explain why the memory is being deleted")
+
+        removed_edges = [
+            edge_id
+            for edge_id, edge in self.edges.items()
+            if edge.from_node_id == node_id or edge.to_node_id == node_id
+        ]
+        for edge_id in removed_edges:
+            self._remove_edge(edge_id)
+
+        for other in self.nodes.values():
+            if other.folded_into == node_id:
+                other.folded_into = None
+
+        self._unindex_node(node)
+        self.nodes.pop(node_id)
+        self.adjacency.pop(node_id, None)
+        self.reverse_adjacency.pop(node_id, None)
+        for tree_id, tree in list(self.trees.items()):
+            if tree.root_node_id == node_id:
+                self.trees.pop(tree_id)
+                self.category_roots.pop(tree.category, None)
+
+        self._redact_log(node_id)
+        self._record(
+            EventOp.FORGET,
+            {"node_id": node_id, "reason": reason, "removed_edges": removed_edges},
+        )
+        return {"node_id": node_id, "reason": reason, "removed_edges": len(removed_edges)}
+
+    def _redact_log(self, node_id: str) -> None:
+        """Overwrite a forgotten node's text everywhere it appears in the log."""
+        for event in self.events:
+            payload = event.payload
+            node_payload = payload.get("node")
+            if isinstance(node_payload, dict) and node_payload.get("id") == node_id:
+                node_payload["title"] = TOMBSTONE
+                node_payload["content"] = TOMBSTONE
+            if payload.get("node_id") == node_id:
+                for section in ("before", "after"):
+                    if isinstance(payload.get(section), dict):
+                        payload[section] = {"redacted": True}
+
+    def promote_to_knowledge(
+        self,
+        title: str,
+        content: str,
+        supporting_node_ids: list[str],
+        category: str = "knowledge",
+        threshold: int = DEFAULT_PROMOTION_THRESHOLD,
+        tags: Iterable[str] | None = None,
+    ) -> str:
+        """Distil several personal observations into one shareable claim.
+
+        The abstraction text is the caller's; what this enforces is the bar for
+        making it shared. "This generalizes" is a claim about a population, so it
+        needs at least ``threshold`` distinct observations behind it — a model
+        asserting that it feels general is exactly the self-assessment this is
+        meant to replace.
+
+        Every supporting observation is linked with ``DERIVED_FROM``, so a claim
+        that later turns out wrong can be traced back to what produced it.
+        """
+        unique_ids = list(dict.fromkeys(supporting_node_ids))
+        if len(unique_ids) < threshold:
+            raise ValueError(
+                f"promotion needs at least {threshold} distinct supporting memories, "
+                f"got {len(unique_ids)}"
+            )
+        supporters = [self._require_node(node_id) for node_id in unique_ids]
+        inactive = [supporter.id for supporter in supporters if supporter.status != MemoryStatus.ACTIVE]
+        if inactive:
+            raise ValueError(f"promotion supporters must be active memories: {inactive}")
+
+        node_id = self.append(
+            category=category,
+            title=title,
+            content=content,
+            tags=tags,
+            metadata={"supporting_node_ids": unique_ids},
+            scope=MemoryScope.KNOWLEDGE,
+            auto_link=False,
+        )
+        for supporter in supporters:
+            self.link_nodes(
+                node_id,
+                supporter.id,
+                RelationType.DERIVED_FROM,
+                weight=0.9,
+            )
+        self._record(
+            EventOp.PROMOTE,
+            {
+                "node_id": node_id,
+                "supporting_node_ids": unique_ids,
+                "threshold": threshold,
+            },
+        )
+        return node_id
+
     def promote_node(self, node_id: str, target_type: NodeType = NodeType.CONCEPT) -> str:
+        """Mark a memory as a concept, keeping it retrievable.
+
+        ``ROOT`` is reserved for the structural anchors that ``create_tree``
+        creates; promoting a real memory to ROOT used to hide it, because
+        ranking skips root nodes and layer accounting skips them too.
+        """
+        if target_type == NodeType.ROOT:
+            raise ValueError("ROOT is reserved for tree anchors; promote to CONCEPT instead")
         node = self._require_node(node_id)
         node.node_type = target_type
-        node.importance = max(node.importance, 0.75)
         self._reinforce_node(node, amount=0.05)
-
-        if target_type in {NodeType.CONCEPT, NodeType.ROOT} and not self._tree_for_root(node_id):
-            tree_id = self.expand_node_to_tree(node_id)
-            return tree_id
+        self._record(
+            EventOp.PROMOTE, {"node_id": node_id, "node_type": target_type.value}
+        )
         return node_id
 
     def expand_node_to_tree(self, node_id: str, title: str | None = None) -> str:
+        """Give a concept its own tree without turning it into a hidden anchor."""
         node = self._require_node(node_id)
         category = f"{node.category}:{node.title}".lower().replace(" ", "_")
         original_category = category
@@ -126,12 +438,21 @@ class FibMind:
             category = f"{original_category}_{suffix}"
             suffix += 1
 
-        node.node_type = NodeType.ROOT
-        node.importance = max(node.importance, 0.9)
+        node.node_type = NodeType.CONCEPT
         tree = MemoryTree(category=category, title=title or node.title, root_node_id=node.id)
         node.tree_ids.add(tree.id)
         self.trees[tree.id] = tree
         self.category_roots[category] = tree.id
+        self._record(
+            EventOp.CREATE_TREE,
+            {
+                "tree_id": tree.id,
+                "category": category,
+                "title": tree.title,
+                "created_at": tree.created_at.isoformat(),
+                "existing_root_node_id": node.id,
+            },
+        )
         return tree.id
 
     def merge_trees(self, source_tree_id: str, target_tree_id: str) -> None:
@@ -157,7 +478,12 @@ class FibMind:
         self.category_roots[category] = tree.id
         self.nodes[root_node_id].tree_ids.add(tree.id)
 
-        for hit in self.search_from(root_node_id, depth=10, relation_types={RelationType.TREE_CHILD}):
+        for hit in self.search_from(
+            root_node_id,
+            depth=10,
+            relation_types={RelationType.TREE_CHILD},
+            direction=TraversalDirection.OUT,
+        ):
             hit.node.tree_ids.add(tree.id)
         return tree.id
 
@@ -169,7 +495,8 @@ class FibMind:
             if total_weight <= capacity:
                 continue
 
-            overflow = self._select_overflow_nodes(nodes, total_weight - capacity)
+            compact_weight = total_weight - self.layer_policy.low_watermark_for(layer)
+            overflow = self._select_overflow_nodes(nodes, compact_weight)
             next_layer = self.layer_policy.next_layer(layer)
             if next_layer is None:
                 self._archive_nodes(overflow)
@@ -183,32 +510,44 @@ class FibMind:
         relation_types: set[RelationType] | None = None,
         min_weight: float = 0.0,
         reinforce: bool = False,
+        direction: TraversalDirection = TraversalDirection.BOTH,
     ) -> list[SearchHit]:
         self._require_node(node_id)
-        queue: deque[tuple[str, int, RelationType | None]] = deque([(node_id, 0, None)])
+        direction = TraversalDirection(direction)
+        queue: deque[
+            tuple[str, int, RelationType | None, TraversalDirection | None]
+        ] = deque([(node_id, 0, None, None)])
         visited = {node_id}
         hits: list[SearchHit] = []
 
         while queue:
-            current_id, current_depth, via_relation = queue.popleft()
+            current_id, current_depth, via_relation, via_direction = queue.popleft()
             node = self.nodes[current_id]
             if reinforce:
                 self._reinforce_node(node)
-            hits.append(SearchHit(node=node, depth=current_depth, via_relation=via_relation))
+            hits.append(
+                SearchHit(
+                    node=node,
+                    depth=current_depth,
+                    via_relation=via_relation,
+                    via_direction=via_direction,
+                )
+            )
 
             if current_depth >= depth:
                 continue
 
-            for edge in self._outgoing_edges(current_id):
+            for edge, neighbor_id, step_direction in self._traversable_edges(current_id, direction):
                 if edge.weight < min_weight:
                     continue
                 if relation_types is not None and edge.relation_type not in relation_types:
                     continue
-                neighbor_id = edge.neighbor_of(current_id)
-                if neighbor_id is None or neighbor_id in visited:
+                if neighbor_id in visited:
                     continue
                 visited.add(neighbor_id)
-                queue.append((neighbor_id, current_depth + 1, edge.relation_type))
+                queue.append(
+                    (neighbor_id, current_depth + 1, edge.relation_type, step_direction)
+                )
 
         return hits
 
@@ -219,19 +558,77 @@ class FibMind:
         categories: set[str] | None = None,
         min_score: float = 0.0,
         include_roots: bool = False,
+        scopes: set[MemoryScope] | None = None,
+        owner: str | None = None,
+        include_folded: bool = False,
+        statuses: set[MemoryStatus] | None = None,
     ) -> list[ScoredHit]:
-        """Rank all memory nodes by keyword relevance to ``query``.
+        """Rank all memory nodes by relevance to ``query``.
 
-        This is read-only: unlike ``search_from`` it never reinforces nodes.
+        Read-only: unlike ``search_from`` it never reinforces nodes. ``scopes``
+        and ``owner`` keep one owner's personal memories out of another's
+        results; folded nodes are excluded unless asked for, since their content
+        is represented by the node that absorbed them.
         """
         return rank_nodes(
-            self.nodes.values(),
+            self._visible_nodes(
+                scopes=scopes,
+                owner=owner,
+                include_folded=include_folded,
+                statuses=statuses,
+            ),
             query,
             top_k=top_k,
             categories=categories,
             min_score=min_score,
             include_roots=include_roots,
         )
+
+    def _visible_nodes(
+        self,
+        scopes: set[MemoryScope] | None = None,
+        owner: str | None = None,
+        include_folded: bool = False,
+        statuses: set[MemoryStatus] | None = None,
+    ) -> list[MemoryNode]:
+        """Nodes a given caller is allowed to recall.
+
+        Knowledge is shared by definition, so it stays visible regardless of
+        ``owner``; personal memories are only visible to their own owner.
+        """
+        allowed_statuses = statuses if statuses is not None else {MemoryStatus.ACTIVE}
+        visible: list[MemoryNode] = []
+        for node in self.nodes.values():
+            if self.is_visible(
+                node,
+                scopes=scopes,
+                owner=owner,
+                include_folded=include_folded,
+                statuses=allowed_statuses,
+            ):
+                visible.append(node)
+        return visible
+
+    def is_visible(
+        self,
+        node: MemoryNode,
+        *,
+        scopes: set[MemoryScope] | None = None,
+        owner: str | None = None,
+        include_folded: bool = False,
+        statuses: set[MemoryStatus] | None = None,
+    ) -> bool:
+        """Return whether ``node`` may be recalled by this caller."""
+        allowed_statuses = statuses if statuses is not None else {MemoryStatus.ACTIVE}
+        if node.status not in allowed_statuses:
+            return False
+        if not include_folded and node.folded_into is not None:
+            return False
+        if scopes is not None and node.scope not in scopes:
+            return False
+        if node.scope != MemoryScope.KNOWLEDGE and node.owner != owner:
+            return False
+        return True
 
     def nodes_by_tree(self, tree_id: str) -> list[MemoryNode]:
         self._require_tree(tree_id)
@@ -265,20 +662,36 @@ class FibMind:
                 "source_node_ids": [node.id for node in source_nodes],
                 "source_memory_weight": sum(node.memory_weight for node in source_nodes),
             },
-            importance=max((node.importance for node in source_nodes), default=0.0),
+            scope=source_nodes[0].scope if source_nodes else MemoryScope.PERSONAL,
+            owner=source_nodes[0].owner if source_nodes else None,
+            confidence=max((node.confidence for node in source_nodes), default=0.0),
             memory_weight=sum(node.memory_weight for node in source_nodes),
         )
 
         tree_id = self.create_tree(category)
         compressed.tree_ids.add(tree_id)
         self._add_node(compressed)
+        self._record(EventOp.CREATE_NODE, {"node": compressed.to_dict()})
 
+        folded_ids: list[str] = []
         for source in source_nodes:
             self.link_nodes(compressed.id, source.id, RelationType.SUMMARY_OF, weight=0.8)
             if source.layer == source_layer:
-                self._set_node_layer(source, f"folded:{source_layer}")
-                source.node_type = NodeType.ARCHIVE
+                # Mark the source as absorbed rather than rewriting its layer and
+                # type. The original stays intact so it can be re-distilled by a
+                # later, better summarizer; only its visibility changes.
+                source.folded_into = compressed.id
+                folded_ids.append(source.id)
 
+        self._record(
+            EventOp.FOLD,
+            {
+                "into_node_id": compressed.id,
+                "source_node_ids": folded_ids,
+                "source_layer": source_layer,
+                "target_layer": target_layer,
+            },
+        )
         return compressed.id
 
     def _archive_nodes(self, nodes: list[MemoryNode]) -> None:
@@ -288,6 +701,13 @@ class FibMind:
             node.touch()
 
     def _summarize(self, nodes: list[MemoryNode]) -> str:
+        """Concatenate truncated excerpts of the folded nodes.
+
+        This is a placeholder, not distillation: the output sits at the same
+        level of abstraction as its inputs, merely shorter. Real promotion of
+        specifics into general claims goes through ``promote_to_knowledge``,
+        which requires supporting evidence and keeps provenance pointers.
+        """
         lines = []
         for node in nodes:
             excerpt = node.content.strip().replace("\n", " ")
@@ -303,6 +723,8 @@ class FibMind:
                 self.nodes[node_id]
                 for node_id in node_ids
                 if self.nodes[node_id].node_type != NodeType.ROOT
+                and self.nodes[node_id].status == MemoryStatus.ACTIVE
+                and self.nodes[node_id].folded_into is None
             ),
             key=self._retention_key,
         )
@@ -317,9 +739,32 @@ class FibMind:
                 break
         return selected
 
-    def _outgoing_edges(self, node_id: str) -> list[Edge]:
-        edge_ids = self.adjacency.get(node_id, set())
-        return [self.edges[edge_id] for edge_id in edge_ids if edge_id in self.edges]
+    def _traversable_edges(
+        self, node_id: str, direction: TraversalDirection
+    ) -> list[tuple[Edge, str, TraversalDirection]]:
+        candidates: dict[str, tuple[Edge, str, TraversalDirection]] = {}
+        if direction in {TraversalDirection.OUT, TraversalDirection.BOTH}:
+            for edge_id in self.adjacency.get(node_id, set()):
+                edge = self.edges.get(edge_id)
+                if edge is None:
+                    continue
+                neighbor_id = (
+                    edge.to_node_id if edge.from_node_id == node_id else edge.from_node_id
+                )
+                candidates[edge_id] = (edge, neighbor_id, TraversalDirection.OUT)
+        if direction in {TraversalDirection.IN, TraversalDirection.BOTH}:
+            for edge_id in self.reverse_adjacency.get(node_id, set()):
+                edge = self.edges.get(edge_id)
+                if edge is None or edge_id in candidates:
+                    continue
+                neighbor_id = (
+                    edge.from_node_id if edge.to_node_id == node_id else edge.to_node_id
+                )
+                candidates[edge_id] = (edge, neighbor_id, TraversalDirection.IN)
+        return sorted(
+            candidates.values(),
+            key=lambda item: (-item[0].weight, item[0].created_at, item[0].id),
+        )
 
     def _add_node(self, node: MemoryNode) -> None:
         self.nodes[node.id] = node
@@ -328,8 +773,23 @@ class FibMind:
     def _add_edge(self, edge: Edge) -> None:
         self.edges[edge.id] = edge
         self.adjacency.setdefault(edge.from_node_id, set()).add(edge.id)
+        self.reverse_adjacency.setdefault(edge.to_node_id, set()).add(edge.id)
         if edge.direction == EdgeDirection.BIDIRECTIONAL:
             self.adjacency.setdefault(edge.to_node_id, set()).add(edge.id)
+            self.reverse_adjacency.setdefault(edge.from_node_id, set()).add(edge.id)
+
+    def _remove_edge(self, edge_id: str) -> None:
+        edge = self.edges.pop(edge_id, None)
+        if edge is None:
+            return
+        for index in (self.adjacency, self.reverse_adjacency):
+            for node_id in (edge.from_node_id, edge.to_node_id):
+                bucket = index.get(node_id)
+                if bucket is None:
+                    continue
+                bucket.discard(edge_id)
+                if not bucket:
+                    index.pop(node_id, None)
 
     def _index_node(self, node: MemoryNode) -> None:
         self.by_cat_layer.setdefault((node.category, node.layer), set()).add(node.id)
@@ -350,26 +810,141 @@ class FibMind:
         self._index_node(node)
 
     def _retention_key(self, node: MemoryNode) -> tuple[float, int, float, float]:
+        """Fold order: least-evidenced first, familiarity only as a tiebreak.
+
+        Refuted memories are folded away before unproven ones, and heavily
+        recalled memories get no protection from evidence they never earned.
+        """
         return (
-            node.importance,
-            node.access_count,
+            node.confidence,
+            node.familiarity,
             node.updated_at.timestamp(),
             node.created_at.timestamp(),
         )
 
     def _reinforce_node(self, node: MemoryNode, amount: float = 0.02) -> None:
+        """Register that a memory was recalled.
+
+        Bumps familiarity only. Confidence is deliberately untouched: recall is
+        not evidence, and treating it as such is what turns a memory store into
+        an echo chamber.
+        """
         node.touch()
-        node.importance = min(1.0, node.importance + amount)
+        node.familiarity = min(1.0, node.familiarity + amount)
 
     def rebuild_indices(self) -> None:
         self.adjacency = {}
+        self.reverse_adjacency = {}
         self.by_cat_layer = {}
         for node in self.nodes.values():
             self._index_node(node)
         for edge in self.edges.values():
             self.adjacency.setdefault(edge.from_node_id, set()).add(edge.id)
+            self.reverse_adjacency.setdefault(edge.to_node_id, set()).add(edge.id)
             if edge.direction == EdgeDirection.BIDIRECTIONAL:
                 self.adjacency.setdefault(edge.to_node_id, set()).add(edge.id)
+                self.reverse_adjacency.setdefault(edge.from_node_id, set()).add(edge.id)
+
+    @classmethod
+    def rebuild_from_log(
+        cls,
+        events: Iterable[MemoryEvent],
+        layer_policy: FibonacciLayerPolicy = DEFAULT_LAYER_POLICY,
+    ) -> "FibMind":
+        """Reconstruct a forest by replaying its event log.
+
+        This is what makes the log the source of truth rather than a side
+        record: node and edge tables are a cache that can be thrown away and
+        rebuilt. Recall counters (``familiarity``, ``access_count``) are not
+        replayed — they describe how the store was used, not what it knows, and
+        are the one part that is expected to be lost.
+        """
+        memory = cls(layer_policy=layer_policy)
+        for event in sorted(events, key=lambda item: item.seq):
+            memory._apply(event)
+        memory.events = sorted(events, key=lambda item: item.seq)
+        memory.rebuild_indices()
+        return memory
+
+    def _apply(self, event: MemoryEvent) -> None:
+        payload = event.payload
+        if event.op in {EventOp.CREATE_NODE, EventOp.CREATE_TREE}:
+            node_payload = payload.get("node") or payload.get("root")
+            if node_payload is not None:
+                node = MemoryNode.from_dict(node_payload)
+                node.familiarity = 0.0
+                node.access_count = 0
+                self.nodes[node.id] = node
+            tree_id = payload.get("tree_id")
+            if tree_id is not None:
+                root_id = payload.get("existing_root_node_id") or (
+                    node_payload["id"] if node_payload else None
+                )
+                if root_id is not None:
+                    created_at = payload.get("created_at")
+                    self.trees[tree_id] = MemoryTree(
+                        id=tree_id,
+                        category=payload["category"],
+                        title=payload.get("title", payload["category"]),
+                        root_node_id=root_id,
+                        created_at=(
+                            datetime.fromisoformat(created_at)
+                            if created_at is not None
+                            else event.created_at
+                        ),
+                    )
+                    self.category_roots[payload["category"]] = tree_id
+                    if root_id in self.nodes:
+                        self.nodes[root_id].tree_ids.add(tree_id)
+        elif event.op == EventOp.LINK:
+            edge = Edge.from_dict(payload["edge"])
+            self.edges[edge.id] = edge
+        elif event.op == EventOp.FOLD:
+            for node_id in payload.get("source_node_ids", []):
+                if node_id in self.nodes:
+                    self.nodes[node_id].folded_into = payload["into_node_id"]
+        elif event.op == EventOp.REVISE:
+            node = self.nodes.get(payload["node_id"])
+            after = payload.get("after")
+            if node is not None and isinstance(after, dict) and "title" in after:
+                node.title = after["title"]
+                node.content = after["content"]
+                node.tags = set(after.get("tags", []))
+                node.confidence = 0.0
+                node.confidence_source = None
+                node.status = MemoryStatus(after.get("status", MemoryStatus.ACTIVE.value))
+                node.status_reason = None
+        elif event.op == EventOp.OBSERVE:
+            node = self.nodes.get(payload["node_id"])
+            if node is not None:
+                node.confidence = float(payload["confidence"])
+                node.confidence_source = payload.get("source")
+                status = payload.get("status")
+                if status is not None:
+                    node.status = MemoryStatus(status)
+                    node.status_reason = payload.get("status_reason")
+                elif payload.get("verdict") == Verdict.REFUTED.value:
+                    node.status = MemoryStatus.REFUTED
+                    node.status_reason = payload.get("note") or f"refuted by {payload.get('source')}"
+        elif event.op == EventOp.SET_STATUS:
+            node = self.nodes.get(payload["node_id"])
+            if node is not None:
+                node.status = MemoryStatus(payload["status"])
+                node.status_reason = payload.get("reason")
+        elif event.op == EventOp.PROMOTE:
+            node = self.nodes.get(payload["node_id"])
+            node_type = payload.get("node_type")
+            if node is not None and node_type is not None:
+                node.node_type = NodeType(node_type)
+        elif event.op == EventOp.FORGET:
+            node_id = payload["node_id"]
+            self.nodes.pop(node_id, None)
+            for edge_id in payload.get("removed_edges", []):
+                self.edges.pop(edge_id, None)
+            for tree_id, tree in list(self.trees.items()):
+                if tree.root_node_id == node_id:
+                    self.trees.pop(tree_id)
+                    self.category_roots.pop(tree.category, None)
 
     def _tree_for_root(self, node_id: str) -> MemoryTree | None:
         for tree in self.trees.values():

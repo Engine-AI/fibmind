@@ -37,12 +37,20 @@ class FibMindSearchTests(unittest.TestCase):
 
     def test_search_is_read_only(self) -> None:
         memory = self._memory()
-        before = {nid: (n.access_count, n.importance) for nid, n in memory.nodes.items()}
+        before = {nid: (n.access_count, n.familiarity) for nid, n in memory.nodes.items()}
 
         memory.search("login token expiry")
 
-        after = {nid: (n.access_count, n.importance) for nid, n in memory.nodes.items()}
+        after = {nid: (n.access_count, n.familiarity) for nid, n in memory.nodes.items()}
         self.assertEqual(before, after)
+
+    def test_search_supports_chinese(self) -> None:
+        memory = FibMind()
+        memory.append("代码", "登录故障", "令牌过期后返回 401")
+
+        hits = memory.search("登录 令牌")
+
+        self.assertEqual(hits[0].node.title, "登录故障")
 
 
 if __name__ == "__main__":

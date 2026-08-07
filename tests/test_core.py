@@ -9,6 +9,8 @@ from fibmind import (
     JsonStore,
     NodeType,
     RelationType,
+    TraversalDirection,
+    Verdict,
     fib_capacities,
     fibonacci_numbers,
 )
@@ -48,17 +50,23 @@ class FibMindTests(unittest.TestCase):
         self.assertIn(first, hit_ids)
         self.assertIn(second, hit_ids)
 
-    def test_directed_edges_do_not_traverse_backward(self) -> None:
+    def test_directed_edges_only_traverse_backward_when_requested(self) -> None:
         memory = FibMind()
         first = memory.append("code", "Bug", "A login bug")
         second = memory.append("requirement", "Requirement", "Refresh token")
         memory.link_nodes(first, second, RelationType.RELATED_TO)
 
-        reverse_hits = memory.search_from(second, depth=1)
-        reverse_hit_ids = {hit.node.id for hit in reverse_hits}
+        outgoing_hits = memory.search_from(
+            second, depth=1, direction=TraversalDirection.OUT
+        )
+        outgoing_hit_ids = {hit.node.id for hit in outgoing_hits}
 
-        self.assertIn(second, reverse_hit_ids)
-        self.assertNotIn(first, reverse_hit_ids)
+        self.assertIn(second, outgoing_hit_ids)
+        self.assertNotIn(first, outgoing_hit_ids)
+
+        both_hits = memory.search_from(second, depth=1)
+        related = next(hit for hit in both_hits if hit.node.id == first)
+        self.assertEqual(related.via_direction, TraversalDirection.IN)
 
     def test_bidirectional_edges_traverse_both_directions(self) -> None:
         memory = FibMind()
@@ -66,7 +74,9 @@ class FibMindTests(unittest.TestCase):
         second = memory.append("requirement", "Requirement", "Refresh token")
         memory.link_nodes(first, second, RelationType.RELATED_TO, direction=EdgeDirection.BIDIRECTIONAL)
 
-        reverse_hits = memory.search_from(second, depth=1)
+        reverse_hits = memory.search_from(
+            second, depth=1, direction=TraversalDirection.OUT
+        )
         reverse_hit_ids = {hit.node.id for hit in reverse_hits}
 
         self.assertIn(first, reverse_hit_ids)
@@ -77,21 +87,92 @@ class FibMindTests(unittest.TestCase):
 
         memory.search_from(node_id, depth=0)
         self.assertEqual(memory.nodes[node_id].access_count, 0)
-        self.assertEqual(memory.nodes[node_id].importance, 0.0)
+        self.assertEqual(memory.nodes[node_id].familiarity, 0.0)
 
         memory.search_from(node_id, depth=0, reinforce=True)
         self.assertEqual(memory.nodes[node_id].access_count, 1)
-        self.assertGreater(memory.nodes[node_id].importance, 0.0)
+        self.assertGreater(memory.nodes[node_id].familiarity, 0.0)
 
-    def test_promote_node_expands_to_tree(self) -> None:
+    def test_recall_never_becomes_evidence(self) -> None:
+        """Reading a memory back must not make it look more correct.
+
+        This is the loop the familiarity/confidence split exists to break: if
+        recall fed the trust signal, a wrong memory that gets looked up often
+        would climb the rankings on its own.
+        """
+        memory = FibMind()
+        node_id = memory.append("code", "Wrong claim", "sqrt(-1) == -1")
+
+        for _ in range(60):
+            memory.search_from(node_id, depth=0, reinforce=True)
+
+        node = memory.nodes[node_id]
+        self.assertEqual(node.familiarity, 1.0)
+        self.assertEqual(node.confidence, 0.0)
+        self.assertIsNone(node.confidence_source)
+
+    def test_confidence_moves_only_on_recorded_evidence(self) -> None:
+        memory = FibMind()
+        node_id = memory.append("code", "Fix", "clear the cache before retrying")
+
+        memory.record_outcome(node_id, Verdict.CONFIRMED, source="pytest tests/test_retry.py")
+        self.assertGreater(memory.nodes[node_id].confidence, 0.0)
+        self.assertEqual(
+            memory.nodes[node_id].confidence_source, "pytest tests/test_retry.py"
+        )
+
+        memory.record_outcome(node_id, Verdict.REFUTED, source="reverted in a1b2c3d")
+        self.assertEqual(memory.nodes[node_id].confidence, 0.0)
+
+        with self.assertRaises(ValueError):
+            memory.record_outcome(node_id, Verdict.CONFIRMED, source="  ")
+
+    def test_promote_node_keeps_the_memory_retrievable(self) -> None:
+        """Marking a memory important must not hide it.
+
+        Ranking skips ROOT nodes because they are structural anchors, so
+        promoting a real memory to ROOT used to remove it from search entirely —
+        the exact opposite of what promotion means.
+        """
+        memory = FibMind()
+        node_id = memory.append("code", "Login problem", "Auth issue")
+        self.assertTrue(memory.search("login auth"))
+
+        memory.promote_node(node_id)
+
+        self.assertEqual(memory.nodes[node_id].node_type, NodeType.CONCEPT)
+        self.assertIn(node_id, {hit.node.id for hit in memory.search("login auth")})
+        with self.assertRaises(ValueError):
+            memory.promote_node(node_id, target_type=NodeType.ROOT)
+
+    def test_expand_node_to_tree_gives_a_root_without_hiding_it(self) -> None:
         memory = FibMind()
         node_id = memory.append("code", "Login problem", "Auth issue")
 
-        tree_id = memory.promote_node(node_id)
+        tree_id = memory.expand_node_to_tree(node_id)
 
         self.assertIn(tree_id, memory.trees)
         self.assertEqual(memory.trees[tree_id].root_node_id, node_id)
-        self.assertEqual(memory.nodes[node_id].node_type, NodeType.ROOT)
+        self.assertEqual(memory.nodes[node_id].node_type, NodeType.CONCEPT)
+        self.assertIn(node_id, {hit.node.id for hit in memory.search("login auth")})
+
+    def test_append_links_related_memories(self) -> None:
+        """A one-hop expansion has to reach something other than the tree root.
+
+        Only tree_child edges used to be created, leaving a star: every walk from
+        a node hit the root, which context building filters out, so expansion
+        returned nothing.
+        """
+        memory = FibMind()
+        first = memory.append("code", "Login 401", "token expiry causes 401 on login")
+        second = memory.append("code", "Token refresh", "refresh rotates the token on 401")
+
+        neighbours = {
+            hit.node.id
+            for hit in memory.search_from(second, depth=1)
+            if hit.node.node_type != NodeType.ROOT and hit.node.id != second
+        }
+        self.assertIn(first, neighbours)
 
     def test_compress_overflow_creates_summary_node(self) -> None:
         memory = FibMind()
@@ -106,12 +187,71 @@ class FibMindTests(unittest.TestCase):
         raw = [
             node
             for node in memory.nodes.values()
-            if node.category == "dialogue" and node.layer == "raw"
+            if node.category == "dialogue"
+            and node.layer == "raw"
+            and node.folded_into is None
         ]
 
         self.assertGreaterEqual(len(compressed), 1)
         self.assertLessEqual(len(raw), 21)
         self.assertGreaterEqual(sum(node.memory_weight for node in compressed), 2)
+
+    def test_folded_nodes_are_kept_but_hidden(self) -> None:
+        """Folding must not destroy the original text.
+
+        The summariser is a placeholder; keeping the sources means a better one
+        can redo the work later. Folded nodes stay in the store, out of search.
+        """
+        memory = FibMind()
+        for index in range(22):
+            memory.append("dialogue", f"Message {index}", f"content {index}")
+
+        folded = [node for node in memory.nodes.values() if node.folded_into is not None]
+        self.assertTrue(folded)
+        for node in folded:
+            self.assertNotEqual(node.content, "")
+            self.assertIn(node.folded_into, memory.nodes)
+
+        visible = {hit.node.id for hit in memory.search("content", top_k=100)}
+        self.assertTrue(visible.isdisjoint({node.id for node in folded}))
+
+    def test_compress_overflow_compacts_to_fibonacci_low_watermark(self) -> None:
+        memory = FibMind()
+        for index in range(22):
+            memory.append("dialogue", f"Message {index}", f"content {index}")
+
+        raw = [
+            node
+            for node in memory.nodes.values()
+            if node.category == "dialogue"
+            and node.layer == "raw"
+            and node.folded_into is None
+        ]
+        compressed = [
+            node
+            for node in memory.nodes.values()
+            if node.category == "dialogue" and node.layer == "compressed"
+        ]
+
+        self.assertEqual(sum(node.memory_weight for node in raw), 13)
+        self.assertEqual(len(compressed), 1)
+        self.assertEqual(compressed[0].memory_weight, 9)
+        self.assertEqual(len(compressed[0].metadata["source_node_ids"]), 9)
+
+    def test_batch_compression_bounds_graph_growth(self) -> None:
+        memory = FibMind()
+        for index in range(200):
+            memory.append("bulk", f"Node {index}", "payload")
+
+        for layer in memory.layer_policy.order:
+            active_weight = sum(
+                node.memory_weight
+                for node in memory.nodes.values()
+                if node.category == "bulk"
+                and node.layer == layer
+                and node.folded_into is None
+            )
+            self.assertLessEqual(active_weight, memory.layer_policy.capacity_for(layer))
 
     def test_json_store_round_trip(self) -> None:
         memory = FibMind()

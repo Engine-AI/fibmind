@@ -20,16 +20,16 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 
 from fibmind.service import MemoryService
 
-DEFAULT_STORE = ".fibmind/memory.json"
+DEFAULT_STORE = ".fibmind/memory.db"
 
 
-def build_server(service: MemoryService) -> FastMCP:
-    """Create a FastMCP app whose tools delegate to ``service``."""
-    mcp = FastMCP("fibmind")
+def build_server(service: MemoryService) -> MCPServer:
+    """Create an MCP server whose tools delegate to ``service``."""
+    mcp = MCPServer("fibmind")
 
     @mcp.tool()
     def fibmind_append(
@@ -38,14 +38,124 @@ def build_server(service: MemoryService) -> FastMCP:
         content: str,
         tags: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
+        scope: str = "personal",
+        owner: str | None = None,
     ) -> dict[str, Any]:
         """Save one memory (task result, error, requirement, plan, or code summary).
 
         Use this after finishing a task to record what happened. ``category``
         groups related memories into a tree (e.g. "code", "requirement",
-        "decision"). Returns the created node summary including its node_id.
+        "decision"). ``scope`` is "personal" for observations about one owner or
+        "session" for scratch notes; shared knowledge is created through
+        fibmind_promote_knowledge instead, which requires supporting evidence.
+
+        A stored memory starts with zero confidence. When you later learn whether
+        it was right, call fibmind_record_outcome — memories that are never
+        checked stay unranked no matter how often they are read back.
         """
-        return service.append(category, title, content, tags=tags, metadata=metadata)
+        return service.append(
+            category, title, content, tags=tags, metadata=metadata, scope=scope, owner=owner
+        )
+
+    @mcp.tool()
+    def fibmind_record_outcome(
+        node_id: str,
+        verdict: str,
+        source: str,
+        note: str | None = None,
+    ) -> dict[str, Any]:
+        """Record that a memory turned out to be right or wrong.
+
+        ``verdict`` is "confirmed" or "refuted"; ``source`` must name what
+        checked it — a test command, a failing build, a user correction. This is
+        the only thing that moves a memory's confidence, and confidence is the
+        only trust signal that affects ranking.
+
+        Call it whenever evidence appears: a recorded fix that made the tests
+        pass, a decision that was later reverted, advice the user rejected.
+        """
+        return service.record_outcome(node_id, verdict, source, note=note)
+
+    @mcp.tool()
+    def fibmind_revise(
+        node_id: str,
+        title: str | None = None,
+        content: str | None = None,
+        tags: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Correct a memory whose content is wrong or out of date.
+
+        Prefer this over appending a contradicting memory. Confidence resets to
+        zero, since evidence backing the old text says nothing about the new.
+        """
+        return service.revise(node_id, title=title, content=content, tags=tags)
+
+    @mcp.tool()
+    def fibmind_mark_stale(node_id: str, reason: str) -> dict[str, Any]:
+        """Retire an outdated memory without deleting its provenance.
+
+        Normal search and context exclude stale memories. Use ``fibmind_revise``
+        instead when the same memory should be corrected and made active again.
+        """
+        return service.mark_stale(node_id, reason)
+
+    @mcp.tool()
+    def fibmind_forget(node_id: str, reason: str) -> dict[str, Any]:
+        """Delete a memory permanently, including from the event log.
+
+        Use for memories the user asks to remove, content stored by mistake, or
+        anything that should not have been captured. The deletion also redacts
+        the text from log history, so it does not return on a replay.
+        """
+        return service.forget(node_id, reason)
+
+    @mcp.tool()
+    def fibmind_promote_knowledge(
+        title: str,
+        content: str,
+        supporting_node_ids: list[str],
+        category: str = "knowledge",
+        tags: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Turn several observations into one shared, reusable claim.
+
+        Use when the same pattern has appeared repeatedly and the general form is
+        worth keeping — three separate memories about one failure mode becoming
+        a single statement about its cause.
+
+        Requires at least three distinct supporting memories: whether something
+        generalizes is a claim about a population, not a judgement call. Each
+        supporter is linked as provenance, so a claim that later proves wrong can
+        be traced back. Write ``content`` at a level that changes what you would
+        do next; if it is too abstract to act on, it is not worth promoting.
+        """
+        return service.promote_knowledge(
+            title, content, supporting_node_ids, category=category, tags=tags
+        )
+
+    @mcp.tool()
+    def fibmind_link(
+        from_node_id: str,
+        to_node_id: str,
+        relation_type: str,
+        weight: float = 1.0,
+        bidirectional: bool = False,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Create a typed relationship between two existing memories.
+
+        Use node IDs returned by append, search, or context. ``relation_type``
+        must be one of the FibMind relation values. Set ``bidirectional`` when
+        the relationship itself should be stored as bidirectional.
+        """
+        return service.link(
+            from_node_id,
+            to_node_id,
+            relation_type,
+            weight=weight,
+            bidirectional=bidirectional,
+            metadata=metadata,
+        )
 
     @mcp.tool()
     def fibmind_search(
@@ -53,13 +163,25 @@ def build_server(service: MemoryService) -> FastMCP:
         top_k: int = 5,
         categories: list[str] | None = None,
         min_score: float = 0.0,
+        scopes: list[str] | None = None,
+        owner: str | None = None,
+        statuses: list[str] | None = None,
     ) -> dict[str, Any]:
         """Search memories by keyword relevance to ``query``.
 
         Read-only. Returns the top ranked memories with their node_ids so you
-        can expand or link them. Optionally restrict to ``categories``.
+        can expand or link them. Optionally restrict to ``categories`` or
+        ``scopes``; pass ``owner`` to keep other owners' personal memories out.
         """
-        return service.search(query, top_k=top_k, categories=categories, min_score=min_score)
+        return service.search(
+            query,
+            top_k=top_k,
+            categories=categories,
+            min_score=min_score,
+            scopes=scopes,
+            owner=owner,
+            statuses=statuses,
+        )
 
     @mcp.tool()
     def fibmind_search_from(
@@ -67,14 +189,21 @@ def build_server(service: MemoryService) -> FastMCP:
         depth: int = 2,
         relation_types: list[str] | None = None,
         reinforce: bool = False,
+        direction: str = "both",
     ) -> dict[str, Any]:
         """Expand the association tree rooted at ``node_id`` up to ``depth`` hops.
 
         Use a node_id returned by fibmind_search or fibmind_context to explore
-        related memories. Set ``reinforce`` to strengthen the traversed memories.
+        related memories. ``reinforce`` marks traversed memories as familiar;
+        note that this does not make them more trusted — only
+        fibmind_record_outcome does that.
         """
         return service.search_from(
-            node_id, depth=depth, relation_types=relation_types, reinforce=reinforce
+            node_id,
+            depth=depth,
+            relation_types=relation_types,
+            reinforce=reinforce,
+            direction=direction,
         )
 
     @mcp.tool()
@@ -84,6 +213,9 @@ def build_server(service: MemoryService) -> FastMCP:
         depth: int = 1,
         max_chars: int = 2000,
         reinforce: bool = False,
+        scopes: list[str] | None = None,
+        owner: str | None = None,
+        statuses: list[str] | None = None,
     ) -> dict[str, Any]:
         """Build a compact memory pack to load into context before a task.
 
@@ -93,7 +225,14 @@ def build_server(service: MemoryService) -> FastMCP:
         plus the structured ``hits``.
         """
         return service.context(
-            goal, top_k=top_k, depth=depth, max_chars=max_chars, reinforce=reinforce
+            goal,
+            top_k=top_k,
+            depth=depth,
+            max_chars=max_chars,
+            reinforce=reinforce,
+            scopes=scopes,
+            owner=owner,
+            statuses=statuses,
         )
 
     return mcp
@@ -104,7 +243,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--store",
         default=DEFAULT_STORE,
-        help=f"Path to the JSON memory store (default: {DEFAULT_STORE})",
+        help=f"Path to a SQLite or JSON memory store (default: {DEFAULT_STORE})",
     )
     return parser.parse_args(argv)
 

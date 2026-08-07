@@ -1,4 +1,4 @@
-"""Smoke tests for the FastMCP wiring (skipped if the mcp SDK is absent)."""
+"""Smoke tests for the MCP server wiring (skipped if the SDK is absent)."""
 
 import asyncio
 import tempfile
@@ -14,19 +14,26 @@ from fibmind.service import MemoryService  # noqa: E402
 
 EXPECTED_TOOLS = {
     "fibmind_append",
+    "fibmind_link",
     "fibmind_search",
     "fibmind_search_from",
     "fibmind_context",
+    "fibmind_record_outcome",
+    "fibmind_revise",
+    "fibmind_mark_stale",
+    "fibmind_forget",
+    "fibmind_promote_knowledge",
 }
 
 
 def _result_json(result: object) -> dict:
-    """Extract the structured payload from a FastMCP call_tool result.
+    """Extract the structured payload from an MCPServer call_tool result.
 
-    call_tool returns ``(content_blocks, structured_result)``; the structured
-    result is the tool's return value as a dict.
+    MCP 2 returns a ``CallToolResult`` carrying ``structured_content``.
     """
-    _content, structured = result
+    structured = getattr(result, "structured_content", None)
+    if not isinstance(structured, dict):
+        raise AssertionError("tool call did not return structured content")
     return structured
 
 
@@ -55,6 +62,27 @@ class McpServerTests(unittest.TestCase):
                 )
                 node_id = _result_json(appended)["node_id"]
 
+                second = await server.call_tool(
+                    "fibmind_append",
+                    {
+                        "category": "requirement",
+                        "title": "Refresh token",
+                        "content": "Rotate token before expiry",
+                    },
+                )
+                second_id = _result_json(second)["node_id"]
+
+                linked = await server.call_tool(
+                    "fibmind_link",
+                    {
+                        "from_node_id": node_id,
+                        "to_node_id": second_id,
+                        "relation_type": "related_to",
+                        "weight": 0.8,
+                    },
+                )
+                self.assertEqual(_result_json(linked)["relation_type"], "related_to")
+
                 found = await server.call_tool("fibmind_search", {"query": "login token"})
                 self.assertTrue(
                     any(r["node_id"] == node_id for r in _result_json(found)["results"])
@@ -70,7 +98,7 @@ class McpServerTests(unittest.TestCase):
 
     def test_parse_args_defaults_to_dot_fibmind(self) -> None:
         args = _parse_args([])
-        self.assertEqual(args.store, ".fibmind/memory.json")
+        self.assertEqual(args.store, ".fibmind/memory.db")
 
     def test_parse_args_accepts_custom_store(self) -> None:
         args = _parse_args(["--store", "/tmp/custom.json"])

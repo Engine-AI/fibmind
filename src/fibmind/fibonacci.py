@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 def fibonacci_numbers(max_value: int, include_duplicate_one: bool = False) -> list[int]:
@@ -43,12 +43,30 @@ def fib_capacities(layers: tuple[str, ...], start: int = 21) -> dict[str, int]:
     return dict(zip(layers, capacities, strict=True))
 
 
+def previous_fibonacci(value: int) -> int:
+    """Return the largest Fibonacci number strictly below ``value``."""
+    if value <= 1:
+        return 0
+
+    previous, current = 1, 2
+    while current < value:
+        previous, current = current, previous + current
+    return previous
+
+
 @dataclass(frozen=True, slots=True)
 class FibonacciLayerPolicy:
-    """Capacity limits and promotion order for memory layers."""
+    """Capacity limits and promotion order for memory layers.
+
+    Capacities answer "how many memories fit in a layer" — bookkeeping, not
+    judgement. Nothing here decides *which* memories deserve to stay; that is
+    what ``confidence`` and ``FibMind.record_outcome`` are for. The Fibonacci
+    spacing just gives growing layer sizes with a stated rule for the gaps.
+    """
 
     capacities: dict[str, int]
     order: tuple[str, ...]
+    low_watermarks: dict[str, int] = field(default_factory=dict)
 
     def capacity_for(self, layer: str) -> int:
         if layer not in self.capacities:
@@ -64,7 +82,17 @@ class FibonacciLayerPolicy:
             return None
         return self.order[index + 1]
 
+    def low_watermark_for(self, layer: str) -> int:
+        capacity = self.capacity_for(layer)
+        low_watermark = self.low_watermarks.get(layer, previous_fibonacci(capacity))
+        if low_watermark < 0 or low_watermark >= capacity:
+            raise ValueError(f"Invalid low watermark for {layer}: {low_watermark}")
+        return low_watermark
 
+
+# Watermarks fall through to ``previous_fibonacci``. Spelling them out as
+# 13/21/34/55 restated exactly what that function already returns, leaving an
+# override whose only real job was staying in sync by hand.
 DEFAULT_LAYER_POLICY = FibonacciLayerPolicy(
     order=("raw", "compressed", "summary", "long_term"),
     capacities=fib_capacities(("raw", "compressed", "summary", "long_term"), start=21),

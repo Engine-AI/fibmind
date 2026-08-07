@@ -1,0 +1,74 @@
+{
+  "name": "project_history",
+  "description": "Cross-session retrieval of implementation decisions and negative queries.",
+  "memories": [
+    {
+      "id": "agents_workflow",
+      "category": "instruction",
+      "title": "FibMind agent workflow",
+      "content": "Query FibMind before non-trivial work, append a concise result after implementation, and record outcomes when evidence confirms or refutes a memory.",
+      "tags": ["agents", "workflow"],
+      "scope": "knowledge",
+      "agents_md": true
+    },
+    {
+      "id": "mcp_sdk_v2",
+      "category": "decision",
+      "title": "MCP SDK 2 server API",
+      "content": "The startup error was fixed by pinning mcp>=2,<3 and importing MCPServer from mcp.server instead of FastMCP from mcp.server.fastmcp.",
+      "tags": ["mcp", "sdk", "startup"],
+      "scope": "personal",
+      "owner": "fibmind-team",
+      "hot": true
+    },
+    {
+      "id": "event_log_forget",
+      "category": "decision",
+      "title": "Forget must redact the event log",
+      "content": "The event log is the source of truth. Forget must tombstone earlier payload content, otherwise replay would resurrect the deleted memory.",
+      "tags": ["events", "forget", "replay"],
+      "scope": "personal",
+      "owner": "fibmind-team"
+    },
+    {
+      "id": "demo_json_store",
+      "category": "documentation",
+      "title": "JSON demo store",
+      "content": "The example program writes a small disposable JSON memory store for demonstrations.",
+      "tags": ["json", "demo"],
+      "scope": "personal",
+      "owner": "fibmind-team"
+    },
+    {
+      "id": "ranking_confidence",
+      "category": "decision",
+      "title": "Recall is not evidence",
+      "content": "Familiarity stays out of relevance ranking. Only confidence changed by a named external outcome is a trust signal.",
+      "tags": ["ranking", "confidence"],
+      "scope": "knowledge",
+      "hot": true
+    }
+  ],
+  "cases": [
+    {
+      "id": "mcp_startup_fix",
+      "query": "Which MCP SDK version and server import fixed the startup error?",
+      "relevant_ids": ["mcp_sdk_v2"],
+      "expected_answer_terms": ["mcp>=2,<3", "MCPServer", "mcp.server"],
+      "owner": "fibmind-team"
+    },
+    {
+      "id": "forget_replay",
+      "query": "Why must forget redact the event log during deletion?",
+      "relevant_ids": ["event_log_forget"],
+      "expected_answer_terms": ["source of truth", "replay", "resurrect"],
+      "owner": "fibmind-team"
+    },
+    {
+      "id": "unrelated_kubernetes",
+      "query": "How is the Kubernetes production deployment configured?",
+      "relevant_ids": [],
+      "owner": "fibmind-team"
+    }
+  ]
+}

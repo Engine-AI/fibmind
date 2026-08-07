@@ -52,11 +52,11 @@ class BuildContextTests(unittest.TestCase):
 
     def test_build_context_is_read_only_by_default(self) -> None:
         memory = self._memory()
-        before = {nid: (n.access_count, n.importance) for nid, n in memory.nodes.items()}
+        before = {nid: (n.access_count, n.familiarity) for nid, n in memory.nodes.items()}
 
         build_context(memory, "login token expiry")
 
-        after = {nid: (n.access_count, n.importance) for nid, n in memory.nodes.items()}
+        after = {nid: (n.access_count, n.familiarity) for nid, n in memory.nodes.items()}
         self.assertEqual(before, after)
 
     def test_build_context_reinforces_when_requested(self) -> None:
