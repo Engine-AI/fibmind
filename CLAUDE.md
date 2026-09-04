@@ -1,15 +1,29 @@
-# FibMind Memory
+# FibBrain
 
-FibMind is available as an MCP server providing long-term memory tools.
+FibBrain is the cognitive runtime. FibMind is the memory engine underneath.
+
+In this repo pass these identity fields on every `fibbrain_*` call:
+
+- `owner`: the human user if known, else `claude-code`
+- `workspace_id`: `fibmind`
+- `project_id`: `fibmind`
+- `session_id`: the current conversation or task id if you have one
 
 ## Before a task
 
-Call `fibmind_context` with the user's goal to recall relevant history. Use only
-the concise retrieved context — do not dump full memory into the conversation.
+Call `fibbrain_plan` with the user's objective and the current `workspace_id`,
+`project_id`, and `session_id`. Call `fibbrain_recall` when you need the context
+pack itself. Use only the concise retrieved context — do not dump full memory
+into the conversation.
+
+## Before acting
+
+Call `fibbrain_coordinate` to see which capabilities to involve next. Call
+`fibbrain_advise` when past evidence might say a specific tool should not run.
 
 ## After a task
 
-Call `fibmind_append` with:
+Call `fibbrain_remember` (not raw `fibmind_append`) with:
 
 - task goal
 - files changed
@@ -17,9 +31,11 @@ Call `fibmind_append` with:
 - errors encountered
 - verification commands
 
+The admit gate skips duplicates, raw dumps, and empty speculation.
+
 ## Whenever evidence appears
 
-Call `fibmind_record_outcome` with `verdict` (`confirmed` / `refuted`) and a
+Call `fibbrain_reflect` with `verdict` (`confirmed` / `refuted`) and a
 `source` naming what checked it. A stored memory starts unproven, and reading it
 back never makes it more trusted — recording outcomes is the only thing that
 changes how memories rank.
@@ -27,7 +43,7 @@ changes how memories rank.
 Evidence to record:
 
 - a fix you recorded made the tests pass → `confirmed`, source = the test command
-- a decision was later reverted → `refuted`, source = the revert commit
+- a decision that was later reverted → `refuted`, source = the revert commit
 - the user corrected advice you had stored → `refuted`, source = the correction
 
 In this repo the cheap checks are `pytest` and the demo script; prefer citing a
@@ -47,5 +63,6 @@ command that anyone can rerun over a summary of your own judgement.
 
 ## Lookup
 
-`fibmind_search` for specific past work by keyword; `fibmind_search_from` to
-expand the association tree around a returned `node_id`.
+`fibbrain_recall` is the default. `fibmind_search` / `fibmind_search_from` remain
+available for raw store inspection. `fibbrain_observe` notes a short-lived
+episode event that should not yet become long-term memory.

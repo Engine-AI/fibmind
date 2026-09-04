@@ -17,6 +17,14 @@ def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid4().hex}"
 
 
+def optional_id(value: str | None) -> str | None:
+    """Normalize an identity field: blank strings become ``None``."""
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
 class NodeType(StrEnum):
     RAW = "raw"
     COMPRESSED = "compressed"
@@ -152,6 +160,10 @@ class MemoryNode:
     metadata: dict[str, Any] = field(default_factory=dict)
     scope: MemoryScope = MemoryScope.PERSONAL
     owner: str | None = None
+    workspace_id: str | None = None
+    project_id: str | None = None
+    session_id: str | None = None
+    task_id: str | None = None
     status: MemoryStatus = MemoryStatus.ACTIVE
     status_reason: str | None = None
     # How often this node has been recalled. A cache derived from access
@@ -190,6 +202,10 @@ class MemoryNode:
             "metadata": self.metadata,
             "scope": self.scope.value,
             "owner": self.owner,
+            "workspace_id": self.workspace_id,
+            "project_id": self.project_id,
+            "session_id": self.session_id,
+            "task_id": self.task_id,
             "status": self.status.value,
             "status_reason": self.status_reason,
             "familiarity": self.familiarity,
@@ -221,6 +237,10 @@ class MemoryNode:
             metadata=data.get("metadata", {}),
             scope=MemoryScope(data.get("scope", MemoryScope.PERSONAL.value)),
             owner=data.get("owner"),
+            workspace_id=optional_id(data.get("workspace_id")),
+            project_id=optional_id(data.get("project_id")),
+            session_id=optional_id(data.get("session_id")),
+            task_id=optional_id(data.get("task_id")),
             status=MemoryStatus(data.get("status", MemoryStatus.ACTIVE.value)),
             status_reason=data.get("status_reason"),
             familiarity=float(familiarity),

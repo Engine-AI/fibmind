@@ -1,8 +1,32 @@
-# FibMind
+# FibBrain
 
-FibMind is a Python prototype for a Fibonacci Memory Graph.
+FibBrain is a cognitive runtime for agents. **FibMind** is the memory engine
+underneath it.
 
-It models long-term AI memory as:
+```text
+Agent  =  FibBrain (plan / recall / decide / coordinate / remember)
+       +  Harness  (run / execute / observe)
+       +  Plugins  (tools / MCP / models)
+```
+
+Brain v1 implements five capabilities on top of the existing store:
+
+| Action | Question |
+| --- | --- |
+| `plan` | What am I doing, and in what order? |
+| `recall` | What do I already know about this goal? |
+| `coordinate` | Which capabilities should the body involve next? |
+| `remember` | Is this worth writing into long-term memory? |
+| `observe` | What just happened in this episode? |
+| `advise` | Should this action run, given past evidence? |
+| `reflect` | Did a stored memory hold up? |
+
+It does not own an agent loop or a plugin manager. DeepSeek-Harness (or any
+other harness) stays the body. Planning is an explicit persisted goal, not a
+rewrite of the harness Goal service. Coordination names capabilities and
+advises them; it does not execute plugins.
+
+The memory engine models long-term knowledge as:
 
 - multiple category trees, forming a memory forest
 - an append-only event log as the source of truth, with nodes and edges as a
@@ -14,8 +38,9 @@ It models long-term AI memory as:
 - Fibonacci-sized layers for raw, compressed, summary, and long-term memory
 - graph edges between related nodes, plus local graph search
 
-The graph, ranking, context, and storage modules use only the Python standard
-library. The agent-facing server uses the MCP Python SDK 2.x.
+The graph, ranking, context, admission, and storage modules use only the Python
+standard library. The agent-facing server uses the MCP Python SDK 2.x. Prefer
+the `fibbrain_*` tools; `fibmind_*` remains the direct store API.
 
 > [!WARNING]
 > FibMind is currently a local, single-user prototype. Multi-owner isolation and
@@ -217,8 +242,16 @@ Recall and record:
 
 | Tool | Purpose |
 | --- | --- |
-| `fibmind_context` | Build a compact, char-bounded memory pack for a task goal. |
-| `fibmind_append` | Save one memory (task result, error, requirement, plan, code summary). |
+| `fibbrain_plan` | Create or refresh a persisted goal and its deterministic plan. |
+| `fibbrain_coordinate` | Recommend the next capabilities and advise each one. |
+| `fibbrain_complete_goal` | Mark a persisted goal complete; it stays recallable. |
+| `fibbrain_recall` | Recall a context pack for a goal inside the current working context. |
+| `fibbrain_remember` | Admit a candidate, then write it if it is worth keeping. |
+| `fibbrain_observe` | Note a short-lived episode event (not long-term memory). |
+| `fibbrain_advise` | Allow or reject an action given stored evidence. |
+| `fibbrain_reflect` | Record that a memory turned out right or wrong. |
+| `fibmind_context` | Direct store context pack (prefer `fibbrain_recall`). |
+| `fibmind_append` | Direct write that bypasses admit (prefer `fibbrain_remember`). |
 | `fibmind_search` | Rank memories by keyword relevance to a query (read-only). |
 | `fibmind_search_from` | Expand the association tree rooted at a node. |
 | `fibmind_link` | Create a typed relationship between two memories. |
@@ -233,11 +266,26 @@ Judgement and upkeep — the half that keeps the store from degrading:
 | `fibmind_forget` | Delete a memory permanently, including from log history. |
 | `fibmind_promote_knowledge` | Turn several observations into one shared claim. |
 
-`fibmind_context` before starting a task (recall) and `fibmind_append` after
-finishing one (record) are the two you call most — but a store that only ever
-appends degrades: nothing separates the memories that held up from the ones that
-were wrong. `fibmind_record_outcome` whenever evidence appears is what keeps
-ranking meaningful.
+`fibbrain_plan` then `fibbrain_recall` before starting a task, and
+`fibbrain_remember` after finishing one, are the calls you use most.
+`fibbrain_coordinate` names the next capabilities; `fibbrain_advise` can still
+be called directly for a specific action. `fibbrain_remember` will skip a
+duplicate or a dump. A store that only ever writes still degrades unless
+`fibbrain_reflect` records whether those memories held up.
+
+### Host check (this machine)
+
+Claude Code and Codex can both drive FibBrain over stdio MCP. A scripted
+feasibility pass already wrote isolated memories into `.fibmind/memory.db`:
+
+| Host | Result |
+| --- | --- |
+| Claude Code (`claude -p`) | `plan` → `remember` → `recall` → `coordinate` → `complete` |
+| Codex (`codex exec`) | same sequence, after per-server MCP auto-approve |
+
+Paste [`examples/host_mcp_prompt.md`](examples/host_mcp_prompt.md) into a **new**
+interactive session to repeat it by hand. Restart or open a new task after
+changing MCP config; an already-open session will not see the server.
 
 ### Register with Codex
 
@@ -264,13 +312,15 @@ server. You do not need to keep a separate terminal running the server; Codex
 launches the stdio process itself.
 
 To verify the connection from a new Codex task, ask it to call
-`fibmind_append` with a small test memory and then retrieve it with
-`fibmind_search`. This repository's `AGENTS.md` already tells Codex to:
+`fibbrain_remember` with a small test memory and then retrieve it with
+`fibbrain_recall`. This repository's `AGENTS.md` already tells Codex to:
 
-1. call `fibmind_context` before non-trivial work that may depend on history;
-2. call `fibmind_append` after implementation with decisions, changed files,
+1. call `fibbrain_plan` and `fibbrain_recall` before non-trivial work;
+2. call `fibbrain_coordinate` (or `fibbrain_advise`) before acting on a capability
+   that past evidence might block;
+3. call `fibbrain_remember` after implementation with decisions, changed files,
    tests, and unresolved risks; and
-3. call `fibmind_record_outcome`, `fibmind_revise`, `fibmind_mark_stale`, or
+4. call `fibbrain_reflect`, `fibmind_revise`, `fibmind_mark_stale`, or
    `fibmind_forget` when new evidence changes a stored memory.
 
 Remove the registration with `codex mcp remove fibmind`. See the
@@ -293,13 +343,15 @@ Then tell the agent when to use it via `CLAUDE.md` (Claude Code) or `AGENTS.md`
 
 ```text
 Codex / Claude Code
-        │ MCP tools
+        │ fibbrain_* / fibmind_* MCP tools
         ▼
-FibMind MCP Server        (src/fibmind/mcp_server.py — thin MCPServer wiring)
+MCP Server                (src/fibmind/mcp_server.py)
+        ▼
+FibBrain                  (plan / recall / coordinate / remember / observe / advise / reflect)
         ▼
 MemoryService             (src/fibmind/service.py — load/lock/persist)
         ▼
-FibMind Core              (graph, ranking, context)
+FibMind Core              (graph, ranking, context, admission)
         ▼
 event log  ──rebuild──▶  nodes / edges / trees
 (source of truth)        (cache, JsonStore or SqliteStore)
@@ -312,12 +364,14 @@ fsync, good for demos) or `.db` / `.sqlite` for `SqliteStore` (WAL, `BEGIN
 IMMEDIATE` transactions). Both persist the event log alongside the materialized
 state.
 
-SQLite schema v3 adds lifecycle `status` and `status_reason` fields. Schema v2
-introduced `scope`, `owner`, `familiarity`, `confidence`, `confidence_source`,
-`folded_into`, and the `event_log` table. Older databases upgrade in place on
-open: the old `importance` column becomes `familiarity` (confidence starts at
-zero, since nothing external ever backed those numbers), and nodes v1 folded by
-rewriting their layer recover a `folded_into` pointer.
+SQLite schema v4 adds `workspace_id`, `project_id`, `session_id`, and `task_id`
+so recall can isolate one working context from another. Schema v3 added
+lifecycle `status` and `status_reason`. Schema v2 introduced `scope`, `owner`,
+`familiarity`, `confidence`, `confidence_source`, `folded_into`, and the
+`event_log` table. Older databases upgrade in place on open: the old
+`importance` column becomes `familiarity` (confidence starts at zero, since
+nothing external ever backed those numbers), and nodes v1 folded by rewriting
+their layer recover a `folded_into` pointer.
 `fibmind-migrate` converts a JSON store to SQLite.
 
 ```bash

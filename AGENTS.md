@@ -1,23 +1,28 @@
-# FibMind Memory
+# FibBrain
 
-FibMind is available as an MCP server providing long-term memory tools.
+FibBrain is the cognitive runtime. FibMind is the memory engine underneath.
+
+In this repo pass these identity fields on every `fibbrain_*` call:
+
+- `owner`: the human user if known, else the host (`codex` or `claude-code`)
+- `workspace_id`: `fibmind`
+- `project_id`: `fibmind`
+- `session_id`: the current conversation or task id if you have one
 
 For non-trivial tasks:
 
-1. Query FibMind before planning if the task may depend on previous work
-   (`fibmind_context` with the goal, or `fibmind_search` for a specific lookup).
-2. Use only concise retrieved context, not full memory dumps.
-3. After implementation, append a memory record with `fibmind_append`:
-   - objective
-   - key decisions
-   - changed files
-   - tests run
-   - unresolved risks
-4. When you learn whether a stored memory was right, call
-   `fibmind_record_outcome` with `verdict` (`confirmed` / `refuted`) and a
-   `source` naming what checked it — a test command, a revert commit, a user
-   correction. Memories start unproven, and reading one back never makes it more
-   trusted; recorded outcomes are the only thing that affects ranking.
+1. Call `fibbrain_plan` with the objective and the current `workspace_id`,
+   `project_id`, and `session_id`. Then call `fibbrain_recall` if you need the
+   context pack itself. Use only the concise retrieved context.
+2. Call `fibbrain_coordinate` to see which capabilities to involve next, or
+   `fibbrain_advise` before a specific risky tool if past evidence might say
+   not to use it.
+3. After implementation, call `fibbrain_remember` (not raw `fibmind_append`)
+   with objective, key decisions, changed files, tests, and unresolved risks.
+   The admit gate skips duplicates, dumps, and empty speculation.
+4. When evidence appears, call `fibbrain_reflect` with `verdict`
+   (`confirmed` / `refuted`) and a `source` naming what checked it. Memories
+   start unproven; recorded outcomes are the only thing that affects ranking.
 
 Upkeep:
 

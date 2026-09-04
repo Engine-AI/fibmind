@@ -83,7 +83,7 @@ class JsonStore:
 class SqliteStore:
     """Transactional SQLite persistence for the complete memory graph."""
 
-    SCHEMA_VERSION = 3
+    SCHEMA_VERSION = 4
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
@@ -118,6 +118,10 @@ class SqliteStore:
                     metadata_json TEXT NOT NULL,
                     scope TEXT NOT NULL DEFAULT 'personal',
                     owner TEXT,
+                    workspace_id TEXT,
+                    project_id TEXT,
+                    session_id TEXT,
+                    task_id TEXT,
                     status TEXT NOT NULL DEFAULT 'active',
                     status_reason TEXT,
                     familiarity REAL NOT NULL DEFAULT 0.0,
@@ -185,6 +189,9 @@ class SqliteStore:
                     ON nodes(category, layer);
                 CREATE INDEX IF NOT EXISTS idx_nodes_type ON nodes(node_type);
                 CREATE INDEX IF NOT EXISTS idx_nodes_scope ON nodes(scope, owner);
+                CREATE INDEX IF NOT EXISTS idx_nodes_workspace
+                    ON nodes(workspace_id, project_id);
+                CREATE INDEX IF NOT EXISTS idx_nodes_session ON nodes(session_id);
                 CREATE INDEX IF NOT EXISTS idx_nodes_status ON nodes(status);
                 CREATE INDEX IF NOT EXISTS idx_edges_from ON edges(from_node_id);
                 CREATE INDEX IF NOT EXISTS idx_edges_to ON edges(to_node_id);
@@ -205,7 +212,8 @@ class SqliteStore:
         trust. It maps onto ``familiarity``; ``confidence`` starts at zero
         because nothing external ever backed those values. v3 adds lifecycle
         status so stale/refuted memories remain auditable without entering
-        normal recall.
+        normal recall. v4 adds workspace / project / session / task identity
+        so recall can isolate one working context from another.
         """
         row = connection.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
         if row is None or int(row["value"]) >= self.SCHEMA_VERSION:
@@ -223,6 +231,10 @@ class SqliteStore:
             "confidence": "REAL NOT NULL DEFAULT 0.0",
             "confidence_source": "TEXT",
             "folded_into": "TEXT",
+            "workspace_id": "TEXT",
+            "project_id": "TEXT",
+            "session_id": "TEXT",
+            "task_id": "TEXT",
         }
         for name, definition in additions.items():
             if name not in columns:
@@ -334,9 +346,10 @@ class SqliteStore:
             """
             INSERT INTO nodes(
                 id, title, content, category, node_type, layer, created_at, updated_at,
-                metadata_json, scope, owner, status, status_reason, familiarity,
+                metadata_json, scope, owner, workspace_id, project_id, session_id,
+                task_id, status, status_reason, familiarity,
                 access_count, confidence, confidence_source, folded_into, memory_weight
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 title=excluded.title,
                 content=excluded.content,
@@ -348,6 +361,10 @@ class SqliteStore:
                 metadata_json=excluded.metadata_json,
                 scope=excluded.scope,
                 owner=excluded.owner,
+                workspace_id=excluded.workspace_id,
+                project_id=excluded.project_id,
+                session_id=excluded.session_id,
+                task_id=excluded.task_id,
                 status=excluded.status,
                 status_reason=excluded.status_reason,
                 familiarity=excluded.familiarity,
@@ -370,6 +387,10 @@ class SqliteStore:
                     json.dumps(node.metadata, ensure_ascii=False, separators=(",", ":")),
                     node.scope.value,
                     node.owner,
+                    node.workspace_id,
+                    node.project_id,
+                    node.session_id,
+                    node.task_id,
                     node.status.value,
                     node.status_reason,
                     node.familiarity,

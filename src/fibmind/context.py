@@ -40,6 +40,10 @@ class ContextHit:
             "category": self.node.category,
             "layer": self.node.layer,
             "node_type": self.node.node_type.value,
+            "workspace_id": self.node.workspace_id,
+            "project_id": self.node.project_id,
+            "session_id": self.node.session_id,
+            "task_id": self.node.task_id,
             "score": round(self.score, 4),
             "source": self.source,
             "depth": self.depth,
@@ -95,6 +99,9 @@ def build_context(
     scopes: set[MemoryScope] | None = None,
     owner: str | None = None,
     statuses: set[MemoryStatus] | None = None,
+    workspace_id: str | None = None,
+    project_id: str | None = None,
+    session_id: str | None = None,
 ) -> ContextPack:
     """Assemble a context pack for ``goal``.
 
@@ -109,6 +116,9 @@ def build_context(
         scopes=scopes,
         owner=owner,
         statuses=statuses,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        session_id=session_id,
     )
     if not seeds:
         return ContextPack(goal=goal, hits=[], text="")
@@ -130,20 +140,30 @@ def build_context(
 
     if depth > 0:
         for seed in seeds:
-            for expansion in memory.search_from(seed.node.id, depth=depth, reinforce=reinforce):
+            for expansion in memory.search_from(
+                seed.node.id,
+                depth=depth,
+                reinforce=reinforce,
+                scopes=scopes,
+                owner=owner,
+                statuses=statuses,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                session_id=session_id,
+            ):
                 if expansion.node.id in seen:
                     continue
                 seen.add(expansion.node.id)
                 if expansion.node.node_type == NodeType.ROOT:
                     continue
-                # Expansion uses exactly the same status/scope/owner rules as a
-                # direct hit, or graph edges become a side door around recall
-                # isolation.
                 if not memory.is_visible(
                     expansion.node,
                     scopes=scopes,
                     owner=owner,
                     statuses=statuses,
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    session_id=session_id,
                 ):
                     continue
                 hits.append(
@@ -156,7 +176,17 @@ def build_context(
                 )
     elif reinforce:
         for seed in seeds:
-            memory.search_from(seed.node.id, depth=0, reinforce=True)
+            memory.search_from(
+                seed.node.id,
+                depth=0,
+                reinforce=True,
+                scopes=scopes,
+                owner=owner,
+                statuses=statuses,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                session_id=session_id,
+            )
 
     text = _render(hits, max_chars)
     return ContextPack(goal=goal, hits=hits, text=text)

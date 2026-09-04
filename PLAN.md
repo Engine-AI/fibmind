@@ -1,5 +1,8 @@
 # FibMind 判据化改造 Plan
 
+下一刀（身份模型）见 [`PLAN-identity.md`](PLAN-identity.md)。本文是已经落地的判据化改造记录。
+
+
 ## 背景诊断
 
 当前实现(1873 行 core)把工程投入全部放在**生成/供给侧**(store、检索、context 拼装),

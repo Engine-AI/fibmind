@@ -29,6 +29,10 @@ class MemoryFixture:
     tags: tuple[str, ...] = ()
     scope: str = MemoryScope.PERSONAL.value
     owner: str | None = None
+    workspace_id: str | None = None
+    project_id: str | None = None
+    session_id: str | None = None
+    task_id: str | None = None
     hot: bool = False
     agents_md: bool = False
     stale: bool = False
@@ -50,6 +54,10 @@ class MemoryFixture:
             tags=tuple(str(tag) for tag in data.get("tags", [])),
             scope=scope,
             owner=data.get("owner"),
+            workspace_id=data.get("workspace_id"),
+            project_id=data.get("project_id"),
+            session_id=data.get("session_id"),
+            task_id=data.get("task_id"),
             hot=bool(data.get("hot", False)),
             agents_md=bool(data.get("agents_md", False)),
             stale=bool(data.get("stale", False)),
@@ -68,6 +76,10 @@ class EvaluationCase:
     forbidden_ids: tuple[str, ...] = ()
     expected_answer_terms: tuple[str, ...] = ()
     owner: str | None = None
+    workspace_id: str | None = None
+    project_id: str | None = None
+    session_id: str | None = None
+    task_id: str | None = None
     scopes: tuple[str, ...] | None = None
     top_k: int | None = None
 
@@ -95,6 +107,10 @@ class EvaluationCase:
                 str(value) for value in data.get("expected_answer_terms", [])
             ),
             owner=data.get("owner"),
+            workspace_id=data.get("workspace_id"),
+            project_id=data.get("project_id"),
+            session_id=data.get("session_id"),
+            task_id=data.get("task_id"),
             scopes=scopes,
             top_k=int(top_k) if top_k is not None else None,
         )
@@ -256,6 +272,10 @@ class FibMindCurrentBaseline(Baseline):
                 },
                 scope=MemoryScope(fixture.scope),
                 owner=fixture.owner,
+                workspace_id=fixture.workspace_id,
+                project_id=fixture.project_id,
+                session_id=fixture.session_id,
+                task_id=fixture.task_id,
             )
             self.node_to_fixture[node_id] = fixture.id
             if fixture.stale:
@@ -277,6 +297,9 @@ class FibMindCurrentBaseline(Baseline):
             reinforce=False,
             scopes=scopes,
             owner=case.owner,
+            workspace_id=case.workspace_id,
+            project_id=case.project_id,
+            session_id=case.session_id,
         )
         ids: list[str] = []
         for hit in pack.hits:
@@ -298,6 +321,19 @@ def _is_visible(memory: MemoryFixture, case: EvaluationCase) -> bool:
     if case.scopes is not None and memory.scope not in case.scopes:
         return False
     if memory.scope != MemoryScope.KNOWLEDGE.value and memory.owner != case.owner:
+        return False
+    if memory.scope == MemoryScope.SESSION.value:
+        if not memory.session_id or not case.session_id or memory.session_id != case.session_id:
+            return False
+    if memory.scope == MemoryScope.KNOWLEDGE.value:
+        if memory.workspace_id is not None and memory.workspace_id != case.workspace_id:
+            return False
+        if memory.project_id is not None and memory.project_id != case.project_id:
+            return False
+        return True
+    if memory.workspace_id != case.workspace_id:
+        return False
+    if memory.project_id != case.project_id:
         return False
     return True
 

@@ -1,7 +1,7 @@
 [project]
 name = "fibmind"
 version = "0.1.0"
-description = "A Python prototype of FibMind, a Fibonacci forest graph for long-term AI memory."
+description = "FibBrain, a cognitive runtime for agents, backed by the FibMind memory engine."
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
@@ -17,6 +17,7 @@ dev = ["pytest>=8", "pytest-cov>=5"]
 
 [project.scripts]
 fibmind-mcp = "fibmind.mcp_server:main"
+fibbrain-mcp = "fibmind.mcp_server:main"
 fibmind-migrate = "fibmind.migrate:main"
 
 [build-system]

@@ -1,4 +1,8 @@
-"""FibMind MCP server: exposes long-term memory tools over stdio.
+"""FibBrain MCP server: cognitive tools plus the FibMind memory store.
+
+The ``fibbrain_*`` tools are the Brain protocol (plan / recall / coordinate /
+remember / observe / advise / reflect). The older ``fibmind_*`` tools stay as
+a direct store API.
 
 Run it directly::
 
@@ -8,10 +12,6 @@ Or register it with Claude Code::
 
     claude mcp add --scope project --transport stdio fibmind -- \\
         /path/to/.venv/bin/python -m fibmind.mcp_server --store .fibmind/memory.json
-
-The heavy lifting lives in :mod:`fibmind.service`; this module is only the thin
-FastMCP wiring so it can stay optional (the ``mcp`` dependency is not needed by
-the core package or its tests).
 """
 
 from __future__ import annotations
@@ -22,13 +22,31 @@ from typing import Any
 
 from mcp.server import MCPServer
 
+from fibmind.brain import BrainState, FibBrain
 from fibmind.service import MemoryService
 
 DEFAULT_STORE = ".fibmind/memory.db"
 
 
-def build_server(service: MemoryService) -> MCPServer:
-    """Create an MCP server whose tools delegate to ``service``."""
+def _state(
+    owner: str | None,
+    workspace_id: str | None,
+    project_id: str | None,
+    session_id: str | None,
+    task_id: str | None,
+) -> BrainState:
+    return BrainState(
+        owner=owner,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        session_id=session_id,
+        task_id=task_id,
+    )
+
+
+def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPServer:
+    """Create an MCP server whose tools delegate to ``service`` and ``brain``."""
+    brain = brain or FibBrain(service)
     mcp = MCPServer("fibmind")
 
     @mcp.tool()
@@ -40,6 +58,10 @@ def build_server(service: MemoryService) -> MCPServer:
         metadata: dict[str, Any] | None = None,
         scope: str = "personal",
         owner: str | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
     ) -> dict[str, Any]:
         """Save one memory (task result, error, requirement, plan, or code summary).
 
@@ -49,12 +71,26 @@ def build_server(service: MemoryService) -> MCPServer:
         "session" for scratch notes; shared knowledge is created through
         fibmind_promote_knowledge instead, which requires supporting evidence.
 
+        Pass the current ``workspace_id``, ``project_id``, and ``session_id`` so
+        later recall can keep one working context out of another. Session-scoped
+        scratch requires ``session_id``.
+
         A stored memory starts with zero confidence. When you later learn whether
         it was right, call fibmind_record_outcome — memories that are never
         checked stay unranked no matter how often they are read back.
         """
         return service.append(
-            category, title, content, tags=tags, metadata=metadata, scope=scope, owner=owner
+            category,
+            title,
+            content,
+            tags=tags,
+            metadata=metadata,
+            scope=scope,
+            owner=owner,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            session_id=session_id,
+            task_id=task_id,
         )
 
     @mcp.tool()
@@ -116,6 +152,10 @@ def build_server(service: MemoryService) -> MCPServer:
         supporting_node_ids: list[str],
         category: str = "knowledge",
         tags: list[str] | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
     ) -> dict[str, Any]:
         """Turn several observations into one shared, reusable claim.
 
@@ -130,7 +170,15 @@ def build_server(service: MemoryService) -> MCPServer:
         do next; if it is too abstract to act on, it is not worth promoting.
         """
         return service.promote_knowledge(
-            title, content, supporting_node_ids, category=category, tags=tags
+            title,
+            content,
+            supporting_node_ids,
+            category=category,
+            tags=tags,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            session_id=session_id,
+            task_id=task_id,
         )
 
     @mcp.tool()
@@ -166,12 +214,17 @@ def build_server(service: MemoryService) -> MCPServer:
         scopes: list[str] | None = None,
         owner: str | None = None,
         statuses: list[str] | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
     ) -> dict[str, Any]:
         """Search memories by keyword relevance to ``query``.
 
         Read-only. Returns the top ranked memories with their node_ids so you
         can expand or link them. Optionally restrict to ``categories`` or
         ``scopes``; pass ``owner`` to keep other owners' personal memories out.
+        Pass the current workspace / project / session so labelled memories
+        from another context stay out.
         """
         return service.search(
             query,
@@ -181,6 +234,9 @@ def build_server(service: MemoryService) -> MCPServer:
             scopes=scopes,
             owner=owner,
             statuses=statuses,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            session_id=session_id,
         )
 
     @mcp.tool()
@@ -190,13 +246,20 @@ def build_server(service: MemoryService) -> MCPServer:
         relation_types: list[str] | None = None,
         reinforce: bool = False,
         direction: str = "both",
+        scopes: list[str] | None = None,
+        owner: str | None = None,
+        statuses: list[str] | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
     ) -> dict[str, Any]:
         """Expand the association tree rooted at ``node_id`` up to ``depth`` hops.
 
         Use a node_id returned by fibmind_search or fibmind_context to explore
         related memories. ``reinforce`` marks traversed memories as familiar;
         note that this does not make them more trusted — only
-        fibmind_record_outcome does that.
+        fibmind_record_outcome does that. Invisible neighbours are not
+        traversed, so a graph edge cannot leak another project or session.
         """
         return service.search_from(
             node_id,
@@ -204,6 +267,12 @@ def build_server(service: MemoryService) -> MCPServer:
             relation_types=relation_types,
             reinforce=reinforce,
             direction=direction,
+            scopes=scopes,
+            owner=owner,
+            statuses=statuses,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            session_id=session_id,
         )
 
     @mcp.tool()
@@ -216,13 +285,17 @@ def build_server(service: MemoryService) -> MCPServer:
         scopes: list[str] | None = None,
         owner: str | None = None,
         statuses: list[str] | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
     ) -> dict[str, Any]:
         """Build a compact memory pack to load into context before a task.
 
         Call this at the START of a multi-step task with the user's goal. It
         searches for relevant history and expands related memories, returning a
         char-bounded ``text`` block ready to drop into your working context,
-        plus the structured ``hits``.
+        plus the structured ``hits``. Pass the current workspace / project /
+        session so recall stays inside this working context.
         """
         return service.context(
             goal,
@@ -233,13 +306,197 @@ def build_server(service: MemoryService) -> MCPServer:
             scopes=scopes,
             owner=owner,
             statuses=statuses,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            session_id=session_id,
+        )
+
+    @mcp.tool()
+    def fibbrain_recall(
+        goal: str,
+        top_k: int = 5,
+        depth: int = 1,
+        max_chars: int = 2000,
+        owner: str | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Recall what the brain already knows about a goal.
+
+        Call this at the start of a task. Pass the current workspace / project /
+        session so recall stays inside this working context. Prefer this over
+        fibmind_context — it also returns the short-lived episode log.
+        """
+        return brain.recall(
+            goal,
+            state=_state(owner, workspace_id, project_id, session_id, task_id),
+            top_k=top_k,
+            depth=depth,
+            max_chars=max_chars,
+        )
+
+    @mcp.tool()
+    def fibbrain_remember(
+        category: str,
+        title: str,
+        content: str,
+        tags: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+        scope: str = "personal",
+        owner: str | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Admit a candidate, then write it if it is worth keeping.
+
+        Use this after a task instead of raw fibmind_append. Duplicates, raw
+        dumps, and empty speculation are skipped and returned with a reason.
+        """
+        return brain.remember(
+            category,
+            title,
+            content,
+            tags=tags,
+            metadata=metadata,
+            scope=scope,
+            state=_state(owner, workspace_id, project_id, session_id, task_id),
+        )
+
+    @mcp.tool()
+    def fibbrain_observe(
+        kind: str,
+        summary: str,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Note a short-lived episode event (tool result, correction, turn end).
+
+        Observation is not long-term memory. Call fibbrain_remember when the
+        event should persist, or fibbrain_reflect when it judges an old memory.
+        """
+        return brain.observe(kind, summary, payload=payload)
+
+    @mcp.tool()
+    def fibbrain_advise(
+        action: str,
+        kind: str = "tool",
+        owner: str | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
+        top_k: int = 5,
+    ) -> dict[str, Any]:
+        """Ask whether an action should run, given stored evidence.
+
+        Rejects when a refuted memory with enough confidence warns against the
+        action. Otherwise allows and returns related memories as notes.
+        """
+        return brain.advise(
+            action,
+            kind=kind,
+            state=_state(owner, workspace_id, project_id, session_id, task_id),
+            top_k=top_k,
+        )
+
+    @mcp.tool()
+    def fibbrain_reflect(
+        verdict: str,
+        source: str,
+        node_id: str | None = None,
+        note: str | None = None,
+        goal: str | None = None,
+        owner: str | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Record that a memory turned out right or wrong.
+
+        Prefer this over fibmind_record_outcome. Pass ``node_id`` or a ``goal``
+        that recalls the memory. ``source`` must name what checked it.
+        """
+        return brain.reflect(
+            verdict,
+            source,
+            node_id=node_id,
+            note=note,
+            goal=goal,
+            state=_state(owner, workspace_id, project_id, session_id, task_id),
+        )
+
+    @mcp.tool()
+    def fibbrain_plan(
+        objective: str | None = None,
+        goal_id: str | None = None,
+        owner: str | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Create or refresh a persisted goal and its plan.
+
+        Call this at the start of a non-trivial task. The plan is deterministic:
+        recall first, then avoid/reuse steps from stored evidence, then the work
+        implied by the objective, then verify, then reflect and remember.
+        Pass ``goal_id`` to refresh an existing goal, or ``objective`` to create
+        one. The same objective in the same working context is reused.
+        """
+        return brain.plan(
+            objective=objective,
+            goal_id=goal_id,
+            state=_state(owner, workspace_id, project_id, session_id, task_id),
+        )
+
+    @mcp.tool()
+    def fibbrain_coordinate(
+        objective: str | None = None,
+        goal_id: str | None = None,
+        owner: str | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Recommend which capabilities to involve next, with an advise on each.
+
+        This is not a plugin manager and does not execute anything. Use it after
+        ``fibbrain_plan`` (or pass ``objective`` to plan first). A rejected
+        advise marks that capability blocked given stored evidence.
+        """
+        return brain.coordinate(
+            objective=objective,
+            goal_id=goal_id,
+            state=_state(owner, workspace_id, project_id, session_id, task_id),
+        )
+
+    @mcp.tool()
+    def fibbrain_complete_goal(
+        goal_id: str | None = None,
+        objective: str | None = None,
+        owner: str | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Mark a persisted goal complete. It stays recallable as history."""
+        return brain.complete_goal(
+            goal_id=goal_id,
+            objective=objective,
+            state=_state(owner, workspace_id, project_id, session_id, task_id),
         )
 
     return mcp
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(prog="fibmind.mcp_server", description="FibMind MCP server")
+    parser = argparse.ArgumentParser(prog="fibmind.mcp_server", description="FibBrain MCP server")
     parser.add_argument(
         "--store",
         default=DEFAULT_STORE,

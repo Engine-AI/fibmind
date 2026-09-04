@@ -5,10 +5,54 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = PROJECT_ROOT / "src"
 sys.path.insert(0, str(SRC_ROOT))
 
-from fibmind import EdgeDirection, FibMind, JsonStore, RelationType, Verdict
+from fibmind import (
+    BrainState,
+    EdgeDirection,
+    FibBrain,
+    FibMind,
+    JsonStore,
+    MemoryService,
+    RelationType,
+    Verdict,
+)
+
+
+def demo_brain() -> None:
+    output_path = PROJECT_ROOT / "data" / "demo-brain.json"
+    output_path.unlink(missing_ok=True)
+    brain = FibBrain(MemoryService(output_path))
+    state = BrainState(
+        owner="dev-a",
+        workspace_id="demo",
+        project_id="fibmind",
+        session_id="demo-session",
+    )
+
+    brain.remember(
+        "decision",
+        "Refresh tokens before retrying login",
+        "A 401 after token expiry is fixed by refreshing before the next request.",
+        state=state,
+    )
+    planned = brain.plan("Fix login 401 after token expiry", state=state)
+    coordinated = brain.coordinate(goal_id=planned["goal_id"], state=state)
+    recalled = brain.recall(planned["objective"], state=state)
+    brain.complete_goal(goal_id=planned["goal_id"], state=state)
+
+    print("FibBrain plan:")
+    for step in planned["steps"]:
+        print(f"- {step['title']} [{', '.join(step['capabilities'])}]")
+    print("\nFibBrain coordinate:")
+    for item in coordinated["capabilities"]:
+        print(f"- {item['capability']}: {item['advise']['verdict']} ({item['action']})")
+    print(f"\nFibBrain recall hits: {len(recalled['hits'])}")
+    print(f"Saved demo brain store to {output_path}")
 
 
 def main() -> None:
+    demo_brain()
+    print("\n--- FibMind store ---\n")
+
     memory = FibMind()
 
     code_bug = memory.append(

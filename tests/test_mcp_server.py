@@ -23,6 +23,14 @@ EXPECTED_TOOLS = {
     "fibmind_mark_stale",
     "fibmind_forget",
     "fibmind_promote_knowledge",
+    "fibbrain_recall",
+    "fibbrain_remember",
+    "fibbrain_observe",
+    "fibbrain_advise",
+    "fibbrain_reflect",
+    "fibbrain_plan",
+    "fibbrain_coordinate",
+    "fibbrain_complete_goal",
 }
 
 
@@ -93,6 +101,21 @@ class McpServerTests(unittest.TestCase):
 
                 ctx = await server.call_tool("fibmind_context", {"goal": "login token expiry"})
                 self.assertIn("Login bug", _result_json(ctx)["text"])
+
+                recalled = await server.call_tool(
+                    "fibbrain_recall",
+                    {"goal": "login token expiry"},
+                )
+                self.assertIn("Login bug", _result_json(recalled)["text"])
+                remembered = await server.call_tool(
+                    "fibbrain_remember",
+                    {
+                        "category": "decision",
+                        "title": "Retry policy",
+                        "content": "retry three times with backoff",
+                    },
+                )
+                self.assertEqual(_result_json(remembered)["verdict"], "write")
 
             asyncio.run(scenario())
 

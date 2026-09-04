@@ -11,6 +11,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from fibmind.admission import AdmitVerdict, MemoryCandidate, decide_admission
 from fibmind.context import build_context
 from fibmind.graph import FibMind, SearchHit
 from fibmind.models import (
@@ -36,6 +37,10 @@ def _node_summary(node: MemoryNode) -> dict[str, Any]:
         "tags": sorted(node.tags),
         "scope": node.scope.value,
         "owner": node.owner,
+        "workspace_id": node.workspace_id,
+        "project_id": node.project_id,
+        "session_id": node.session_id,
+        "task_id": node.task_id,
         "status": node.status.value,
         "status_reason": node.status_reason,
         "confidence": round(node.confidence, 4),
@@ -142,6 +147,10 @@ class MemoryService:
         metadata: dict[str, Any] | None = None,
         scope: str = MemoryScope.PERSONAL.value,
         owner: str | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
     ) -> dict[str, Any]:
         """Store a new memory and persist it. Returns the created node summary."""
         _require_text(category, "category")
@@ -163,9 +172,60 @@ class MemoryService:
                 metadata=metadata,
                 scope=parsed_scope,
                 owner=owner,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                session_id=session_id,
+                task_id=task_id,
             )
             tree_id = memory.category_roots[category]
             return {**_node_summary(memory.nodes[node_id]), "tree_id": tree_id}
+
+    def admit(self, candidate: MemoryCandidate) -> dict[str, Any]:
+        """Preview whether ``candidate`` would be written. Does not persist."""
+        with self._lock:
+            return decide_admission(self._store.load(), candidate).to_dict()
+
+    def remember(
+        self,
+        candidate: MemoryCandidate,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Admit then write inside one transaction. Skips are not persisted."""
+        with self._lock, self._store.transaction() as memory:
+            decision = decide_admission(memory, candidate)
+            payload = decision.to_dict()
+            if decision.verdict != AdmitVerdict.WRITE:
+                return payload
+            node_id = memory.append(
+                category=candidate.category,
+                title=candidate.title,
+                content=candidate.content,
+                tags=candidate.tags,
+                metadata=metadata,
+                scope=candidate.scope,
+                owner=candidate.owner,
+                workspace_id=candidate.workspace_id,
+                project_id=candidate.project_id,
+                session_id=candidate.session_id,
+                task_id=candidate.task_id,
+            )
+            payload.update(_node_summary(memory.nodes[node_id]))
+            payload["tree_id"] = memory.category_roots[candidate.category]
+            return payload
+
+    def inspect(self, node_id: str) -> dict[str, Any]:
+        """Return one node including content and metadata."""
+        _require_text(node_id, "node_id")
+        with self._lock:
+            memory = self._store.load()
+            node = memory.nodes.get(node_id)
+            if node is None:
+                raise ValueError(f"unknown node: {node_id}")
+            return {
+                **_node_summary(node),
+                "content": node.content,
+                "metadata": dict(node.metadata),
+            }
 
     def record_outcome(
         self,
@@ -230,6 +290,10 @@ class MemoryService:
         supporting_node_ids: list[str],
         category: str = "knowledge",
         tags: list[str] | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
     ) -> dict[str, Any]:
         """Distil several observations into one shareable claim."""
         _require_text(title, "title")
@@ -244,6 +308,10 @@ class MemoryService:
                     supporting_node_ids=supporting_node_ids,
                     category=category,
                     tags=tags,
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    session_id=session_id,
+                    task_id=task_id,
                 )
             except KeyError as exc:
                 raise ValueError(str(exc)) from exc
@@ -294,6 +362,9 @@ class MemoryService:
         scopes: list[str] | None = None,
         owner: str | None = None,
         statuses: list[str] | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
     ) -> dict[str, Any]:
         """Read-only keyword search over the whole forest."""
         _require_text(query, "query")
@@ -310,6 +381,9 @@ class MemoryService:
                 scopes=scope_set,
                 owner=owner,
                 statuses=status_set,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                session_id=session_id,
             )
             return {"query": query, "results": [_scored_hit_dict(hit) for hit in hits]}
 
@@ -320,10 +394,18 @@ class MemoryService:
         relation_types: list[str] | None = None,
         reinforce: bool = False,
         direction: str = TraversalDirection.BOTH.value,
+        scopes: list[str] | None = None,
+        owner: str | None = None,
+        statuses: list[str] | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
     ) -> dict[str, Any]:
         """Expand the association graph rooted at ``node_id``."""
         relations = _parse_relation_types(relation_types)
         traversal = _parse_traversal_direction(direction)
+        scope_set = _parse_scopes(scopes)
+        status_set = _parse_statuses(statuses)
 
         def execute(memory: FibMind) -> dict[str, Any]:
             try:
@@ -333,6 +415,12 @@ class MemoryService:
                     relation_types=relations,
                     reinforce=reinforce,
                     direction=traversal,
+                    scopes=scope_set,
+                    owner=owner,
+                    statuses=status_set,
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    session_id=session_id,
                 )
             except KeyError as exc:
                 raise ValueError(str(exc)) from exc
@@ -358,6 +446,9 @@ class MemoryService:
         scopes: list[str] | None = None,
         owner: str | None = None,
         statuses: list[str] | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
     ) -> dict[str, Any]:
         """Build a context-window-ready memory pack for a task goal."""
         _require_text(goal, "goal")
@@ -376,6 +467,9 @@ class MemoryService:
                         scopes=scope_set,
                         owner=owner,
                         statuses=status_set,
+                        workspace_id=workspace_id,
+                        project_id=project_id,
+                        session_id=session_id,
                     ).to_dict()
             return build_context(
                 self._store.load(),
@@ -387,4 +481,7 @@ class MemoryService:
                 scopes=scope_set,
                 owner=owner,
                 statuses=status_set,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                session_id=session_id,
             ).to_dict()

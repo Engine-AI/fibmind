@@ -1,0 +1,95 @@
+{
+  "name": "cross_project",
+  "description": "Workspace and project isolation, plus session-scoped scratch that must not leak.",
+  "memories": [
+    {
+      "id": "fibmind_retry",
+      "category": "decision",
+      "title": "Retry policy for uploads",
+      "content": "FibMind uploads retry three times with backoff before failing.",
+      "tags": ["retry", "uploads"],
+      "scope": "personal",
+      "owner": "alice",
+      "workspace_id": "ws-1",
+      "project_id": "fibmind"
+    },
+    {
+      "id": "other_retry",
+      "category": "decision",
+      "title": "Retry policy for uploads",
+      "content": "The other-app uploads fail immediately and never retry.",
+      "tags": ["retry", "uploads"],
+      "scope": "personal",
+      "owner": "alice",
+      "workspace_id": "ws-1",
+      "project_id": "other-app"
+    },
+    {
+      "id": "scratch_retry",
+      "category": "scratch",
+      "title": "Draft retry note",
+      "content": "Maybe uploads should retry forever. Just a scratch thought.",
+      "tags": ["retry", "draft"],
+      "scope": "session",
+      "owner": "alice",
+      "workspace_id": "ws-1",
+      "project_id": "fibmind",
+      "session_id": "sess-old"
+    },
+    {
+      "id": "fibmind_sqlite",
+      "category": "error",
+      "title": "SQLite migration refuse overwrite",
+      "content": "The FibMind migration refuses to overwrite an existing SQLite file.",
+      "tags": ["migration", "sqlite"],
+      "scope": "personal",
+      "owner": "alice",
+      "workspace_id": "ws-1",
+      "project_id": "fibmind",
+      "session_id": "sess-old"
+    }
+  ],
+  "cases": [
+    {
+      "id": "project_a_hides_b",
+      "query": "What is the retry policy for uploads?",
+      "relevant_ids": ["fibmind_retry"],
+      "forbidden_ids": ["other_retry", "scratch_retry"],
+      "expected_answer_terms": ["three times", "backoff"],
+      "owner": "alice",
+      "workspace_id": "ws-1",
+      "project_id": "fibmind"
+    },
+    {
+      "id": "project_b_hides_a",
+      "query": "What is the retry policy for uploads?",
+      "relevant_ids": ["other_retry"],
+      "forbidden_ids": ["fibmind_retry", "scratch_retry"],
+      "expected_answer_terms": ["fail immediately"],
+      "owner": "alice",
+      "workspace_id": "ws-1",
+      "project_id": "other-app"
+    },
+    {
+      "id": "session_scratch_stays_in_session",
+      "query": "Just a scratch thought about retrying forever",
+      "relevant_ids": [],
+      "forbidden_ids": ["scratch_retry"],
+      "owner": "alice",
+      "workspace_id": "ws-1",
+      "project_id": "fibmind",
+      "session_id": "sess-new"
+    },
+    {
+      "id": "personal_cross_session",
+      "query": "Why does the SQLite migration refuse to overwrite?",
+      "relevant_ids": ["fibmind_sqlite"],
+      "forbidden_ids": ["scratch_retry", "other_retry"],
+      "expected_answer_terms": ["refuses to overwrite"],
+      "owner": "alice",
+      "workspace_id": "ws-1",
+      "project_id": "fibmind",
+      "session_id": "sess-new"
+    }
+  ]
+}

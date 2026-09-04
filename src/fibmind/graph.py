@@ -21,6 +21,7 @@ from fibmind.models import (
     RelationType,
     TraversalDirection,
     Verdict,
+    optional_id,
     utc_now,
 )
 from fibmind.ranking import ScoredHit, rank_nodes
@@ -114,8 +115,20 @@ class FibMind:
         metadata: dict | None = None,
         scope: MemoryScope = MemoryScope.PERSONAL,
         owner: str | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
         auto_link: bool = True,
     ) -> str:
+        parsed_scope = MemoryScope(scope)
+        workspace_id = optional_id(workspace_id)
+        project_id = optional_id(project_id)
+        session_id = optional_id(session_id)
+        task_id = optional_id(task_id)
+        if parsed_scope == MemoryScope.SESSION and session_id is None:
+            raise ValueError("session-scoped memories require session_id")
+
         tree_id = self.create_tree(category)
         tree = self.trees[tree_id]
 
@@ -127,8 +140,12 @@ class FibMind:
             layer="raw",
             tags=set(tags or []),
             metadata=metadata or {},
-            scope=MemoryScope(scope),
+            scope=parsed_scope,
             owner=owner,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            session_id=session_id,
+            task_id=task_id,
         )
         node.tree_ids.add(tree_id)
         self._add_node(node)
@@ -158,13 +175,14 @@ class FibMind:
                 other
                 for other in self.nodes.values()
                 if other.id != node.id
-                and other.scope == node.scope
-                and other.status == MemoryStatus.ACTIVE
-                and (
-                    node.scope == MemoryScope.KNOWLEDGE
-                    or other.owner == node.owner
+                and self.is_visible(
+                    other,
+                    scopes={node.scope},
+                    owner=node.owner,
+                    workspace_id=node.workspace_id,
+                    project_id=node.project_id,
+                    session_id=node.session_id,
                 )
-                and other.folded_into is None
             ),
             f"{node.title} {node.content}",
             top_k=AUTO_LINK_TOP_K,
@@ -362,6 +380,10 @@ class FibMind:
         category: str = "knowledge",
         threshold: int = DEFAULT_PROMOTION_THRESHOLD,
         tags: Iterable[str] | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
     ) -> str:
         """Distil several personal observations into one shareable claim.
 
@@ -384,6 +406,9 @@ class FibMind:
         inactive = [supporter.id for supporter in supporters if supporter.status != MemoryStatus.ACTIVE]
         if inactive:
             raise ValueError(f"promotion supporters must be active memories: {inactive}")
+        workspace_id, project_id = self._promotion_identity(
+            supporters, workspace_id=workspace_id, project_id=project_id
+        )
 
         node_id = self.append(
             category=category,
@@ -392,6 +417,10 @@ class FibMind:
             tags=tags,
             metadata={"supporting_node_ids": unique_ids},
             scope=MemoryScope.KNOWLEDGE,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            session_id=session_id,
+            task_id=task_id,
             auto_link=False,
         )
         for supporter in supporters:
@@ -498,10 +527,14 @@ class FibMind:
             compact_weight = total_weight - self.layer_policy.low_watermark_for(layer)
             overflow = self._select_overflow_nodes(nodes, compact_weight)
             next_layer = self.layer_policy.next_layer(layer)
-            if next_layer is None:
-                self._archive_nodes(overflow)
-            else:
-                self._compress_nodes(category, layer, next_layer, overflow)
+            groups: dict[tuple, list[MemoryNode]] = {}
+            for node in overflow:
+                groups.setdefault(self._identity_key(node), []).append(node)
+            for group in groups.values():
+                if next_layer is None:
+                    self._archive_nodes(group)
+                else:
+                    self._compress_nodes(category, layer, next_layer, group)
 
     def search_from(
         self,
@@ -511,6 +544,13 @@ class FibMind:
         min_weight: float = 0.0,
         reinforce: bool = False,
         direction: TraversalDirection = TraversalDirection.BOTH,
+        scopes: set[MemoryScope] | None = None,
+        owner: str | None = None,
+        include_folded: bool = False,
+        statuses: set[MemoryStatus] | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
     ) -> list[SearchHit]:
         self._require_node(node_id)
         direction = TraversalDirection(direction)
@@ -519,6 +559,15 @@ class FibMind:
         ] = deque([(node_id, 0, None, None)])
         visited = {node_id}
         hits: list[SearchHit] = []
+        visibility = {
+            "scopes": scopes,
+            "owner": owner,
+            "include_folded": include_folded,
+            "statuses": statuses,
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "session_id": session_id,
+        }
 
         while queue:
             current_id, current_depth, via_relation, via_direction = queue.popleft()
@@ -544,6 +593,10 @@ class FibMind:
                     continue
                 if neighbor_id in visited:
                     continue
+                neighbor = self.nodes[neighbor_id]
+                if not self.is_visible(neighbor, **visibility):
+                    visited.add(neighbor_id)
+                    continue
                 visited.add(neighbor_id)
                 queue.append(
                     (neighbor_id, current_depth + 1, edge.relation_type, step_direction)
@@ -562,13 +615,17 @@ class FibMind:
         owner: str | None = None,
         include_folded: bool = False,
         statuses: set[MemoryStatus] | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
     ) -> list[ScoredHit]:
         """Rank all memory nodes by relevance to ``query``.
 
         Read-only: unlike ``search_from`` it never reinforces nodes. ``scopes``
         and ``owner`` keep one owner's personal memories out of another's
         results; folded nodes are excluded unless asked for, since their content
-        is represented by the node that absorbed them.
+        is represented by the node that absorbed them. Workspace and project
+        are exact-match labels: omitting them only sees unlabelled memories.
         """
         return rank_nodes(
             self._visible_nodes(
@@ -576,6 +633,9 @@ class FibMind:
                 owner=owner,
                 include_folded=include_folded,
                 statuses=statuses,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                session_id=session_id,
             ),
             query,
             top_k=top_k,
@@ -590,6 +650,9 @@ class FibMind:
         owner: str | None = None,
         include_folded: bool = False,
         statuses: set[MemoryStatus] | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
     ) -> list[MemoryNode]:
         """Nodes a given caller is allowed to recall.
 
@@ -605,6 +668,9 @@ class FibMind:
                 owner=owner,
                 include_folded=include_folded,
                 statuses=allowed_statuses,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                session_id=session_id,
             ):
                 visible.append(node)
         return visible
@@ -617,6 +683,9 @@ class FibMind:
         owner: str | None = None,
         include_folded: bool = False,
         statuses: set[MemoryStatus] | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
     ) -> bool:
         """Return whether ``node`` may be recalled by this caller."""
         allowed_statuses = statuses if statuses is not None else {MemoryStatus.ACTIVE}
@@ -628,7 +697,46 @@ class FibMind:
             return False
         if node.scope != MemoryScope.KNOWLEDGE and node.owner != owner:
             return False
+        if node.scope == MemoryScope.SESSION:
+            caller_session = optional_id(session_id)
+            if not node.session_id or not caller_session or node.session_id != caller_session:
+                return False
+        if node.scope == MemoryScope.KNOWLEDGE:
+            if node.workspace_id is not None and node.workspace_id != optional_id(workspace_id):
+                return False
+            if node.project_id is not None and node.project_id != optional_id(project_id):
+                return False
+            return True
+        if node.workspace_id != optional_id(workspace_id):
+            return False
+        if node.project_id != optional_id(project_id):
+            return False
         return True
+
+    def _identity_key(self, node: MemoryNode) -> tuple:
+        return (node.scope, node.owner, node.workspace_id, node.project_id)
+
+    def _promotion_identity(
+        self,
+        supporters: list[MemoryNode],
+        workspace_id: str | None,
+        project_id: str | None,
+    ) -> tuple[str | None, str | None]:
+        workspaces = {supporter.workspace_id for supporter in supporters}
+        projects = {supporter.project_id for supporter in supporters}
+        if len(workspaces) != 1 or len(projects) != 1:
+            raise ValueError(
+                "promotion supporters must share one workspace_id and one project_id"
+            )
+        inferred_workspace = next(iter(workspaces))
+        inferred_project = next(iter(projects))
+        requested_workspace = optional_id(workspace_id)
+        requested_project = optional_id(project_id)
+        if requested_workspace is not None and requested_workspace != inferred_workspace:
+            raise ValueError("promotion workspace_id does not match the supporting memories")
+        if requested_project is not None and requested_project != inferred_project:
+            raise ValueError("promotion project_id does not match the supporting memories")
+        return inferred_workspace, inferred_project
 
     def nodes_by_tree(self, tree_id: str) -> list[MemoryNode]:
         self._require_tree(tree_id)
@@ -644,6 +752,8 @@ class FibMind:
         target_layer: str,
         source_nodes: list[MemoryNode],
     ) -> str:
+        if source_nodes and len({self._identity_key(node) for node in source_nodes}) != 1:
+            return ""
         title = f"{category} {source_layer} compression ({len(source_nodes)} nodes)"
         summary = self._summarize(source_nodes)
         node_type = NodeType.COMPRESSED if target_layer == "compressed" else NodeType.SUMMARY
@@ -664,6 +774,10 @@ class FibMind:
             },
             scope=source_nodes[0].scope if source_nodes else MemoryScope.PERSONAL,
             owner=source_nodes[0].owner if source_nodes else None,
+            workspace_id=source_nodes[0].workspace_id if source_nodes else None,
+            project_id=source_nodes[0].project_id if source_nodes else None,
+            session_id=source_nodes[0].session_id if source_nodes else None,
+            task_id=source_nodes[0].task_id if source_nodes else None,
             confidence=max((node.confidence for node in source_nodes), default=0.0),
             memory_weight=sum(node.memory_weight for node in source_nodes),
         )
