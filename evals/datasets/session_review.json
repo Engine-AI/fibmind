@@ -1,0 +1,106 @@
+{
+  "name": "session_review",
+  "description": "A memory written by session review in one session must be recalled from the next session of the same owner and project, while the raw episode it came from stays out.",
+  "memories": [
+    {
+      "id": "review_summary_s1",
+      "category": "summary",
+      "title": "Session review: Fix flaky upload retry test",
+      "content": "Objective: Fix flaky upload retry test. Decisions: cap retry backoff at 8 seconds so the test finishes under the CI timeout. Recorded 1 decision(s), 1 verification(s), 2 file(s) touched.",
+      "tags": [
+        "fibbrain-review",
+        "session:s1"
+      ],
+      "scope": "personal",
+      "owner": "iroha",
+      "workspace_id": "fibmind",
+      "project_id": "fibmind",
+      "session_id": "s1"
+    },
+    {
+      "id": "review_verification_s1",
+      "category": "verification",
+      "title": "Verification for Fix flaky upload retry test",
+      "content": "Checks recorded while working on Fix flaky upload retry test:\n- 142 passed (`.venv/bin/pytest -q`)",
+      "tags": [
+        "fibbrain-review",
+        "session:s1"
+      ],
+      "scope": "personal",
+      "owner": "iroha",
+      "workspace_id": "fibmind",
+      "project_id": "fibmind",
+      "session_id": "s1"
+    },
+    {
+      "id": "episode_raw_s1",
+      "category": "episode",
+      "title": "tool_result: pytest",
+      "content": "pytest passed for the upload retry test",
+      "tags": [
+        "fibbrain-episode"
+      ],
+      "scope": "session",
+      "owner": "iroha",
+      "workspace_id": "fibmind",
+      "project_id": "fibmind",
+      "session_id": "s1",
+      "stale": true
+    },
+    {
+      "id": "other_project_review",
+      "category": "summary",
+      "title": "Session review: Fix upload retry in gateway",
+      "content": "Objective: Fix upload retry in gateway. Recorded 1 decision(s). Decisions: retry only idempotent uploads.",
+      "tags": [
+        "fibbrain-review",
+        "session:g1"
+      ],
+      "scope": "personal",
+      "owner": "iroha",
+      "workspace_id": "fibmind",
+      "project_id": "gateway",
+      "session_id": "g1"
+    }
+  ],
+  "cases": [
+    {
+      "id": "next_session_recalls_review",
+      "query": "What did we decide about the upload retry backoff last time?",
+      "relevant_ids": [
+        "review_summary_s1"
+      ],
+      "stale_ids": [
+        "episode_raw_s1"
+      ],
+      "forbidden_ids": [
+        "other_project_review"
+      ],
+      "expected_answer_terms": [
+        "8 seconds",
+        "CI timeout"
+      ],
+      "owner": "iroha",
+      "workspace_id": "fibmind",
+      "project_id": "fibmind",
+      "session_id": "s2"
+    },
+    {
+      "id": "next_session_finds_verification_command",
+      "query": "Which command verified the upload retry test fix?",
+      "relevant_ids": [
+        "review_verification_s1"
+      ],
+      "stale_ids": [
+        "episode_raw_s1"
+      ],
+      "expected_answer_terms": [
+        "pytest"
+      ],
+      "owner": "iroha",
+      "workspace_id": "fibmind",
+      "project_id": "fibmind",
+      "session_id": "s2"
+    }
+  ]
+}

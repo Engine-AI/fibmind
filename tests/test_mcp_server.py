@@ -31,6 +31,10 @@ EXPECTED_TOOLS = {
     "fibbrain_plan",
     "fibbrain_coordinate",
     "fibbrain_complete_goal",
+    "fibbrain_review_session",
+    "fibbrain_pending_reviews",
+    "fibbrain_approve_memory",
+    "fibbrain_reject_memory",
 }
 
 

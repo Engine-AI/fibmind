@@ -247,7 +247,10 @@ Recall and record:
 | `fibbrain_complete_goal` | Mark a persisted goal complete; it stays recallable. |
 | `fibbrain_recall` | Recall a context pack for a goal inside the current working context. |
 | `fibbrain_remember` | Admit a candidate, then write it if it is worth keeping. |
-| `fibbrain_observe` | Note a short-lived episode event (not long-term memory). |
+| `fibbrain_observe` | Note an episode event; persisted as session scratch when a `session_id` is given. |
+| `fibbrain_review_session` | Distil one session's episode into long-term candidates (`candidates` / `approve` / `auto`); idempotent. |
+| `fibbrain_pending_reviews` | List review memories waiting for approval. |
+| `fibbrain_approve_memory` / `fibbrain_reject_memory` | Let a pending review memory in, or retire it as stale. |
 | `fibbrain_advise` | Allow or reject an action given stored evidence. |
 | `fibbrain_reflect` | Record that a memory turned out right or wrong. |
 | `fibmind_context` | Direct store context pack (prefer `fibbrain_recall`). |

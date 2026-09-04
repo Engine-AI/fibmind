@@ -21,9 +21,22 @@ into the conversation.
 Call `fibbrain_coordinate` to see which capabilities to involve next. Call
 `fibbrain_advise` when past evidence might say a specific tool should not run.
 
+## During a task
+
+Call `fibbrain_observe` with the identity fields as things happen: `kind` of
+`decision`, `test` (with `payload.command`), `error`, `correction`, `risk`, or
+`tool_result` (with `payload.files` for changed paths). With a `session_id` the
+episode is persisted and only this session recalls it.
+
 ## After a task
 
-Call `fibbrain_remember` (not raw `fibmind_append`) with:
+Call `fibbrain_review_session(session_id, mode="approve")` first. It distils
+the episode into pending memories deterministically; approve the good ones
+with `fibbrain_approve_memory` and reject the rest. Running it twice writes
+nothing new.
+
+Then call `fibbrain_remember` (not raw `fibmind_append`) for anything the
+review could not derive, with:
 
 - task goal
 - files changed
@@ -64,5 +77,5 @@ command that anyone can rerun over a summary of your own judgement.
 ## Lookup
 
 `fibbrain_recall` is the default. `fibmind_search` / `fibmind_search_from` remain
-available for raw store inspection. `fibbrain_observe` notes a short-lived
-episode event that should not yet become long-term memory.
+available for raw store inspection. `fibbrain_observe` notes an episode event
+that is not yet long-term memory; `fibbrain_review_session` decides what is.

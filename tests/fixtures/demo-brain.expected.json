@@ -2,11 +2,12 @@
   "log_version": 1,
   "fixture": "data/demo-brain.json",
   "shape": {
-    "nodes": 4,
-    "edges": 2,
-    "trees": 2,
+    "nodes": 9,
+    "edges": 6,
+    "trees": 3,
     "categories": [
       "decision",
+      "episode",
       "goal"
     ]
   },
@@ -54,13 +55,17 @@
   ],
   "tools": [
     "fibbrain_advise",
+    "fibbrain_approve_memory",
     "fibbrain_complete_goal",
     "fibbrain_coordinate",
     "fibbrain_observe",
+    "fibbrain_pending_reviews",
     "fibbrain_plan",
     "fibbrain_recall",
     "fibbrain_reflect",
+    "fibbrain_reject_memory",
     "fibbrain_remember",
+    "fibbrain_review_session",
     "fibmind_append",
     "fibmind_context",
     "fibmind_forget",

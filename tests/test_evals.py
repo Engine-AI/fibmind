@@ -15,9 +15,10 @@ def test_bundled_datasets_are_valid_and_stable() -> None:
         "cross_project",
         "cross_session",
         "project_history",
+        "session_review",
         "stale_memory",
     ]
-    assert sum(len(dataset.cases) for dataset in datasets) == 15
+    assert sum(len(dataset.cases) for dataset in datasets) == 17
 
 
 def test_dataset_rejects_unknown_memory_reference(tmp_path: Path) -> None:
@@ -91,8 +92,8 @@ def test_no_relevant_case_is_reported_separately() -> None:
 def test_full_evaluation_compares_all_p0_baselines() -> None:
     report = run_evaluation(DEFAULT_DATASET_DIR, top_k=5)
 
-    assert report["configuration"]["dataset_count"] == 5
-    assert report["configuration"]["case_count"] == 15
+    assert report["configuration"]["dataset_count"] == 6
+    assert report["configuration"]["case_count"] == 17
     assert set(report["baselines"]) == {
         "no_memory",
         "agents_md",

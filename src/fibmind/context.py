@@ -102,6 +102,7 @@ def build_context(
     workspace_id: str | None = None,
     project_id: str | None = None,
     session_id: str | None = None,
+    exclude_categories: set[str] | None = None,
 ) -> ContextPack:
     """Assemble a context pack for ``goal``.
 
@@ -119,6 +120,7 @@ def build_context(
         workspace_id=workspace_id,
         project_id=project_id,
         session_id=session_id,
+        exclude_categories=exclude_categories,
     )
     if not seeds:
         return ContextPack(goal=goal, hits=[], text="")
@@ -155,6 +157,8 @@ def build_context(
                     continue
                 seen.add(expansion.node.id)
                 if expansion.node.node_type == NodeType.ROOT:
+                    continue
+                if exclude_categories and expansion.node.category in exclude_categories:
                     continue
                 if not memory.is_visible(
                     expansion.node,

@@ -120,6 +120,8 @@ class FibMind:
         session_id: str | None = None,
         task_id: str | None = None,
         auto_link: bool = True,
+        status: MemoryStatus = MemoryStatus.ACTIVE,
+        compress: bool = True,
     ) -> str:
         parsed_scope = MemoryScope(scope)
         workspace_id = optional_id(workspace_id)
@@ -146,6 +148,7 @@ class FibMind:
             project_id=project_id,
             session_id=session_id,
             task_id=task_id,
+            status=MemoryStatus(status),
         )
         node.tree_ids.add(tree_id)
         self._add_node(node)
@@ -160,8 +163,28 @@ class FibMind:
         )
         if auto_link:
             self._auto_link_similar(node)
-        self.compress_overflow(category)
+        if compress:
+            self.compress_overflow(category)
         return node.id
+
+    def set_status(self, node_id: str, status: MemoryStatus, reason: str) -> MemoryNode:
+        """Move a node between lifecycle states, recording why.
+
+        ``mark_stale`` is the common case; this is the general form used by the
+        review flow to approve (``pending`` → ``active``) or reject
+        (``pending`` → ``stale``) an automatically extracted memory.
+        """
+        node = self._require_node(node_id)
+        if not reason or not reason.strip():
+            raise ValueError("reason must explain the status change")
+        node.status = MemoryStatus(status)
+        node.status_reason = reason
+        node.updated_at = utc_now()
+        self._record(
+            EventOp.SET_STATUS,
+            {"node_id": node_id, "status": node.status.value, "reason": reason},
+        )
+        return node
 
     def _auto_link_similar(self, node: MemoryNode) -> None:
         """Connect a new node to its nearest existing neighbours.
@@ -618,6 +641,7 @@ class FibMind:
         workspace_id: str | None = None,
         project_id: str | None = None,
         session_id: str | None = None,
+        exclude_categories: set[str] | None = None,
     ) -> list[ScoredHit]:
         """Rank all memory nodes by relevance to ``query``.
 
@@ -640,6 +664,7 @@ class FibMind:
             query,
             top_k=top_k,
             categories=categories,
+            exclude_categories=exclude_categories,
             min_score=min_score,
             include_roots=include_roots,
         )

@@ -35,6 +35,8 @@ def _replayed_fixture() -> FibMind:
 
 
 def _answer(memory: FibMind, query: dict) -> list[str]:
+    """Run one fixed query the way ``fibbrain_recall`` does: active, visible,
+    episode scratch excluded."""
     hits = memory.search(
         query["query"],
         top_k=query.get("top_k", 5),
@@ -42,6 +44,7 @@ def _answer(memory: FibMind, query: dict) -> list[str]:
         workspace_id=query.get("workspace_id"),
         project_id=query.get("project_id"),
         session_id=query.get("session_id"),
+        exclude_categories=set(query.get("exclude_categories", ["episode"])),
     )
     return [hit.node.title for hit in hits]
 

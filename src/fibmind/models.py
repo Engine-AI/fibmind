@@ -85,11 +85,14 @@ class MemoryStatus(StrEnum):
     """Whether a memory may participate in normal recall.
 
     Inactive memories stay persisted for provenance and maintenance, but normal
-    search/context only sees ``ACTIVE`` nodes. ``FORGOTTEN`` is an audit state;
-    forgotten nodes themselves are deleted and their event payload is redacted.
+    search/context only sees ``ACTIVE`` nodes. ``PENDING`` is a memory written
+    by an automatic review that a human has not approved yet; it stays out of
+    recall until approved. ``FORGOTTEN`` is an audit state; forgotten nodes
+    themselves are deleted and their event payload is redacted.
     """
 
     ACTIVE = "active"
+    PENDING = "pending"
     STALE = "stale"
     REFUTED = "refuted"
     FORGOTTEN = "forgotten"

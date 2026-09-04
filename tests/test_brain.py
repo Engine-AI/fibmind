@@ -19,6 +19,11 @@ def _state(**overrides: str) -> BrainState:
     return BrainState(**base)
 
 
+def _review_hits(pack: dict) -> list[dict]:
+    """Hits written by session review; goals and hand-written memories are ignored."""
+    return [hit for hit in pack["hits"] if hit["category"] in {"summary", "verification", "code", "decision", "error", "correction", "risk"}]
+
+
 class FibBrainTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
@@ -79,12 +84,107 @@ class FibBrainTests(unittest.TestCase):
         self.assertEqual(result["verdict"], AdmitVerdict.SKIP.value)
 
     def test_observe_stays_in_the_episode_not_the_store(self) -> None:
-        event = self.brain.observe("tool_result", "pytest passed", {"command": "pytest -q"})
+        event = self.brain.observe("tool_result", "pytest passed", {"command": "pytest -q"}, state=_state())
         recalled = self.brain.recall("pytest passed", state=_state())
 
         self.assertEqual(event["kind"], "tool_result")
         self.assertEqual(recalled["hits"], [])
         self.assertEqual(recalled["episode"][0]["summary"], "pytest passed")
+        self.assertEqual(recalled["episode"][0]["node_id"], event["node_id"])
+
+    def test_observe_without_a_session_stays_in_process(self) -> None:
+        event = self.brain.observe("note", "no session here")
+        self.assertIsNone(event["node_id"])
+        recalled = self.brain.recall("no session here", state=BrainState(owner="alice"))
+        self.assertEqual(recalled["hits"], [])
+        self.assertEqual([item["summary"] for item in recalled["episode"]], ["no session here"])
+
+    def test_episode_survives_a_restart_and_stays_in_its_session(self) -> None:
+        store = Path(self._tmp.name) / "memory.json"
+        self.brain.observe("test", "142 passed", {"command": ".venv/bin/pytest -q"}, state=_state())
+
+        reopened = FibBrain(MemoryService(store))
+        same_session = reopened.recall("anything", state=_state())
+        other_session = reopened.recall("anything", state=_state(session_id="sess-2"))
+
+        self.assertEqual([item["summary"] for item in same_session["episode"]], ["142 passed"])
+        self.assertEqual(other_session["episode"], [])
+
+    def _observe_a_session(self) -> None:
+        state = _state()
+        self.brain.plan("Fix flaky upload retry test", state=state)
+        self.brain.observe("decision", "cap retry backoff at 8 seconds so the test finishes under the CI timeout", state=state)
+        self.brain.observe("tool_result", "edited files", {"files": ["src/upload.py", "tests/test_upload.py"]}, state=state)
+        self.brain.observe("test", "142 passed", {"command": ".venv/bin/pytest -q"}, state=state)
+        self.brain.observe("error", "first attempt timed out at 30s", state=state)
+
+    def test_review_session_candidates_mode_writes_nothing(self) -> None:
+        self._observe_a_session()
+        before = self.brain.recall("upload retry backoff", state=_state(session_id="sess-2"))["hits"]
+
+        report = self.brain.review_session(_state(), mode="candidates")
+        after = self.brain.recall("upload retry backoff", state=_state(session_id="sess-2"))["hits"]
+
+        self.assertEqual(report["objective"], "Fix flaky upload retry test")
+        categories = sorted(item["category"] for item in report["written"])
+        self.assertEqual(categories, ["code", "decision", "error", "summary", "verification"])
+        self.assertTrue(all("node_id" not in item for item in report["written"]))
+        self.assertEqual(before, after)
+
+    def test_review_session_approve_mode_holds_memories_until_approved(self) -> None:
+        self._observe_a_session()
+        report = self.brain.review_session(_state(), mode="approve")
+        next_session = _state(session_id="sess-2")
+
+        self.assertTrue(all(item["status"] == MemoryStatus.PENDING.value for item in report["written"]))
+        self.assertEqual(_review_hits(self.brain.recall("upload retry backoff CI timeout", state=next_session)), [])
+        pending = self.brain.pending_reviews(_state())
+        self.assertEqual(len(pending), len(report["written"]))
+
+        summary = next(item for item in report["written"] if item["category"] == "summary")
+        error = next(item for item in report["written"] if item["category"] == "error")
+        self.brain.approve_memory(summary["node_id"])
+        self.brain.reject_memory(error["node_id"], "not worth keeping")
+
+        hits = _review_hits(self.brain.recall("upload retry backoff CI timeout", state=next_session))
+        self.assertEqual([hit["node_id"] for hit in hits], [summary["node_id"]])
+        timed_out = _review_hits(self.brain.recall("attempt timed out", state=next_session))
+        self.assertNotIn(error["node_id"], [hit["node_id"] for hit in timed_out])
+        with self.assertRaises(ValueError):
+            self.brain.approve_memory(summary["node_id"])
+
+    def test_review_session_auto_mode_is_idempotent(self) -> None:
+        self._observe_a_session()
+        first = self.brain.review_session(_state(), mode="auto")
+        count_after_first = len(self.brain.recall("upload retry", state=_state(session_id="sess-2"), top_k=20)["hits"])
+
+        second = self.brain.review_session(_state(), mode="auto")
+        count_after_second = len(self.brain.recall("upload retry", state=_state(session_id="sess-2"), top_k=20)["hits"])
+
+        self.assertGreater(len(first["written"]), 0)
+        self.assertEqual(second["written"], [])
+        self.assertEqual(len(second["skipped"]), len(first["written"]))
+        self.assertTrue(all("duplicate" in item["admit"]["reason"] for item in second["skipped"]))
+        self.assertEqual(count_after_first, count_after_second)
+
+    def test_review_session_close_retires_the_episode(self) -> None:
+        self._observe_a_session()
+        report = self.brain.review_session(_state(), mode="auto", close=True)
+
+        self.assertGreater(report["closed_episodes"], 0)
+        self.assertEqual(self.brain.recall("anything", state=_state())["episode"], [])
+        again = self.brain.review_session(_state(), mode="candidates")
+        self.assertEqual(again["episode_count"], 0)
+
+    def test_review_memories_are_recalled_next_session_but_episode_is_not(self) -> None:
+        self._observe_a_session()
+        self.brain.review_session(_state(), mode="auto")
+        next_session = _state(session_id="sess-2")
+
+        hits = self.brain.recall("which command verified the upload retry fix", state=next_session)["hits"]
+        self.assertTrue(any(hit["category"] == "verification" for hit in hits))
+        self.assertFalse(any(hit["category"] == "episode" for hit in hits))
+        self.assertEqual(self.brain.review_session(next_session, mode="candidates")["candidates"], 0)
 
     def test_advise_allows_unknown_actions(self) -> None:
         decision = self.brain.advise("web_search", state=_state())

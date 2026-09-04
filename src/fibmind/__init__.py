@@ -23,6 +23,7 @@ from fibmind.models import (
     optional_id,
 )
 from fibmind.ranking import ScoredHit, rank_nodes, tokenize
+from fibmind.review import ReviewCandidate, ReviewMode, digest_episode, extract_candidates
 from fibmind.service import MemoryService
 from fibmind.storage import JsonStore, MemoryStore, SqliteStore, open_store
 
@@ -57,6 +58,8 @@ __all__ = [
     "ObservedEvent",
     "PlanStep",
     "RelationType",
+    "ReviewCandidate",
+    "ReviewMode",
     "ScoredHit",
     "SearchHit",
     "SqliteStore",
@@ -66,6 +69,8 @@ __all__ = [
     "brain_state",
     "build_context",
     "decide_admission",
+    "digest_episode",
+    "extract_candidates",
     "infer_capabilities",
     "synthesize_plan",
     "fib_capacities",

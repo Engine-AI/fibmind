@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, TypeVar
+
+T = TypeVar("T")
 
 from fibmind.admission import AdmitVerdict, MemoryCandidate, decide_admission
 from fibmind.context import build_context
@@ -109,6 +111,14 @@ def _parse_statuses(statuses: list[str] | None) -> set[MemoryStatus] | None:
         raise ValueError(f"Unknown status. Valid values: {valid}") from exc
 
 
+def _parse_status(status: str) -> MemoryStatus:
+    try:
+        return MemoryStatus(status)
+    except ValueError as exc:
+        valid = ", ".join(item.value for item in MemoryStatus)
+        raise ValueError(f"Unknown status. Valid values: {valid}") from exc
+
+
 def _parse_scope(scope: str) -> MemoryScope:
     try:
         return MemoryScope(scope)
@@ -137,6 +147,16 @@ class MemoryService:
     def __init__(self, store_path: str | Path) -> None:
         self._store: MemoryStore = open_store(store_path)
         self._lock = threading.RLock()
+
+    def read(self, fn: Callable[[FibMind], T]) -> T:
+        """Run ``fn`` against a loaded forest without persisting anything."""
+        with self._lock:
+            return fn(self._store.load())
+
+    def run(self, fn: Callable[[FibMind], T]) -> T:
+        """Run ``fn`` inside one store transaction; changes persist on return."""
+        with self._lock, self._store.transaction() as memory:
+            return fn(memory)
 
     def append(
         self,
@@ -264,6 +284,16 @@ class MemoryService:
             except KeyError as exc:
                 raise ValueError(str(exc)) from exc
             return _node_summary(node)
+
+    def set_status(self, node_id: str, status: str, reason: str) -> dict[str, Any]:
+        """Move a memory between lifecycle states (approve / reject a pending one)."""
+        parsed = _parse_status(status)
+        _require_text(reason, "reason")
+        with self._lock, self._store.transaction() as memory:
+            try:
+                return _node_summary(memory.set_status(node_id, parsed, reason))
+            except KeyError as exc:
+                raise ValueError(str(exc)) from exc
 
     def mark_stale(self, node_id: str, reason: str) -> dict[str, Any]:
         """Retire an outdated memory while preserving its provenance."""
@@ -449,11 +479,13 @@ class MemoryService:
         workspace_id: str | None = None,
         project_id: str | None = None,
         session_id: str | None = None,
+        exclude_categories: list[str] | None = None,
     ) -> dict[str, Any]:
         """Build a context-window-ready memory pack for a task goal."""
         _require_text(goal, "goal")
         scope_set = _parse_scopes(scopes)
         status_set = _parse_statuses(statuses)
+        excluded = set(exclude_categories) if exclude_categories else None
         with self._lock:
             if reinforce:
                 with self._store.transaction() as memory:
@@ -470,6 +502,7 @@ class MemoryService:
                         workspace_id=workspace_id,
                         project_id=project_id,
                         session_id=session_id,
+                        exclude_categories=excluded,
                     ).to_dict()
             return build_context(
                 self._store.load(),
@@ -484,4 +517,5 @@ class MemoryService:
                 workspace_id=workspace_id,
                 project_id=project_id,
                 session_id=session_id,
+                exclude_categories=excluded,
             ).to_dict()

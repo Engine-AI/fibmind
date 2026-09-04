@@ -177,6 +177,7 @@ def rank_nodes(
     categories: set[str] | None = None,
     min_score: float = 0.0,
     include_roots: bool = False,
+    exclude_categories: set[str] | None = None,
 ) -> list[ScoredHit]:
     """Rank nodes by relevance to ``query``.
 
@@ -193,6 +194,8 @@ def rank_nodes(
         if not include_roots and node.node_type == NodeType.ROOT:
             continue
         if categories is not None and node.category not in categories:
+            continue
+        if exclude_categories and node.category in exclude_categories:
             continue
         score, matched = score_node(node, query_terms)
         if score <= min_score:

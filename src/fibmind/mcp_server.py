@@ -371,13 +371,72 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
         kind: str,
         summary: str,
         payload: dict[str, Any] | None = None,
+        owner: str | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
     ) -> dict[str, Any]:
-        """Note a short-lived episode event (tool result, correction, turn end).
+        """Note an episode event (tool result, decision, test, error, correction).
 
-        Observation is not long-term memory. Call fibbrain_remember when the
-        event should persist, or fibbrain_reflect when it judges an old memory.
+        With a ``session_id`` the event is persisted as session-scoped scratch
+        that only this session can recall, and ``fibbrain_review_session`` can
+        later distil it. Use ``kind`` values ``decision``, ``test``, ``error``,
+        ``correction``, ``risk``, or ``tool_result``; put changed paths under
+        ``payload.files`` and the command under ``payload.command``. Observation
+        is not long-term memory: call fibbrain_remember for that.
         """
-        return brain.observe(kind, summary, payload=payload)
+        return brain.observe(
+            kind,
+            summary,
+            payload=payload,
+            state=_state(owner, workspace_id, project_id, session_id, task_id),
+        )
+
+    @mcp.tool()
+    def fibbrain_review_session(
+        session_id: str,
+        mode: str = "approve",
+        close: bool = False,
+        owner: str | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        task_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Distil one session's observations into long-term memory candidates.
+
+        Deterministic: decisions, errors, corrections, risks, a verification
+        record, the files touched, and one summary. ``mode`` is ``candidates``
+        (preview only), ``approve`` (write as pending until
+        fibbrain_approve_memory), or ``auto`` (write as active). Running it
+        twice writes nothing new. ``close`` retires the reviewed episode.
+        """
+        return brain.review_session(
+            _state(owner, workspace_id, project_id, session_id, task_id),
+            mode=mode,
+            close=close,
+        )
+
+    @mcp.tool()
+    def fibbrain_pending_reviews(
+        owner: str | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List review memories waiting for approval in this working context."""
+        return brain.pending_reviews(_state(owner, workspace_id, project_id, session_id, task_id))
+
+    @mcp.tool()
+    def fibbrain_approve_memory(node_id: str, reason: str = "approved by reviewer") -> dict[str, Any]:
+        """Let a pending review memory into normal recall."""
+        return brain.approve_memory(node_id, reason)
+
+    @mcp.tool()
+    def fibbrain_reject_memory(node_id: str, reason: str = "rejected by reviewer") -> dict[str, Any]:
+        """Retire a pending review memory; it stays inspectable as stale."""
+        return brain.reject_memory(node_id, reason)
 
     @mcp.tool()
     def fibbrain_advise(

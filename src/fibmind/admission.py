@@ -118,8 +118,9 @@ def _duplicate_of(memory: FibMind, candidate: MemoryCandidate) -> MemoryNode | N
     workspace_id = optional_id(candidate.workspace_id)
     project_id = optional_id(candidate.project_id)
     session_id = optional_id(candidate.session_id)
+    live = {MemoryStatus.ACTIVE, MemoryStatus.PENDING}
     for node in memory.nodes.values():
-        if node.status != MemoryStatus.ACTIVE or node.folded_into is not None:
+        if node.status not in live or node.folded_into is not None:
             continue
         if node.scope != candidate.scope:
             continue
