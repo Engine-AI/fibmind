@@ -7,6 +7,7 @@ from fibmind.context import ContextHit, ContextPack, build_context
 from fibmind.fibonacci import DEFAULT_LAYER_POLICY, FibonacciLayerPolicy, fib_capacities, fibonacci_numbers
 from fibmind.graph import FibMind, SearchHit
 from fibmind.models import (
+    LOG_VERSION,
     Edge,
     EdgeDirection,
     EventOp,
@@ -43,6 +44,7 @@ __all__ = [
     "GoalStatus",
     "FibonacciLayerPolicy",
     "JsonStore",
+    "LOG_VERSION",
     "MemoryCandidate",
     "MemoryEvent",
     "MemoryNode",

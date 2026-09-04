@@ -1,16 +1,17 @@
 {
+  "log_version": 1,
   "nodes": [
     {
-      "id": "node_b8a30050bd2f45278d9f8dfc9c926a5e",
+      "id": "node_2b06f3caf1f1430caaf391b3782ff20e",
       "title": "code root",
       "content": "",
       "category": "code",
       "node_type": "root",
       "layer": "long_term",
-      "created_at": "2026-09-03T06:28:37.128171+00:00",
-      "updated_at": "2026-09-03T06:28:37.128172+00:00",
+      "created_at": "2026-09-04T03:23:43.934540+00:00",
+      "updated_at": "2026-09-04T03:23:43.934541+00:00",
       "tree_ids": [
-        "tree_4a1fbf24face4858b1960a52564b2ed8"
+        "tree_9222525e436146829b01e7460524622f"
       ],
       "tags": [],
       "metadata": {},
@@ -30,16 +31,16 @@
       "memory_weight": 0
     },
     {
-      "id": "node_654f34b0fd1e4288bc1d5e08d90d85f1",
+      "id": "node_fc75c32495ec414a86871ff3827824c5",
       "title": "Login API returns 401",
       "content": "The login endpoint returns 401 after token expiry.",
       "category": "code",
       "node_type": "concept",
       "layer": "raw",
-      "created_at": "2026-09-03T06:28:37.128189+00:00",
-      "updated_at": "2026-09-03T06:28:37.128484+00:00",
+      "created_at": "2026-09-04T03:23:43.934556+00:00",
+      "updated_at": "2026-09-04T03:23:43.934765+00:00",
       "tree_ids": [
-        "tree_4a1fbf24face4858b1960a52564b2ed8"
+        "tree_9222525e436146829b01e7460524622f"
       ],
       "tags": [
         "auth",
@@ -63,16 +64,16 @@
       "memory_weight": 1
     },
     {
-      "id": "node_03524182d9b945c9919efa80364af8d2",
+      "id": "node_0ba399ddf31d4bb4bdd1ed7c237f263d",
       "title": "requirement root",
       "content": "",
       "category": "requirement",
       "node_type": "root",
       "layer": "long_term",
-      "created_at": "2026-09-03T06:28:37.128236+00:00",
-      "updated_at": "2026-09-03T06:28:37.128236+00:00",
+      "created_at": "2026-09-04T03:23:43.934594+00:00",
+      "updated_at": "2026-09-04T03:23:43.934594+00:00",
       "tree_ids": [
-        "tree_0ec47bddedde44e0b05abe8b9fa87264"
+        "tree_c283b99127644c428641e52f6dba8397"
       ],
       "tags": [],
       "metadata": {},
@@ -92,16 +93,16 @@
       "memory_weight": 0
     },
     {
-      "id": "node_a45098f3b6454e5ca170a8bd3cab777b",
+      "id": "node_51f597a006414b0f97ca774df760f165",
       "title": "Refresh token automatically",
       "content": "The product requires silent token refresh before API calls fail.",
       "category": "requirement",
       "node_type": "raw",
       "layer": "raw",
-      "created_at": "2026-09-03T06:28:37.128248+00:00",
-      "updated_at": "2026-09-03T06:28:37.128249+00:00",
+      "created_at": "2026-09-04T03:23:43.934606+00:00",
+      "updated_at": "2026-09-04T03:23:43.934606+00:00",
       "tree_ids": [
-        "tree_0ec47bddedde44e0b05abe8b9fa87264"
+        "tree_c283b99127644c428641e52f6dba8397"
       ],
       "tags": [
         "auth",
@@ -125,16 +126,16 @@
       "memory_weight": 1
     },
     {
-      "id": "node_5ba0020690df4460ba1b1b2529ec4d67",
+      "id": "node_e9ec159c39e442489ad6e7b587a1425c",
       "title": "Add request interceptor",
       "content": "Generate a request interceptor that refreshes tokens before retrying requests.",
       "category": "code",
       "node_type": "raw",
       "layer": "raw",
-      "created_at": "2026-09-03T06:28:37.128327+00:00",
-      "updated_at": "2026-09-03T06:28:37.128478+00:00",
+      "created_at": "2026-09-04T03:23:43.934662+00:00",
+      "updated_at": "2026-09-04T03:23:43.934761+00:00",
       "tree_ids": [
-        "tree_4a1fbf24face4858b1960a52564b2ed8"
+        "tree_9222525e436146829b01e7460524622f"
       ],
       "tags": [
         "auth",
@@ -158,16 +159,16 @@
       "memory_weight": 1
     },
     {
-      "id": "node_ed090ac21c81435ba6985ee6a95f22b5",
+      "id": "node_688f3c4b066944739ff129991baff5bc",
       "title": "Upload times out (dev-a)",
       "content": "Large uploads time out because the client has no retry budget.",
       "category": "code",
       "node_type": "raw",
       "layer": "raw",
-      "created_at": "2026-09-03T06:28:37.128590+00:00",
-      "updated_at": "2026-09-03T06:28:37.128591+00:00",
+      "created_at": "2026-09-04T03:23:43.934859+00:00",
+      "updated_at": "2026-09-04T03:23:43.934859+00:00",
       "tree_ids": [
-        "tree_4a1fbf24face4858b1960a52564b2ed8"
+        "tree_9222525e436146829b01e7460524622f"
       ],
       "tags": [
         "timeout",
@@ -190,16 +191,16 @@
       "memory_weight": 1
     },
     {
-      "id": "node_f21356675bfb4b798518501931c4c1f2",
+      "id": "node_fe72e1e83a414131afb7fa0458e1e47b",
       "title": "Upload times out (dev-b)",
       "content": "Large uploads time out because the client has no retry budget.",
       "category": "code",
       "node_type": "raw",
       "layer": "raw",
-      "created_at": "2026-09-03T06:28:37.128775+00:00",
-      "updated_at": "2026-09-03T06:28:37.128775+00:00",
+      "created_at": "2026-09-04T03:23:43.934950+00:00",
+      "updated_at": "2026-09-04T03:23:43.934951+00:00",
       "tree_ids": [
-        "tree_4a1fbf24face4858b1960a52564b2ed8"
+        "tree_9222525e436146829b01e7460524622f"
       ],
       "tags": [
         "timeout",
@@ -222,16 +223,16 @@
       "memory_weight": 1
     },
     {
-      "id": "node_dbd730d4f7a940c0bdb17b61766cffd5",
+      "id": "node_d9989c62e8cf4fb5b3cf84ab1182e0cf",
       "title": "Upload times out (dev-c)",
       "content": "Large uploads time out because the client has no retry budget.",
       "category": "code",
       "node_type": "raw",
       "layer": "raw",
-      "created_at": "2026-09-03T06:28:37.128829+00:00",
-      "updated_at": "2026-09-03T06:28:37.128829+00:00",
+      "created_at": "2026-09-04T03:23:43.934986+00:00",
+      "updated_at": "2026-09-04T03:23:43.934987+00:00",
       "tree_ids": [
-        "tree_4a1fbf24face4858b1960a52564b2ed8"
+        "tree_9222525e436146829b01e7460524622f"
       ],
       "tags": [
         "timeout",
@@ -254,16 +255,16 @@
       "memory_weight": 1
     },
     {
-      "id": "node_7df63749524d43b3b280978722b90cd0",
+      "id": "node_a50d4607145e47ceb59fde45ffc66ac6",
       "title": "knowledge root",
       "content": "",
       "category": "knowledge",
       "node_type": "root",
       "layer": "long_term",
-      "created_at": "2026-09-03T06:28:37.128873+00:00",
-      "updated_at": "2026-09-03T06:28:37.128873+00:00",
+      "created_at": "2026-09-04T03:23:43.935026+00:00",
+      "updated_at": "2026-09-04T03:23:43.935026+00:00",
       "tree_ids": [
-        "tree_47110fb8edc14dfd96e412c1b544b222"
+        "tree_9cda574ee86c4fd4ade2f527e9ccaef8"
       ],
       "tags": [],
       "metadata": {},
@@ -283,16 +284,16 @@
       "memory_weight": 0
     },
     {
-      "id": "node_5cd5ca40cd8a4e2cbf170811e7d7d852",
+      "id": "node_36cb6c79810d4a91ac8c6c348debb9bf",
       "title": "Uploads need an explicit retry budget",
       "content": "Clients uploading large files must set a retry budget; without one the request dies at the first transient timeout.",
       "category": "knowledge",
       "node_type": "raw",
       "layer": "raw",
-      "created_at": "2026-09-03T06:28:37.128885+00:00",
-      "updated_at": "2026-09-03T06:28:37.128885+00:00",
+      "created_at": "2026-09-04T03:23:43.935038+00:00",
+      "updated_at": "2026-09-04T03:23:43.935038+00:00",
       "tree_ids": [
-        "tree_47110fb8edc14dfd96e412c1b544b222"
+        "tree_9cda574ee86c4fd4ade2f527e9ccaef8"
       ],
       "tags": [
         "timeout",
@@ -300,9 +301,9 @@
       ],
       "metadata": {
         "supporting_node_ids": [
-          "node_ed090ac21c81435ba6985ee6a95f22b5",
-          "node_f21356675bfb4b798518501931c4c1f2",
-          "node_dbd730d4f7a940c0bdb17b61766cffd5"
+          "node_688f3c4b066944739ff129991baff5bc",
+          "node_fe72e1e83a414131afb7fa0458e1e47b",
+          "node_d9989c62e8cf4fb5b3cf84ab1182e0cf"
         ]
       },
       "scope": "knowledge",
@@ -323,198 +324,198 @@
   ],
   "edges": [
     {
-      "id": "edge_616110e2ec4c4fcbac9bc598badc9250",
-      "from_node_id": "node_b8a30050bd2f45278d9f8dfc9c926a5e",
-      "to_node_id": "node_654f34b0fd1e4288bc1d5e08d90d85f1",
+      "id": "edge_fba229e03a654181ad9d8457636800ed",
+      "from_node_id": "node_2b06f3caf1f1430caaf391b3782ff20e",
+      "to_node_id": "node_fc75c32495ec414a86871ff3827824c5",
       "relation_type": "tree_child",
       "weight": 1.0,
       "direction": "directed",
-      "created_at": "2026-09-03T06:28:37.128200+00:00",
+      "created_at": "2026-09-04T03:23:43.934565+00:00",
       "metadata": {}
     },
     {
-      "id": "edge_b46b5560a8004f0c86efa12aafe3791b",
-      "from_node_id": "node_03524182d9b945c9919efa80364af8d2",
-      "to_node_id": "node_a45098f3b6454e5ca170a8bd3cab777b",
+      "id": "edge_eddb27c9824c4d43ab8c94856a7bacb5",
+      "from_node_id": "node_0ba399ddf31d4bb4bdd1ed7c237f263d",
+      "to_node_id": "node_51f597a006414b0f97ca774df760f165",
       "relation_type": "tree_child",
       "weight": 1.0,
       "direction": "directed",
-      "created_at": "2026-09-03T06:28:37.128257+00:00",
+      "created_at": "2026-09-04T03:23:43.934614+00:00",
       "metadata": {}
     },
     {
-      "id": "edge_1af061c3af3648dfb0b3cd86a0079683",
-      "from_node_id": "node_b8a30050bd2f45278d9f8dfc9c926a5e",
-      "to_node_id": "node_5ba0020690df4460ba1b1b2529ec4d67",
+      "id": "edge_c9082e9b34a141a58c29b8f95a9661d8",
+      "from_node_id": "node_2b06f3caf1f1430caaf391b3782ff20e",
+      "to_node_id": "node_e9ec159c39e442489ad6e7b587a1425c",
       "relation_type": "tree_child",
       "weight": 1.0,
       "direction": "directed",
-      "created_at": "2026-09-03T06:28:37.128337+00:00",
+      "created_at": "2026-09-04T03:23:43.934670+00:00",
       "metadata": {}
     },
     {
-      "id": "edge_d7b8fdd736274134ac9e22a73ad7a2be",
-      "from_node_id": "node_654f34b0fd1e4288bc1d5e08d90d85f1",
-      "to_node_id": "node_a45098f3b6454e5ca170a8bd3cab777b",
+      "id": "edge_ab41e4b2cdf040ce8edbd56b885094fd",
+      "from_node_id": "node_fc75c32495ec414a86871ff3827824c5",
+      "to_node_id": "node_51f597a006414b0f97ca774df760f165",
       "relation_type": "caused_by",
       "weight": 0.85,
       "direction": "directed",
-      "created_at": "2026-09-03T06:28:37.128439+00:00",
+      "created_at": "2026-09-04T03:23:43.934735+00:00",
       "metadata": {}
     },
     {
-      "id": "edge_f16ea105457d42589190c9614de1cd72",
-      "from_node_id": "node_5ba0020690df4460ba1b1b2529ec4d67",
-      "to_node_id": "node_654f34b0fd1e4288bc1d5e08d90d85f1",
+      "id": "edge_69c3ae9e43cb4f3aa31da430a2ef43b5",
+      "from_node_id": "node_e9ec159c39e442489ad6e7b587a1425c",
+      "to_node_id": "node_fc75c32495ec414a86871ff3827824c5",
       "relation_type": "answer_to",
       "weight": 0.95,
       "direction": "directed",
-      "created_at": "2026-09-03T06:28:37.128445+00:00",
+      "created_at": "2026-09-04T03:23:43.934741+00:00",
       "metadata": {}
     },
     {
-      "id": "edge_eb0ed4a614744d90a312a0549eb54a19",
-      "from_node_id": "node_5ba0020690df4460ba1b1b2529ec4d67",
-      "to_node_id": "node_a45098f3b6454e5ca170a8bd3cab777b",
+      "id": "edge_363da0e7a19a4010b74d24cb4f179c7c",
+      "from_node_id": "node_e9ec159c39e442489ad6e7b587a1425c",
+      "to_node_id": "node_51f597a006414b0f97ca774df760f165",
       "relation_type": "derived_from",
       "weight": 0.9,
       "direction": "directed",
-      "created_at": "2026-09-03T06:28:37.128452+00:00",
+      "created_at": "2026-09-04T03:23:43.934747+00:00",
       "metadata": {}
     },
     {
-      "id": "edge_40a2dabf42484fa8a21e61cf8d476a81",
-      "from_node_id": "node_654f34b0fd1e4288bc1d5e08d90d85f1",
-      "to_node_id": "node_5ba0020690df4460ba1b1b2529ec4d67",
+      "id": "edge_3fa234ca589f44c2aac59a511df3112e",
+      "from_node_id": "node_fc75c32495ec414a86871ff3827824c5",
+      "to_node_id": "node_e9ec159c39e442489ad6e7b587a1425c",
       "relation_type": "related_to",
       "weight": 0.7,
       "direction": "bidirectional",
-      "created_at": "2026-09-03T06:28:37.128468+00:00",
+      "created_at": "2026-09-04T03:23:43.934754+00:00",
       "metadata": {}
     },
     {
-      "id": "edge_60870429197244f3bd764ea8d11b0fd9",
-      "from_node_id": "node_b8a30050bd2f45278d9f8dfc9c926a5e",
-      "to_node_id": "node_ed090ac21c81435ba6985ee6a95f22b5",
+      "id": "edge_551cfd14cb7e4d0891761d010669082d",
+      "from_node_id": "node_2b06f3caf1f1430caaf391b3782ff20e",
+      "to_node_id": "node_688f3c4b066944739ff129991baff5bc",
       "relation_type": "tree_child",
       "weight": 1.0,
       "direction": "directed",
-      "created_at": "2026-09-03T06:28:37.128600+00:00",
+      "created_at": "2026-09-04T03:23:43.934868+00:00",
       "metadata": {}
     },
     {
-      "id": "edge_e072b5dcb32e4f1785cd87696c1c6cdf",
-      "from_node_id": "node_b8a30050bd2f45278d9f8dfc9c926a5e",
-      "to_node_id": "node_f21356675bfb4b798518501931c4c1f2",
+      "id": "edge_e9e7f6604a594c68bb23192eceb7257c",
+      "from_node_id": "node_2b06f3caf1f1430caaf391b3782ff20e",
+      "to_node_id": "node_fe72e1e83a414131afb7fa0458e1e47b",
       "relation_type": "tree_child",
       "weight": 1.0,
       "direction": "directed",
-      "created_at": "2026-09-03T06:28:37.128785+00:00",
+      "created_at": "2026-09-04T03:23:43.934959+00:00",
       "metadata": {}
     },
     {
-      "id": "edge_48b80a703529433d937beaa2e7736c77",
-      "from_node_id": "node_b8a30050bd2f45278d9f8dfc9c926a5e",
-      "to_node_id": "node_dbd730d4f7a940c0bdb17b61766cffd5",
+      "id": "edge_be7455a3c7964d16a80baef89d1bec05",
+      "from_node_id": "node_2b06f3caf1f1430caaf391b3782ff20e",
+      "to_node_id": "node_d9989c62e8cf4fb5b3cf84ab1182e0cf",
       "relation_type": "tree_child",
       "weight": 1.0,
       "direction": "directed",
-      "created_at": "2026-09-03T06:28:37.128838+00:00",
+      "created_at": "2026-09-04T03:23:43.934994+00:00",
       "metadata": {}
     },
     {
-      "id": "edge_9d891670782343d49d61ba1b7043cc36",
-      "from_node_id": "node_7df63749524d43b3b280978722b90cd0",
-      "to_node_id": "node_5cd5ca40cd8a4e2cbf170811e7d7d852",
+      "id": "edge_879f05456d27426aba4473ce63af9e45",
+      "from_node_id": "node_a50d4607145e47ceb59fde45ffc66ac6",
+      "to_node_id": "node_36cb6c79810d4a91ac8c6c348debb9bf",
       "relation_type": "tree_child",
       "weight": 1.0,
       "direction": "directed",
-      "created_at": "2026-09-03T06:28:37.128893+00:00",
+      "created_at": "2026-09-04T03:23:43.935046+00:00",
       "metadata": {}
     },
     {
-      "id": "edge_990b4eb4bc4b4b7fbf42941405ed4f42",
-      "from_node_id": "node_5cd5ca40cd8a4e2cbf170811e7d7d852",
-      "to_node_id": "node_ed090ac21c81435ba6985ee6a95f22b5",
+      "id": "edge_27d11cdab78844d692172bbaeee2d94a",
+      "from_node_id": "node_36cb6c79810d4a91ac8c6c348debb9bf",
+      "to_node_id": "node_688f3c4b066944739ff129991baff5bc",
       "relation_type": "derived_from",
       "weight": 0.9,
       "direction": "directed",
-      "created_at": "2026-09-03T06:28:37.128904+00:00",
+      "created_at": "2026-09-04T03:23:43.935055+00:00",
       "metadata": {}
     },
     {
-      "id": "edge_b5578c82f8e34d8a95876318ddb749b3",
-      "from_node_id": "node_5cd5ca40cd8a4e2cbf170811e7d7d852",
-      "to_node_id": "node_f21356675bfb4b798518501931c4c1f2",
+      "id": "edge_f28e35d30bc04df98f11e33cd21a9dcc",
+      "from_node_id": "node_36cb6c79810d4a91ac8c6c348debb9bf",
+      "to_node_id": "node_fe72e1e83a414131afb7fa0458e1e47b",
       "relation_type": "derived_from",
       "weight": 0.9,
       "direction": "directed",
-      "created_at": "2026-09-03T06:28:37.128910+00:00",
+      "created_at": "2026-09-04T03:23:43.935061+00:00",
       "metadata": {}
     },
     {
-      "id": "edge_7d6dde7350c84db981b7585b61506487",
-      "from_node_id": "node_5cd5ca40cd8a4e2cbf170811e7d7d852",
-      "to_node_id": "node_dbd730d4f7a940c0bdb17b61766cffd5",
+      "id": "edge_e79ec71d6fe44993a066f81646d7f2f4",
+      "from_node_id": "node_36cb6c79810d4a91ac8c6c348debb9bf",
+      "to_node_id": "node_d9989c62e8cf4fb5b3cf84ab1182e0cf",
       "relation_type": "derived_from",
       "weight": 0.9,
       "direction": "directed",
-      "created_at": "2026-09-03T06:28:37.128916+00:00",
+      "created_at": "2026-09-04T03:23:43.935067+00:00",
       "metadata": {}
     }
   ],
   "trees": [
     {
-      "id": "tree_4a1fbf24face4858b1960a52564b2ed8",
+      "id": "tree_9222525e436146829b01e7460524622f",
       "category": "code",
       "title": "code",
-      "root_node_id": "node_b8a30050bd2f45278d9f8dfc9c926a5e",
-      "created_at": "2026-09-03T06:28:37.128176+00:00",
+      "root_node_id": "node_2b06f3caf1f1430caaf391b3782ff20e",
+      "created_at": "2026-09-04T03:23:43.934544+00:00",
       "metadata": {}
     },
     {
-      "id": "tree_0ec47bddedde44e0b05abe8b9fa87264",
+      "id": "tree_c283b99127644c428641e52f6dba8397",
       "category": "requirement",
       "title": "requirement",
-      "root_node_id": "node_03524182d9b945c9919efa80364af8d2",
-      "created_at": "2026-09-03T06:28:37.128239+00:00",
+      "root_node_id": "node_0ba399ddf31d4bb4bdd1ed7c237f263d",
+      "created_at": "2026-09-04T03:23:43.934597+00:00",
       "metadata": {}
     },
     {
-      "id": "tree_47110fb8edc14dfd96e412c1b544b222",
+      "id": "tree_9cda574ee86c4fd4ade2f527e9ccaef8",
       "category": "knowledge",
       "title": "knowledge",
-      "root_node_id": "node_7df63749524d43b3b280978722b90cd0",
-      "created_at": "2026-09-03T06:28:37.128876+00:00",
+      "root_node_id": "node_a50d4607145e47ceb59fde45ffc66ac6",
+      "created_at": "2026-09-04T03:23:43.935029+00:00",
       "metadata": {}
     }
   ],
   "category_roots": {
-    "code": "tree_4a1fbf24face4858b1960a52564b2ed8",
-    "requirement": "tree_0ec47bddedde44e0b05abe8b9fa87264",
-    "knowledge": "tree_47110fb8edc14dfd96e412c1b544b222"
+    "code": "tree_9222525e436146829b01e7460524622f",
+    "requirement": "tree_c283b99127644c428641e52f6dba8397",
+    "knowledge": "tree_9cda574ee86c4fd4ade2f527e9ccaef8"
   },
   "events": [
     {
-      "id": "event_55b496240a9443568c424a26f9d019ec",
+      "id": "event_9d14003a46694261970bf2556d406e56",
       "seq": 1,
       "op": "create_tree",
       "payload": {
-        "tree_id": "tree_4a1fbf24face4858b1960a52564b2ed8",
+        "tree_id": "tree_9222525e436146829b01e7460524622f",
         "category": "code",
         "title": "code",
-        "created_at": "2026-09-03T06:28:37.128176+00:00",
+        "created_at": "2026-09-04T03:23:43.934544+00:00",
         "root": {
-          "id": "node_b8a30050bd2f45278d9f8dfc9c926a5e",
+          "id": "node_2b06f3caf1f1430caaf391b3782ff20e",
           "title": "code root",
           "content": "",
           "category": "code",
           "node_type": "root",
           "layer": "long_term",
-          "created_at": "2026-09-03T06:28:37.128171+00:00",
-          "updated_at": "2026-09-03T06:28:37.128172+00:00",
+          "created_at": "2026-09-04T03:23:43.934540+00:00",
+          "updated_at": "2026-09-04T03:23:43.934541+00:00",
           "tree_ids": [
-            "tree_4a1fbf24face4858b1960a52564b2ed8"
+            "tree_9222525e436146829b01e7460524622f"
           ],
           "tags": [],
           "metadata": {},
@@ -534,24 +535,25 @@
           "memory_weight": 0
         }
       },
-      "created_at": "2026-09-03T06:28:37.128185+00:00"
+      "created_at": "2026-09-04T03:23:43.934552+00:00",
+      "log_version": 1
     },
     {
-      "id": "event_b9e59e1b0bfb43968b38bb1515cb2c17",
+      "id": "event_c5c752e639a7426894ff15b247cffaaa",
       "seq": 2,
       "op": "create_node",
       "payload": {
         "node": {
-          "id": "node_654f34b0fd1e4288bc1d5e08d90d85f1",
+          "id": "node_fc75c32495ec414a86871ff3827824c5",
           "title": "Login API returns 401",
           "content": "The login endpoint returns 401 after token expiry.",
           "category": "code",
           "node_type": "raw",
           "layer": "raw",
-          "created_at": "2026-09-03T06:28:37.128189+00:00",
-          "updated_at": "2026-09-03T06:28:37.128190+00:00",
+          "created_at": "2026-09-04T03:23:43.934556+00:00",
+          "updated_at": "2026-09-04T03:23:43.934556+00:00",
           "tree_ids": [
-            "tree_4a1fbf24face4858b1960a52564b2ed8"
+            "tree_9222525e436146829b01e7460524622f"
           ],
           "tags": [
             "auth",
@@ -575,46 +577,48 @@
           "memory_weight": 1
         }
       },
-      "created_at": "2026-09-03T06:28:37.128197+00:00"
+      "created_at": "2026-09-04T03:23:43.934562+00:00",
+      "log_version": 1
     },
     {
-      "id": "event_cc64063f3a644b3bbe64844ac35b49d6",
+      "id": "event_e9cd4e2464904670a68ef9cc7f59b5b0",
       "seq": 3,
       "op": "link",
       "payload": {
         "edge": {
-          "id": "edge_616110e2ec4c4fcbac9bc598badc9250",
-          "from_node_id": "node_b8a30050bd2f45278d9f8dfc9c926a5e",
-          "to_node_id": "node_654f34b0fd1e4288bc1d5e08d90d85f1",
+          "id": "edge_fba229e03a654181ad9d8457636800ed",
+          "from_node_id": "node_2b06f3caf1f1430caaf391b3782ff20e",
+          "to_node_id": "node_fc75c32495ec414a86871ff3827824c5",
           "relation_type": "tree_child",
           "weight": 1.0,
           "direction": "directed",
-          "created_at": "2026-09-03T06:28:37.128200+00:00",
+          "created_at": "2026-09-04T03:23:43.934565+00:00",
           "metadata": {}
         }
       },
-      "created_at": "2026-09-03T06:28:37.128205+00:00"
+      "created_at": "2026-09-04T03:23:43.934569+00:00",
+      "log_version": 1
     },
     {
-      "id": "event_dcd866e2133046168827956b331980c6",
+      "id": "event_13a7de75426148a289a474c019eccfe6",
       "seq": 4,
       "op": "create_tree",
       "payload": {
-        "tree_id": "tree_0ec47bddedde44e0b05abe8b9fa87264",
+        "tree_id": "tree_c283b99127644c428641e52f6dba8397",
         "category": "requirement",
         "title": "requirement",
-        "created_at": "2026-09-03T06:28:37.128239+00:00",
+        "created_at": "2026-09-04T03:23:43.934597+00:00",
         "root": {
-          "id": "node_03524182d9b945c9919efa80364af8d2",
+          "id": "node_0ba399ddf31d4bb4bdd1ed7c237f263d",
           "title": "requirement root",
           "content": "",
           "category": "requirement",
           "node_type": "root",
           "layer": "long_term",
-          "created_at": "2026-09-03T06:28:37.128236+00:00",
-          "updated_at": "2026-09-03T06:28:37.128236+00:00",
+          "created_at": "2026-09-04T03:23:43.934594+00:00",
+          "updated_at": "2026-09-04T03:23:43.934594+00:00",
           "tree_ids": [
-            "tree_0ec47bddedde44e0b05abe8b9fa87264"
+            "tree_c283b99127644c428641e52f6dba8397"
           ],
           "tags": [],
           "metadata": {},
@@ -634,24 +638,25 @@
           "memory_weight": 0
         }
       },
-      "created_at": "2026-09-03T06:28:37.128246+00:00"
+      "created_at": "2026-09-04T03:23:43.934603+00:00",
+      "log_version": 1
     },
     {
-      "id": "event_ec6ef18d5ebb463d896b8f1f3d0fd433",
+      "id": "event_56a9270f5a684f8ba7194acb9b4793ab",
       "seq": 5,
       "op": "create_node",
       "payload": {
         "node": {
-          "id": "node_a45098f3b6454e5ca170a8bd3cab777b",
+          "id": "node_51f597a006414b0f97ca774df760f165",
           "title": "Refresh token automatically",
           "content": "The product requires silent token refresh before API calls fail.",
           "category": "requirement",
           "node_type": "raw",
           "layer": "raw",
-          "created_at": "2026-09-03T06:28:37.128248+00:00",
-          "updated_at": "2026-09-03T06:28:37.128249+00:00",
+          "created_at": "2026-09-04T03:23:43.934606+00:00",
+          "updated_at": "2026-09-04T03:23:43.934606+00:00",
           "tree_ids": [
-            "tree_0ec47bddedde44e0b05abe8b9fa87264"
+            "tree_c283b99127644c428641e52f6dba8397"
           ],
           "tags": [
             "auth",
@@ -675,42 +680,44 @@
           "memory_weight": 1
         }
       },
-      "created_at": "2026-09-03T06:28:37.128254+00:00"
+      "created_at": "2026-09-04T03:23:43.934612+00:00",
+      "log_version": 1
     },
     {
-      "id": "event_b462d142222c45d1bf0b89341f417f5a",
+      "id": "event_a4324fed03b74c5abc5f34e4557ac0ee",
       "seq": 6,
       "op": "link",
       "payload": {
         "edge": {
-          "id": "edge_b46b5560a8004f0c86efa12aafe3791b",
-          "from_node_id": "node_03524182d9b945c9919efa80364af8d2",
-          "to_node_id": "node_a45098f3b6454e5ca170a8bd3cab777b",
+          "id": "edge_eddb27c9824c4d43ab8c94856a7bacb5",
+          "from_node_id": "node_0ba399ddf31d4bb4bdd1ed7c237f263d",
+          "to_node_id": "node_51f597a006414b0f97ca774df760f165",
           "relation_type": "tree_child",
           "weight": 1.0,
           "direction": "directed",
-          "created_at": "2026-09-03T06:28:37.128257+00:00",
+          "created_at": "2026-09-04T03:23:43.934614+00:00",
           "metadata": {}
         }
       },
-      "created_at": "2026-09-03T06:28:37.128260+00:00"
+      "created_at": "2026-09-04T03:23:43.934618+00:00",
+      "log_version": 1
     },
     {
-      "id": "event_dce5c0d9113c4f4cb7183484f4d55074",
+      "id": "event_d0f231251c16466daf19dbee059bf786",
       "seq": 7,
       "op": "create_node",
       "payload": {
         "node": {
-          "id": "node_5ba0020690df4460ba1b1b2529ec4d67",
+          "id": "node_e9ec159c39e442489ad6e7b587a1425c",
           "title": "Add request interceptor",
           "content": "Generate a request interceptor that refreshes tokens before retrying requests.",
           "category": "code",
           "node_type": "raw",
           "layer": "raw",
-          "created_at": "2026-09-03T06:28:37.128327+00:00",
-          "updated_at": "2026-09-03T06:28:37.128328+00:00",
+          "created_at": "2026-09-04T03:23:43.934662+00:00",
+          "updated_at": "2026-09-04T03:23:43.934662+00:00",
           "tree_ids": [
-            "tree_4a1fbf24face4858b1960a52564b2ed8"
+            "tree_9222525e436146829b01e7460524622f"
           ],
           "tags": [
             "auth",
@@ -734,104 +741,110 @@
           "memory_weight": 1
         }
       },
-      "created_at": "2026-09-03T06:28:37.128335+00:00"
+      "created_at": "2026-09-04T03:23:43.934668+00:00",
+      "log_version": 1
     },
     {
-      "id": "event_c493509538a24065824d3a75f9c0a396",
+      "id": "event_942e37d6ed3340a78ab785853a7e8ca1",
       "seq": 8,
       "op": "link",
       "payload": {
         "edge": {
-          "id": "edge_1af061c3af3648dfb0b3cd86a0079683",
-          "from_node_id": "node_b8a30050bd2f45278d9f8dfc9c926a5e",
-          "to_node_id": "node_5ba0020690df4460ba1b1b2529ec4d67",
+          "id": "edge_c9082e9b34a141a58c29b8f95a9661d8",
+          "from_node_id": "node_2b06f3caf1f1430caaf391b3782ff20e",
+          "to_node_id": "node_e9ec159c39e442489ad6e7b587a1425c",
           "relation_type": "tree_child",
           "weight": 1.0,
           "direction": "directed",
-          "created_at": "2026-09-03T06:28:37.128337+00:00",
+          "created_at": "2026-09-04T03:23:43.934670+00:00",
           "metadata": {}
         }
       },
-      "created_at": "2026-09-03T06:28:37.128341+00:00"
+      "created_at": "2026-09-04T03:23:43.934674+00:00",
+      "log_version": 1
     },
     {
-      "id": "event_a3e44dd50575482ebc36dee0331417ed",
+      "id": "event_c55555b8e69c4adca4580ff9c5193657",
       "seq": 9,
       "op": "link",
       "payload": {
         "edge": {
-          "id": "edge_d7b8fdd736274134ac9e22a73ad7a2be",
-          "from_node_id": "node_654f34b0fd1e4288bc1d5e08d90d85f1",
-          "to_node_id": "node_a45098f3b6454e5ca170a8bd3cab777b",
+          "id": "edge_ab41e4b2cdf040ce8edbd56b885094fd",
+          "from_node_id": "node_fc75c32495ec414a86871ff3827824c5",
+          "to_node_id": "node_51f597a006414b0f97ca774df760f165",
           "relation_type": "caused_by",
           "weight": 0.85,
           "direction": "directed",
-          "created_at": "2026-09-03T06:28:37.128439+00:00",
+          "created_at": "2026-09-04T03:23:43.934735+00:00",
           "metadata": {}
         }
       },
-      "created_at": "2026-09-03T06:28:37.128443+00:00"
+      "created_at": "2026-09-04T03:23:43.934739+00:00",
+      "log_version": 1
     },
     {
-      "id": "event_943f58fdae1d49cc8cae6e4649b85256",
+      "id": "event_fbf26e647c0f44eda8dc7642b28cf872",
       "seq": 10,
       "op": "link",
       "payload": {
         "edge": {
-          "id": "edge_f16ea105457d42589190c9614de1cd72",
-          "from_node_id": "node_5ba0020690df4460ba1b1b2529ec4d67",
-          "to_node_id": "node_654f34b0fd1e4288bc1d5e08d90d85f1",
+          "id": "edge_69c3ae9e43cb4f3aa31da430a2ef43b5",
+          "from_node_id": "node_e9ec159c39e442489ad6e7b587a1425c",
+          "to_node_id": "node_fc75c32495ec414a86871ff3827824c5",
           "relation_type": "answer_to",
           "weight": 0.95,
           "direction": "directed",
-          "created_at": "2026-09-03T06:28:37.128445+00:00",
+          "created_at": "2026-09-04T03:23:43.934741+00:00",
           "metadata": {}
         }
       },
-      "created_at": "2026-09-03T06:28:37.128449+00:00"
+      "created_at": "2026-09-04T03:23:43.934745+00:00",
+      "log_version": 1
     },
     {
-      "id": "event_ecf6a0a5992f421f8336f6bc67e806d9",
+      "id": "event_fd4a2800684f48f9ab64f4a6942ede45",
       "seq": 11,
       "op": "link",
       "payload": {
         "edge": {
-          "id": "edge_eb0ed4a614744d90a312a0549eb54a19",
-          "from_node_id": "node_5ba0020690df4460ba1b1b2529ec4d67",
-          "to_node_id": "node_a45098f3b6454e5ca170a8bd3cab777b",
+          "id": "edge_363da0e7a19a4010b74d24cb4f179c7c",
+          "from_node_id": "node_e9ec159c39e442489ad6e7b587a1425c",
+          "to_node_id": "node_51f597a006414b0f97ca774df760f165",
           "relation_type": "derived_from",
           "weight": 0.9,
           "direction": "directed",
-          "created_at": "2026-09-03T06:28:37.128452+00:00",
+          "created_at": "2026-09-04T03:23:43.934747+00:00",
           "metadata": {}
         }
       },
-      "created_at": "2026-09-03T06:28:37.128455+00:00"
+      "created_at": "2026-09-04T03:23:43.934751+00:00",
+      "log_version": 1
     },
     {
-      "id": "event_7cbc73bc289641ffadccd7b32b90a2c2",
+      "id": "event_25e0c40872ac41399e0b1c64b0217592",
       "seq": 12,
       "op": "link",
       "payload": {
         "edge": {
-          "id": "edge_40a2dabf42484fa8a21e61cf8d476a81",
-          "from_node_id": "node_654f34b0fd1e4288bc1d5e08d90d85f1",
-          "to_node_id": "node_5ba0020690df4460ba1b1b2529ec4d67",
+          "id": "edge_3fa234ca589f44c2aac59a511df3112e",
+          "from_node_id": "node_fc75c32495ec414a86871ff3827824c5",
+          "to_node_id": "node_e9ec159c39e442489ad6e7b587a1425c",
           "relation_type": "related_to",
           "weight": 0.7,
           "direction": "bidirectional",
-          "created_at": "2026-09-03T06:28:37.128468+00:00",
+          "created_at": "2026-09-04T03:23:43.934754+00:00",
           "metadata": {}
         }
       },
-      "created_at": "2026-09-03T06:28:37.128473+00:00"
+      "created_at": "2026-09-04T03:23:43.934758+00:00",
+      "log_version": 1
     },
     {
-      "id": "event_4537e87495ab4c5f80bc9541de40d12a",
+      "id": "event_258a783a219d49f0982103ade2f2c0c3",
       "seq": 13,
       "op": "observe",
       "payload": {
-        "node_id": "node_5ba0020690df4460ba1b1b2529ec4d67",
+        "node_id": "node_e9ec159c39e442489ad6e7b587a1425c",
         "verdict": "confirmed",
         "source": "pytest tests/test_auth.py::test_silent_refresh",
         "note": "interceptor removed the 401 retry loop",
@@ -839,34 +852,36 @@
         "status": "active",
         "status_reason": null
       },
-      "created_at": "2026-09-03T06:28:37.128482+00:00"
+      "created_at": "2026-09-04T03:23:43.934764+00:00",
+      "log_version": 1
     },
     {
-      "id": "event_4f04db36861c4f1e8d41795713a4dbcb",
+      "id": "event_6d47f3e8e1d74619aaeb8bcc600aee7d",
       "seq": 14,
       "op": "promote",
       "payload": {
-        "node_id": "node_654f34b0fd1e4288bc1d5e08d90d85f1",
+        "node_id": "node_fc75c32495ec414a86871ff3827824c5",
         "node_type": "concept"
       },
-      "created_at": "2026-09-03T06:28:37.128488+00:00"
+      "created_at": "2026-09-04T03:23:43.934768+00:00",
+      "log_version": 1
     },
     {
-      "id": "event_32be593dea1b42a48a56e90ecb84c121",
+      "id": "event_6f7935f252bd4f07b0e1211b0fa44335",
       "seq": 15,
       "op": "create_node",
       "payload": {
         "node": {
-          "id": "node_ed090ac21c81435ba6985ee6a95f22b5",
+          "id": "node_688f3c4b066944739ff129991baff5bc",
           "title": "Upload times out (dev-a)",
           "content": "Large uploads time out because the client has no retry budget.",
           "category": "code",
           "node_type": "raw",
           "layer": "raw",
-          "created_at": "2026-09-03T06:28:37.128590+00:00",
-          "updated_at": "2026-09-03T06:28:37.128591+00:00",
+          "created_at": "2026-09-04T03:23:43.934859+00:00",
+          "updated_at": "2026-09-04T03:23:43.934859+00:00",
           "tree_ids": [
-            "tree_4a1fbf24face4858b1960a52564b2ed8"
+            "tree_9222525e436146829b01e7460524622f"
           ],
           "tags": [
             "timeout",
@@ -889,42 +904,44 @@
           "memory_weight": 1
         }
       },
-      "created_at": "2026-09-03T06:28:37.128597+00:00"
+      "created_at": "2026-09-04T03:23:43.934866+00:00",
+      "log_version": 1
     },
     {
-      "id": "event_8cb4601ac8d04d2fa31803c7a3678362",
+      "id": "event_b53bacf4c7d94ec38fca944fd5d04220",
       "seq": 16,
       "op": "link",
       "payload": {
         "edge": {
-          "id": "edge_60870429197244f3bd764ea8d11b0fd9",
-          "from_node_id": "node_b8a30050bd2f45278d9f8dfc9c926a5e",
-          "to_node_id": "node_ed090ac21c81435ba6985ee6a95f22b5",
+          "id": "edge_551cfd14cb7e4d0891761d010669082d",
+          "from_node_id": "node_2b06f3caf1f1430caaf391b3782ff20e",
+          "to_node_id": "node_688f3c4b066944739ff129991baff5bc",
           "relation_type": "tree_child",
           "weight": 1.0,
           "direction": "directed",
-          "created_at": "2026-09-03T06:28:37.128600+00:00",
+          "created_at": "2026-09-04T03:23:43.934868+00:00",
           "metadata": {}
         }
       },
-      "created_at": "2026-09-03T06:28:37.128604+00:00"
+      "created_at": "2026-09-04T03:23:43.934872+00:00",
+      "log_version": 1
     },
     {
-      "id": "event_8e5f457483584b1aa6b14d53fb5e9da2",
+      "id": "event_01491e6d58ea4766ba298ddf1d8206eb",
       "seq": 17,
       "op": "create_node",
       "payload": {
         "node": {
-          "id": "node_f21356675bfb4b798518501931c4c1f2",
+          "id": "node_fe72e1e83a414131afb7fa0458e1e47b",
           "title": "Upload times out (dev-b)",
           "content": "Large uploads time out because the client has no retry budget.",
           "category": "code",
           "node_type": "raw",
           "layer": "raw",
-          "created_at": "2026-09-03T06:28:37.128775+00:00",
-          "updated_at": "2026-09-03T06:28:37.128775+00:00",
+          "created_at": "2026-09-04T03:23:43.934950+00:00",
+          "updated_at": "2026-09-04T03:23:43.934951+00:00",
           "tree_ids": [
-            "tree_4a1fbf24face4858b1960a52564b2ed8"
+            "tree_9222525e436146829b01e7460524622f"
           ],
           "tags": [
             "timeout",
@@ -947,42 +964,44 @@
           "memory_weight": 1
         }
       },
-      "created_at": "2026-09-03T06:28:37.128782+00:00"
+      "created_at": "2026-09-04T03:23:43.934956+00:00",
+      "log_version": 1
     },
     {
-      "id": "event_c7fb07eeef2f4b65bdc6e2fd85c126b2",
+      "id": "event_8a04dfca80634428a3bb3ba983028e0a",
       "seq": 18,
       "op": "link",
       "payload": {
         "edge": {
-          "id": "edge_e072b5dcb32e4f1785cd87696c1c6cdf",
-          "from_node_id": "node_b8a30050bd2f45278d9f8dfc9c926a5e",
-          "to_node_id": "node_f21356675bfb4b798518501931c4c1f2",
+          "id": "edge_e9e7f6604a594c68bb23192eceb7257c",
+          "from_node_id": "node_2b06f3caf1f1430caaf391b3782ff20e",
+          "to_node_id": "node_fe72e1e83a414131afb7fa0458e1e47b",
           "relation_type": "tree_child",
           "weight": 1.0,
           "direction": "directed",
-          "created_at": "2026-09-03T06:28:37.128785+00:00",
+          "created_at": "2026-09-04T03:23:43.934959+00:00",
           "metadata": {}
         }
       },
-      "created_at": "2026-09-03T06:28:37.128788+00:00"
+      "created_at": "2026-09-04T03:23:43.934962+00:00",
+      "log_version": 1
     },
     {
-      "id": "event_f56f93b3eff14eb9846483139713bf53",
+      "id": "event_12799e5e6c694cc4aa1429afb4a427a4",
       "seq": 19,
       "op": "create_node",
       "payload": {
         "node": {
-          "id": "node_dbd730d4f7a940c0bdb17b61766cffd5",
+          "id": "node_d9989c62e8cf4fb5b3cf84ab1182e0cf",
           "title": "Upload times out (dev-c)",
           "content": "Large uploads time out because the client has no retry budget.",
           "category": "code",
           "node_type": "raw",
           "layer": "raw",
-          "created_at": "2026-09-03T06:28:37.128829+00:00",
-          "updated_at": "2026-09-03T06:28:37.128829+00:00",
+          "created_at": "2026-09-04T03:23:43.934986+00:00",
+          "updated_at": "2026-09-04T03:23:43.934987+00:00",
           "tree_ids": [
-            "tree_4a1fbf24face4858b1960a52564b2ed8"
+            "tree_9222525e436146829b01e7460524622f"
           ],
           "tags": [
             "timeout",
@@ -1005,46 +1024,48 @@
           "memory_weight": 1
         }
       },
-      "created_at": "2026-09-03T06:28:37.128835+00:00"
+      "created_at": "2026-09-04T03:23:43.934992+00:00",
+      "log_version": 1
     },
     {
-      "id": "event_9f0783df8c4048f683104000a95d5fe3",
+      "id": "event_1818e95cd5ed45a6ae21b265620b3be4",
       "seq": 20,
       "op": "link",
       "payload": {
         "edge": {
-          "id": "edge_48b80a703529433d937beaa2e7736c77",
-          "from_node_id": "node_b8a30050bd2f45278d9f8dfc9c926a5e",
-          "to_node_id": "node_dbd730d4f7a940c0bdb17b61766cffd5",
+          "id": "edge_be7455a3c7964d16a80baef89d1bec05",
+          "from_node_id": "node_2b06f3caf1f1430caaf391b3782ff20e",
+          "to_node_id": "node_d9989c62e8cf4fb5b3cf84ab1182e0cf",
           "relation_type": "tree_child",
           "weight": 1.0,
           "direction": "directed",
-          "created_at": "2026-09-03T06:28:37.128838+00:00",
+          "created_at": "2026-09-04T03:23:43.934994+00:00",
           "metadata": {}
         }
       },
-      "created_at": "2026-09-03T06:28:37.128841+00:00"
+      "created_at": "2026-09-04T03:23:43.934998+00:00",
+      "log_version": 1
     },
     {
-      "id": "event_b53b8207b1ae4214bcd3ce113f03184a",
+      "id": "event_ac296e9c71164994a7319269b92587dc",
       "seq": 21,
       "op": "create_tree",
       "payload": {
-        "tree_id": "tree_47110fb8edc14dfd96e412c1b544b222",
+        "tree_id": "tree_9cda574ee86c4fd4ade2f527e9ccaef8",
         "category": "knowledge",
         "title": "knowledge",
-        "created_at": "2026-09-03T06:28:37.128876+00:00",
+        "created_at": "2026-09-04T03:23:43.935029+00:00",
         "root": {
-          "id": "node_7df63749524d43b3b280978722b90cd0",
+          "id": "node_a50d4607145e47ceb59fde45ffc66ac6",
           "title": "knowledge root",
           "content": "",
           "category": "knowledge",
           "node_type": "root",
           "layer": "long_term",
-          "created_at": "2026-09-03T06:28:37.128873+00:00",
-          "updated_at": "2026-09-03T06:28:37.128873+00:00",
+          "created_at": "2026-09-04T03:23:43.935026+00:00",
+          "updated_at": "2026-09-04T03:23:43.935026+00:00",
           "tree_ids": [
-            "tree_47110fb8edc14dfd96e412c1b544b222"
+            "tree_9cda574ee86c4fd4ade2f527e9ccaef8"
           ],
           "tags": [],
           "metadata": {},
@@ -1064,24 +1085,25 @@
           "memory_weight": 0
         }
       },
-      "created_at": "2026-09-03T06:28:37.128882+00:00"
+      "created_at": "2026-09-04T03:23:43.935035+00:00",
+      "log_version": 1
     },
     {
-      "id": "event_eb762e9076684874b67a9c00e2ce88e9",
+      "id": "event_21e07026c936405b9e6907cbd68b9f80",
       "seq": 22,
       "op": "create_node",
       "payload": {
         "node": {
-          "id": "node_5cd5ca40cd8a4e2cbf170811e7d7d852",
+          "id": "node_36cb6c79810d4a91ac8c6c348debb9bf",
           "title": "Uploads need an explicit retry budget",
           "content": "Clients uploading large files must set a retry budget; without one the request dies at the first transient timeout.",
           "category": "knowledge",
           "node_type": "raw",
           "layer": "raw",
-          "created_at": "2026-09-03T06:28:37.128885+00:00",
-          "updated_at": "2026-09-03T06:28:37.128885+00:00",
+          "created_at": "2026-09-04T03:23:43.935038+00:00",
+          "updated_at": "2026-09-04T03:23:43.935038+00:00",
           "tree_ids": [
-            "tree_47110fb8edc14dfd96e412c1b544b222"
+            "tree_9cda574ee86c4fd4ade2f527e9ccaef8"
           ],
           "tags": [
             "timeout",
@@ -1089,9 +1111,9 @@
           ],
           "metadata": {
             "supporting_node_ids": [
-              "node_ed090ac21c81435ba6985ee6a95f22b5",
-              "node_f21356675bfb4b798518501931c4c1f2",
-              "node_dbd730d4f7a940c0bdb17b61766cffd5"
+              "node_688f3c4b066944739ff129991baff5bc",
+              "node_fe72e1e83a414131afb7fa0458e1e47b",
+              "node_d9989c62e8cf4fb5b3cf84ab1182e0cf"
             ]
           },
           "scope": "knowledge",
@@ -1110,94 +1132,100 @@
           "memory_weight": 1
         }
       },
-      "created_at": "2026-09-03T06:28:37.128891+00:00"
+      "created_at": "2026-09-04T03:23:43.935043+00:00",
+      "log_version": 1
     },
     {
-      "id": "event_796407795db14e7e91a9c712f708d97b",
+      "id": "event_8235b4768bf54e6c9e016000014779ea",
       "seq": 23,
       "op": "link",
       "payload": {
         "edge": {
-          "id": "edge_9d891670782343d49d61ba1b7043cc36",
-          "from_node_id": "node_7df63749524d43b3b280978722b90cd0",
-          "to_node_id": "node_5cd5ca40cd8a4e2cbf170811e7d7d852",
+          "id": "edge_879f05456d27426aba4473ce63af9e45",
+          "from_node_id": "node_a50d4607145e47ceb59fde45ffc66ac6",
+          "to_node_id": "node_36cb6c79810d4a91ac8c6c348debb9bf",
           "relation_type": "tree_child",
           "weight": 1.0,
           "direction": "directed",
-          "created_at": "2026-09-03T06:28:37.128893+00:00",
+          "created_at": "2026-09-04T03:23:43.935046+00:00",
           "metadata": {}
         }
       },
-      "created_at": "2026-09-03T06:28:37.128897+00:00"
+      "created_at": "2026-09-04T03:23:43.935049+00:00",
+      "log_version": 1
     },
     {
-      "id": "event_f3db8209528a4cb8a20fe62eb5697026",
+      "id": "event_0a11acd914ad4a10ba84406be323424f",
       "seq": 24,
       "op": "link",
       "payload": {
         "edge": {
-          "id": "edge_990b4eb4bc4b4b7fbf42941405ed4f42",
-          "from_node_id": "node_5cd5ca40cd8a4e2cbf170811e7d7d852",
-          "to_node_id": "node_ed090ac21c81435ba6985ee6a95f22b5",
+          "id": "edge_27d11cdab78844d692172bbaeee2d94a",
+          "from_node_id": "node_36cb6c79810d4a91ac8c6c348debb9bf",
+          "to_node_id": "node_688f3c4b066944739ff129991baff5bc",
           "relation_type": "derived_from",
           "weight": 0.9,
           "direction": "directed",
-          "created_at": "2026-09-03T06:28:37.128904+00:00",
+          "created_at": "2026-09-04T03:23:43.935055+00:00",
           "metadata": {}
         }
       },
-      "created_at": "2026-09-03T06:28:37.128908+00:00"
+      "created_at": "2026-09-04T03:23:43.935059+00:00",
+      "log_version": 1
     },
     {
-      "id": "event_155b7be181ae45ff8aed3217c17add03",
+      "id": "event_030e202d0aa342adad54a00ecb60d8ea",
       "seq": 25,
       "op": "link",
       "payload": {
         "edge": {
-          "id": "edge_b5578c82f8e34d8a95876318ddb749b3",
-          "from_node_id": "node_5cd5ca40cd8a4e2cbf170811e7d7d852",
-          "to_node_id": "node_f21356675bfb4b798518501931c4c1f2",
+          "id": "edge_f28e35d30bc04df98f11e33cd21a9dcc",
+          "from_node_id": "node_36cb6c79810d4a91ac8c6c348debb9bf",
+          "to_node_id": "node_fe72e1e83a414131afb7fa0458e1e47b",
           "relation_type": "derived_from",
           "weight": 0.9,
           "direction": "directed",
-          "created_at": "2026-09-03T06:28:37.128910+00:00",
+          "created_at": "2026-09-04T03:23:43.935061+00:00",
           "metadata": {}
         }
       },
-      "created_at": "2026-09-03T06:28:37.128914+00:00"
+      "created_at": "2026-09-04T03:23:43.935065+00:00",
+      "log_version": 1
     },
     {
-      "id": "event_06ac39e800674602b73a78031315b74f",
+      "id": "event_3a5f8edf827640c38c7b4e545f99094c",
       "seq": 26,
       "op": "link",
       "payload": {
         "edge": {
-          "id": "edge_7d6dde7350c84db981b7585b61506487",
-          "from_node_id": "node_5cd5ca40cd8a4e2cbf170811e7d7d852",
-          "to_node_id": "node_dbd730d4f7a940c0bdb17b61766cffd5",
+          "id": "edge_e79ec71d6fe44993a066f81646d7f2f4",
+          "from_node_id": "node_36cb6c79810d4a91ac8c6c348debb9bf",
+          "to_node_id": "node_d9989c62e8cf4fb5b3cf84ab1182e0cf",
           "relation_type": "derived_from",
           "weight": 0.9,
           "direction": "directed",
-          "created_at": "2026-09-03T06:28:37.128916+00:00",
+          "created_at": "2026-09-04T03:23:43.935067+00:00",
           "metadata": {}
         }
       },
-      "created_at": "2026-09-03T06:28:37.128920+00:00"
+      "created_at": "2026-09-04T03:23:43.935071+00:00",
+      "log_version": 1
     },
     {
-      "id": "event_49d286c8ed8140d6bee563426e9d3aa2",
+      "id": "event_21aaae3b08ad44c3a6f2dcd0c60515eb",
       "seq": 27,
       "op": "promote",
       "payload": {
-        "node_id": "node_5cd5ca40cd8a4e2cbf170811e7d7d852",
+        "node_id": "node_36cb6c79810d4a91ac8c6c348debb9bf",
         "supporting_node_ids": [
-          "node_ed090ac21c81435ba6985ee6a95f22b5",
-          "node_f21356675bfb4b798518501931c4c1f2",
-          "node_dbd730d4f7a940c0bdb17b61766cffd5"
+          "node_688f3c4b066944739ff129991baff5bc",
+          "node_fe72e1e83a414131afb7fa0458e1e47b",
+          "node_d9989c62e8cf4fb5b3cf84ab1182e0cf"
         ],
         "threshold": 3
       },
-      "created_at": "2026-09-03T06:28:37.128923+00:00"
+      "created_at": "2026-09-04T03:23:43.935073+00:00",
+      "log_version": 1
     }
   ]
 }

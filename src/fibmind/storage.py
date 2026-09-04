@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from fibmind.graph import FibMind
-from fibmind.models import Edge, EventOp, MemoryEvent, MemoryNode, MemoryTree
+from fibmind.models import LOG_VERSION, Edge, EventOp, MemoryEvent, MemoryNode, MemoryTree
 
 
 class MemoryStore(Protocol):
@@ -36,6 +36,7 @@ class JsonStore:
 
     def save(self, memory: FibMind) -> None:
         payload: dict[str, Any] = {
+            "log_version": LOG_VERSION,
             "nodes": [node.to_dict() for node in memory.nodes.values()],
             "edges": [edge.to_dict() for edge in memory.edges.values()],
             "trees": [tree.to_dict() for tree in memory.trees.values()],
@@ -64,6 +65,7 @@ class JsonStore:
         if not self.path.exists():
             return FibMind()
         payload = json.loads(self.path.read_text(encoding="utf-8"))
+        _check_log_version(payload.get("log_version"))
         memory = FibMind()
         memory.nodes = {item["id"]: MemoryNode.from_dict(item) for item in payload.get("nodes", [])}
         memory.edges = {item["id"]: Edge.from_dict(item) for item in payload.get("edges", [])}
@@ -180,6 +182,10 @@ class SqliteStore:
                 (str(self.SCHEMA_VERSION),),
             )
             connection.execute("INSERT OR IGNORE INTO meta(key, value) VALUES ('revision', '0')")
+            connection.execute(
+                "INSERT OR IGNORE INTO meta(key, value) VALUES ('log_version', ?)",
+                (str(LOG_VERSION),),
+            )
             # Indices come after the upgrade: on a v1 database the columns they
             # cover do not exist until the ALTER TABLEs have run.
             self._upgrade(connection)
@@ -204,6 +210,10 @@ class SqliteStore:
             ).fetchone()
             if version is None or int(version["value"]) != self.SCHEMA_VERSION:
                 raise ValueError("Unsupported FibMind SQLite schema version")
+            log_version = connection.execute(
+                "SELECT value FROM meta WHERE key = 'log_version'"
+            ).fetchone()
+            _check_log_version(int(log_version["value"]) if log_version else None)
 
     def _upgrade(self, connection: sqlite3.Connection) -> None:
         """Bring older databases up to the current schema.
@@ -515,6 +525,21 @@ class SqliteStore:
         connection.executemany(
             f"DELETE FROM {table} WHERE id = ?",
             [(item_id,) for item_id in sorted(existing_ids - current_ids)],
+        )
+
+
+def _check_log_version(found: int | str | None) -> None:
+    """Refuse a log written at a format version this build cannot replay.
+
+    A missing version means the store predates versioning and is read as
+    version 1. A newer version is refused rather than guessed at: the log is the
+    source of truth, and misreading it silently corrupts everything derived.
+    """
+    if found is None:
+        return
+    if int(found) > LOG_VERSION:
+        raise ValueError(
+            f"Memory log is version {found}; this build reads up to {LOG_VERSION}"
         )
 
 

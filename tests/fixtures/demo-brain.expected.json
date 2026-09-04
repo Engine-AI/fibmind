@@ -1,0 +1,75 @@
+{
+  "log_version": 1,
+  "fixture": "data/demo-brain.json",
+  "shape": {
+    "nodes": 4,
+    "edges": 2,
+    "trees": 2,
+    "categories": [
+      "decision",
+      "goal"
+    ]
+  },
+  "queries": [
+    {
+      "query": "login 401 token expiry",
+      "owner": "dev-a",
+      "workspace_id": "demo",
+      "project_id": "fibmind",
+      "session_id": "demo-session",
+      "expect_titles": [
+        "Fix login 401 after token expiry",
+        "Refresh tokens before retrying login"
+      ]
+    },
+    {
+      "query": "refresh tokens",
+      "owner": "dev-a",
+      "workspace_id": "demo",
+      "project_id": "fibmind",
+      "session_id": "demo-session",
+      "expect_titles": [
+        "Refresh tokens before retrying login"
+      ]
+    },
+    {
+      "query": "login 401 token expiry",
+      "owner": "dev-a",
+      "workspace_id": "demo",
+      "project_id": "other",
+      "expect_titles": []
+    },
+    {
+      "query": "login 401 token expiry",
+      "expect_titles": []
+    },
+    {
+      "query": "kubernetes deploy",
+      "owner": "dev-a",
+      "workspace_id": "demo",
+      "project_id": "fibmind",
+      "session_id": "demo-session",
+      "expect_titles": []
+    }
+  ],
+  "tools": [
+    "fibbrain_advise",
+    "fibbrain_complete_goal",
+    "fibbrain_coordinate",
+    "fibbrain_observe",
+    "fibbrain_plan",
+    "fibbrain_recall",
+    "fibbrain_reflect",
+    "fibbrain_remember",
+    "fibmind_append",
+    "fibmind_context",
+    "fibmind_forget",
+    "fibmind_link",
+    "fibmind_mark_stale",
+    "fibmind_promote_knowledge",
+    "fibmind_record_outcome",
+    "fibmind_revise",
+    "fibmind_search",
+    "fibmind_search_from"
+  ]
+}

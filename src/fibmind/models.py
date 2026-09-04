@@ -9,6 +9,13 @@ from typing import Any
 from uuid import uuid4
 
 
+# Version of the event-log format. Any implementation — in any language — that
+# can replay a log at this version must rebuild the same nodes, edges, and trees
+# (see docs/contract.md). Bump it only when an existing event payload changes
+# meaning; adding a new optional field does not require a bump.
+LOG_VERSION = 1
+
+
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -132,6 +139,7 @@ class MemoryEvent:
             "op": self.op.value,
             "payload": self.payload,
             "created_at": self.created_at.isoformat(),
+            "log_version": LOG_VERSION,
         }
 
     @classmethod
