@@ -11,3 +11,4 @@ build/
 .coverage
 .fibmind/
 .DS_Store
+evals/candidates/
