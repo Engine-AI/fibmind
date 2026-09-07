@@ -562,37 +562,45 @@ class MemoryService:
         project_id: str | None = None,
         session_id: str | None = None,
         exclude_categories: list[str] | None = None,
+        budget_tokens: int | None = None,
+        hot_node_ids: list[str] | None = None,
+        hot_budget_tokens: int | None = None,
     ) -> dict[str, Any]:
-        """Build a context-window-ready memory pack for a task goal."""
+        """Build a context-window-ready memory pack for a task goal.
+
+        ``budget_tokens`` bounds the rendered text in tokens (defaults to
+        ``max_chars / 4``). ``hot_node_ids`` render first as the standing
+        preamble inside ``hot_budget_tokens``; ids that are not visible to this
+        caller are dropped silently, never leaked.
+        """
         _require_text(goal, "goal")
         scope_set = _parse_scopes(scopes)
         status_set = _parse_statuses(statuses)
         excluded = set(exclude_categories) if exclude_categories else None
-        with self._lock:
-            if reinforce:
-                with self._transaction() as memory:
-                    return build_context(
-                        memory,
-                        goal,
-                        top_k=top_k,
-                        depth=depth,
-                        max_chars=max_chars,
-                        reinforce=True,
-                        scopes=scope_set,
-                        owner=owner,
-                        statuses=status_set,
-                        workspace_id=workspace_id,
-                        project_id=project_id,
-                        session_id=session_id,
-                        exclude_categories=excluded,
-                    ).to_dict()
+        if budget_tokens is not None and budget_tokens < 1:
+            raise ValueError("budget_tokens must be positive")
+
+        def run(memory: FibMind, reinforce_now: bool) -> dict[str, Any]:
+            hot_nodes = []
+            for node_id in hot_node_ids or []:
+                node = memory.nodes.get(node_id)
+                if node is not None and memory.is_visible(
+                    node,
+                    scopes=scope_set,
+                    owner=owner,
+                    statuses=status_set,
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    session_id=session_id,
+                ):
+                    hot_nodes.append(node)
             return build_context(
-                self._load(),
+                memory,
                 goal,
                 top_k=top_k,
                 depth=depth,
                 max_chars=max_chars,
-                reinforce=False,
+                reinforce=reinforce_now,
                 scopes=scope_set,
                 owner=owner,
                 statuses=status_set,
@@ -600,4 +608,13 @@ class MemoryService:
                 project_id=project_id,
                 session_id=session_id,
                 exclude_categories=excluded,
+                budget_tokens=budget_tokens,
+                hot=hot_nodes,
+                hot_budget_tokens=hot_budget_tokens,
             ).to_dict()
+
+        with self._lock:
+            if reinforce:
+                with self._transaction() as memory:
+                    return run(memory, True)
+            return run(self._load(), False)

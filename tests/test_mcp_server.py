@@ -39,6 +39,7 @@ EXPECTED_TOOLS = {
     "fibbrain_reject_memory",
     "fibbrain_remember_procedure",
     "fibbrain_render",
+    "fibbrain_hot",
 }
 
 

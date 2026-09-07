@@ -289,6 +289,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
         workspace_id: str | None = None,
         project_id: str | None = None,
         session_id: str | None = None,
+        budget_tokens: int | None = None,
     ) -> dict[str, Any]:
         """Build a compact memory pack to load into context before a task.
 
@@ -310,6 +311,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
             workspace_id=workspace_id,
             project_id=project_id,
             session_id=session_id,
+            budget_tokens=budget_tokens,
         )
 
     @mcp.tool()
@@ -353,17 +355,22 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
         top_k: int = 5,
         depth: int = 1,
         max_chars: int = 2000,
+        budget_tokens: int | None = None,
+        include_hot: bool = True,
         owner: str | None = None,
         workspace_id: str | None = None,
         project_id: str | None = None,
         session_id: str | None = None,
         task_id: str | None = None,
     ) -> dict[str, Any]:
-        """Recall what the brain already knows about a goal.
+        """Recall what the brain already knows about a goal, inside a token budget.
 
         Call this at the start of a task. Pass the current workspace / project /
-        session so recall stays inside this working context. Prefer this over
-        fibmind_context — it also returns the short-lived episode log.
+        session so recall stays inside this working context. The pack renders
+        the session's frozen hot memory first, then direct hits, then related
+        memories, and reports ``budget`` usage per section. ``budget_tokens``
+        defaults to 500. Prefer this over fibmind_context — it also returns the
+        episode log.
         """
         return brain.recall(
             goal,
@@ -371,6 +378,26 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
             top_k=top_k,
             depth=depth,
             max_chars=max_chars,
+            budget_tokens=budget_tokens,
+            include_hot=include_hot,
+        )
+
+    @mcp.tool()
+    def fibbrain_hot(
+        refresh: bool = False,
+        owner: str | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
+    ) -> dict[str, Any]:
+        """The frozen hot-memory snapshot (stable preferences, conventions,
+        evidenced decisions) for this session. Computed once per session and
+        reused by every fibbrain_recall; ``refresh`` recomputes it.
+        """
+        return brain.hot_snapshot(
+            _state(owner, workspace_id, project_id, session_id, task_id),
+            refresh=refresh,
         )
 
     @mcp.tool()

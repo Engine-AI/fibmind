@@ -10,7 +10,8 @@ from fibmind.embedding import (
     OpenAICompatibleEmbeddingProvider,
     provider_from_env,
 )
-from fibmind.context import ContextHit, ContextPack, build_context
+from fibmind.context import BudgetReport, ContextHit, ContextPack, build_context
+from fibmind.tokens import CallableCounter, EstimatingCounter, TokenCounter, estimate_tokens
 from fibmind.fibonacci import DEFAULT_LAYER_POLICY, FibonacciLayerPolicy, fib_capacities, fibonacci_numbers
 from fibmind.graph import FibMind, SearchHit
 from fibmind.models import (
@@ -45,6 +46,8 @@ __all__ = [
     "AdviseVerdict",
     "BrainGoal",
     "BrainState",
+    "BudgetReport",
+    "CallableCounter",
     "ContextHit",
     "ContextPack",
     "DEFAULT_LAYER_POLICY",
@@ -52,6 +55,7 @@ __all__ = [
     "Edge",
     "EmbeddingCache",
     "EmbeddingProvider",
+    "EstimatingCounter",
     "HashingEmbeddingProvider",
     "LexicalIndex",
     "OpenAICompatibleEmbeddingProvider",
@@ -83,11 +87,13 @@ __all__ = [
     "SearchHit",
     "SqliteStore",
     "StepStatus",
+    "TokenCounter",
     "TraversalDirection",
     "Verdict",
     "brain_state",
     "build_context",
     "decide_admission",
+    "estimate_tokens",
     "digest_episode",
     "extract_candidates",
     "infer_capabilities",

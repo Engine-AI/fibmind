@@ -10,6 +10,7 @@ from statistics import mean, median
 from typing import Iterable
 
 from evals.baselines import EvaluationCase, RetrievalResult
+from fibmind.tokens import estimate_tokens as _estimate_tokens
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,36 +35,8 @@ class CaseMetrics:
 
 
 def estimate_tokens(text: str) -> int:
-    """Return a deterministic model-agnostic estimate for context size.
-
-    P0 needs a stable relative cost before P3 introduces a model tokenizer. CJK
-    characters and punctuation count as one token; ASCII/number runs use the
-    common four-characters-per-token approximation. Reports name this value
-    ``estimated_tokens`` so it is never confused with provider billing data.
-    """
-    normalized = unicodedata.normalize("NFKC", text)
-    count = 0
-    word: list[str] = []
-
-    def flush_word() -> None:
-        nonlocal count
-        if word:
-            count += max(1, math.ceil(len("".join(word)) / 4))
-            word.clear()
-
-    for character in normalized:
-        if character.isspace():
-            flush_word()
-        elif _is_cjk(character):
-            flush_word()
-            count += 1
-        elif character.isalnum() or character in {"_", "-"}:
-            word.append(character)
-        else:
-            flush_word()
-            count += 1
-    flush_word()
-    return count
+    """Deterministic model-agnostic size estimate; see ``fibmind.tokens``."""
+    return _estimate_tokens(text)
 
 
 def evaluate_case(case: EvaluationCase, result: RetrievalResult, top_k: int) -> CaseMetrics:
@@ -141,13 +114,6 @@ def _normalize(text: str) -> str:
     return re.sub(r"\s+", " ", normalized).strip()
 
 
-def _is_cjk(character: str) -> bool:
-    codepoint = ord(character)
-    return (
-        0x3400 <= codepoint <= 0x4DBF
-        or 0x4E00 <= codepoint <= 0x9FFF
-        or 0xF900 <= codepoint <= 0xFAFF
-    )
 
 
 def _mean_optional(values: Iterable[float | None]) -> float | None:

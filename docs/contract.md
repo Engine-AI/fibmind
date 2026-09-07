@@ -83,7 +83,8 @@ Every `fibbrain_*` tool accepts the identity quintet `owner`, `workspace_id`,
 | tool | question | persists |
 | --- | --- | --- |
 | `fibbrain_plan(objective \| goal_id, identity)` | What am I doing, in what order? | yes: a `goal` node tagged `fibbrain-goal`, JSON document with `kind: fibbrain_goal` |
-| `fibbrain_recall(goal, identity, top_k, depth, max_chars)` | What do I already know? | no |
+| `fibbrain_recall(goal, identity, top_k, depth, budget_tokens, include_hot)` | What do I already know, inside this many tokens? | first call in a session persists the hot snapshot |
+| `fibbrain_hot(identity, refresh)` | What is this session's standing preamble? | yes: a `scope=session` node in category `hot` |
 | `fibbrain_coordinate(objective \| goal_id, identity)` | Which capabilities next, and are they safe? | may mark the goal `blocked` |
 | `fibbrain_remember(category, title, content, tags, scope, identity)` | Is this worth keeping? | only on `verdict: write` |
 | `fibbrain_observe(kind, summary, payload, identity)` | What just happened? | with a `session_id`: yes, as `scope=session` scratch in category `episode`; recall never returns it as a hit |
@@ -121,6 +122,11 @@ fields may appear.
   retired to `stale` by `reflect` itself.
 - `coordinate` reports `capability_source: procedure` when a matching
   procedure drove the capability list, else `heuristic`.
+- `recall` never renders more than `budget_tokens` (default 500) as counted by
+  the configured counter, and reports `budget.used_tokens`,
+  `budget.sections[hot|search|expand]`, and `budget.truncated[]` with a reason
+  per cut. The hot snapshot is frozen for a session: the same `session_id` sees
+  the same preamble until `fibbrain_hot(refresh=true)` or a review runs.
 
 ## 3. Conformance fixture
 
@@ -155,6 +161,8 @@ Deliberately *not* promised, so they can change without notice:
 - the deterministic plan template and capability hints (`planning.py`);
 - the exact SKILL.md / tool-schema layout `render` produces, and the
   promotion / retirement thresholds (`procedure.py`);
+- the token estimator, the budget split between sections, and which kinds
+  qualify as hot (`tokens.py`, `context.py`, `brain.py`);
 - the admission heuristics (`admission.py`);
 - SQLite table layout beyond `meta.log_version`.
 

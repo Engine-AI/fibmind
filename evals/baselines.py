@@ -325,12 +325,64 @@ class FibMindHybridBaseline(FibMindCurrentBaseline):
         self.memory.embeddings = EmbeddingCache(HashingEmbeddingProvider())
 
 
+class FibMindBudgetedBaseline(FibMindCurrentBaseline):
+    """The lexical engine under a hard token budget, with the dataset's ``hot``
+    fixtures rendered first as the L0 preamble.
+
+    This is the P3 shape: a bounded preamble plus on-demand recall, measured in
+    tokens. The budget is deliberately tight so the report shows what a
+    budget costs in recall, not just that it is enforced.
+    """
+
+    name = "fibmind_budgeted"
+    budget_tokens = 120
+
+    def retrieve(self, case: EvaluationCase, top_k: int) -> RetrievalResult:
+        started_at = perf_counter()
+        scopes = (
+            {MemoryScope(scope) for scope in case.scopes}
+            if case.scopes is not None
+            else None
+        )
+        hot_nodes = [
+            self.memory.nodes[node_id]
+            for node_id, fixture_id in self.node_to_fixture.items()
+            if self._fixture(fixture_id).hot and _is_visible(self._fixture(fixture_id), case)
+        ]
+        pack = build_context(
+            self.memory,
+            case.query,
+            top_k=case.top_k or top_k,
+            depth=1,
+            max_chars=self.max_context_chars,
+            budget_tokens=self.budget_tokens,
+            hot=hot_nodes,
+            reinforce=False,
+            scopes=scopes,
+            owner=case.owner,
+            workspace_id=case.workspace_id,
+            project_id=case.project_id,
+            session_id=case.session_id,
+        )
+        assert pack.budget is not None and pack.budget.used_tokens <= self.budget_tokens
+        ids: list[str] = []
+        for hit in [*pack.hot, *pack.hits]:
+            fixture_id = hit.node.metadata.get("eval_id")
+            if fixture_id is not None and fixture_id not in ids:
+                ids.append(str(fixture_id))
+        return self._result(case, started_at, ids, pack.text)
+
+    def _fixture(self, fixture_id: str) -> MemoryFixture:
+        return next(memory for memory in self.dataset.memories if memory.id == fixture_id)
+
+
 BASELINE_TYPES: tuple[type[Baseline], ...] = (
     NoMemoryBaseline,
     AgentsMdBaseline,
     HermesHotBaseline,
     FibMindCurrentBaseline,
     FibMindHybridBaseline,
+    FibMindBudgetedBaseline,
 )
 
 

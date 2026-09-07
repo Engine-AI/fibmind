@@ -236,6 +236,14 @@ Query
 
 ## P3：Token 预算和双层记忆
 
+> 状态（2026-09）：已落地一版。`recall` 按 token 预算分三段渲染（hot / search /
+> expand），返回 `budget.used_tokens`、每段用量与截断原因；计数器可插拔，默认为
+> 确定性估算。L0 热记忆按 kind（preference / requirement / decision / knowledge）
+> 与 confidence 选取，session 内冻结为 `hot` 节点，review 后下一 session 刷新。
+> 评测新增 `fibmind_budgeted`（120 token 硬预算 + 热记忆前置）：在固定小数据集上
+> Recall@K 仍 1.0，但 MRR 0.84、可回答率 0.67、无关注入 0.44——常驻前置的代价
+> 被如实计入。30% 节省阈值需在真实轨迹（S1 导入）上校准，当前数据集太小无法判断。
+
 将当前字符长度限制升级成模型 Token 预算，并结合 Hermes 风格的稳定热记忆与 FibMind 的按需长期召回。
 
 ### L0 热记忆

@@ -58,6 +58,7 @@
     "fibbrain_approve_memory",
     "fibbrain_complete_goal",
     "fibbrain_coordinate",
+    "fibbrain_hot",
     "fibbrain_observe",
     "fibbrain_pending_reviews",
     "fibbrain_plan",

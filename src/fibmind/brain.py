@@ -20,6 +20,7 @@ from typing import Any
 from fibmind.admission import AdmitVerdict, MemoryCandidate, decide_admission
 from fibmind.graph import FibMind
 from fibmind.models import MemoryKind, MemoryNode, MemoryScope, MemoryStatus, RelationType, Verdict, optional_id, utc_now
+import json
 from fibmind.planning import (
     CAPABILITIES,
     CAPABILITY_ACTIONS,
@@ -66,6 +67,19 @@ class AdviseVerdict(StrEnum):
 EPISODE_LIMIT = 48
 GOAL_TITLE_LIMIT = 200
 EPISODE_KIND = "fibbrain_episode"
+
+# L0 hot memory: the standing preamble for a working context. Stable
+# preferences, project conventions, and well-evidenced decisions — chosen by
+# evidence and kind, never by how often they were read. The snapshot is frozen
+# per session: it is computed on the first recall of a session and refreshed
+# only by review_session, so a session sees one consistent preamble.
+HOT_CATEGORY = "hot"
+HOT_TAG = "fibbrain-hot"
+HOT_KIND = "fibbrain_hot_snapshot"
+HOT_MAX_ITEMS = 8
+HOT_BUDGET_TOKENS = 300
+DEFAULT_BUDGET_TOKENS = 500
+HOT_KINDS = ("preference", "requirement", "decision", "knowledge")
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,20 +210,93 @@ class FibBrain:
         top_k: int = 5,
         depth: int = 1,
         max_chars: int = 2000,
+        budget_tokens: int | None = None,
+        include_hot: bool = True,
     ) -> dict[str, Any]:
-        """Load a context pack for ``goal`` inside ``state``."""
+        """Load a context pack for ``goal`` inside ``state`` and a token budget.
+
+        The pack renders the session's frozen hot snapshot first, then direct
+        hits, then graph expansion, and reports ``budget`` usage per section.
+        ``budget_tokens`` defaults to 500 (roughly ``max_chars / 4``).
+        """
         identity = (state or BrainState()).identity()
+        budget = budget_tokens if budget_tokens is not None else DEFAULT_BUDGET_TOKENS
+        hot_ids = self.hot_snapshot(state)["node_ids"] if include_hot else []
         pack = self.memory.context(
             goal,
             top_k=top_k,
             depth=depth,
             max_chars=max_chars,
-            exclude_categories=[EPISODE_CATEGORY],
+            exclude_categories=[EPISODE_CATEGORY, HOT_CATEGORY],
+            budget_tokens=budget,
+            hot_node_ids=hot_ids,
+            hot_budget_tokens=min(HOT_BUDGET_TOKENS, budget // 3) if hot_ids else 0,
             **_identity_kwargs(identity),
         )
         pack["state"] = identity
         pack["episode"] = [event.to_dict() for event in self._episode_for(identity)]
         return pack
+
+    # ------------------------------------------------------------------
+    # L0 hot memory
+
+    def hot_snapshot(self, state: BrainState | None = None, refresh: bool = False) -> dict[str, Any]:
+        """The frozen hot-memory snapshot for this session.
+
+        Selection is deterministic: active memories of a hot kind visible to
+        this identity, ordered by confidence then recency, capped by count and
+        by ``HOT_BUDGET_TOKENS``. The result is persisted as a session-scoped
+        node so every recall in the session sees the same preamble; ``refresh``
+        (used by ``review_session``) recomputes it for the *next* session and
+        leaves the current one frozen.
+        """
+        identity = (state or BrainState()).identity()
+        session_id = identity["session_id"]
+
+        def run(memory: FibMind) -> dict[str, Any]:
+            existing = None
+            if session_id is not None:
+                for node in memory.nodes.values():
+                    if (
+                        node.category == HOT_CATEGORY
+                        and HOT_TAG in node.tags
+                        and node.session_id == session_id
+                        and node.status == MemoryStatus.ACTIVE
+                        and memory.is_visible(node, **_identity_kwargs(identity))
+                    ):
+                        existing = node
+                        break
+            if existing is not None and not refresh:
+                data = json.loads(existing.content)
+                live = [nid for nid in data.get("node_ids", []) if nid in memory.nodes]
+                return {"node_ids": live, "frozen": True, "snapshot_id": existing.id, "session_id": session_id}
+
+            selected = _select_hot(memory, identity)
+            node_ids = [node.id for node in selected]
+            snapshot_id = None
+            if session_id is not None:
+                if existing is not None:
+                    memory.set_status(existing.id, MemoryStatus.STALE, "hot snapshot refreshed")
+                snapshot_id = memory.append(
+                    category=HOT_CATEGORY,
+                    title=f"hot snapshot for {session_id}",
+                    content=json.dumps({"kind": HOT_KIND, "node_ids": node_ids}, ensure_ascii=False),
+                    tags=[HOT_TAG],
+                    metadata={"kind": HOT_KIND, "count": len(node_ids)},
+                    scope=MemoryScope.SESSION,
+                    owner=identity["owner"],
+                    workspace_id=identity["workspace_id"],
+                    project_id=identity["project_id"],
+                    session_id=session_id,
+                    task_id=identity["task_id"],
+                    auto_link=False,
+                    compress=False,
+                )
+            return {"node_ids": node_ids, "frozen": session_id is not None, "snapshot_id": snapshot_id, "session_id": session_id}
+
+        if session_id is None:
+            return self.memory.read(run)
+        return self.memory.run(run)
 
     def _episode_for(self, identity: dict[str, str | None]) -> list[ObservedEvent]:
         """The persisted episode of this session, else the in-process buffer."""
@@ -737,6 +824,9 @@ class FibBrain:
                     memory.set_status(node.id, MemoryStatus.STALE, f"reviewed in {parsed_mode.value} mode")
                     closed += 1
             return {
+                "next_hot": [node.id for node in _select_hot(memory, identity)]
+                if parsed_mode != ReviewMode.CANDIDATES
+                else None,
                 "session_id": session_id,
                 "mode": parsed_mode.value,
                 "objective": digest.objective,
@@ -875,6 +965,32 @@ def _node_from_summary(inspected: dict[str, Any]) -> MemoryNode:
     kind = inspected.get("memory_kind")
     node.memory_kind = MemoryKind(kind) if kind else None
     return node
+
+
+def _select_hot(memory: FibMind, identity: dict[str, str | None]) -> list[MemoryNode]:
+    """Deterministic L0 selection: hot kinds, visible, active, evidence first."""
+    from fibmind.tokens import DEFAULT_COUNTER
+
+    kwargs = _identity_kwargs(identity)
+    candidates = [
+        node
+        for node in memory.nodes.values()
+        if node.memory_kind is not None
+        and node.memory_kind.value in HOT_KINDS
+        and node.node_type.value == "raw"
+        and node.category not in {EPISODE_CATEGORY, HOT_CATEGORY, GOAL_CATEGORY}
+        and memory.is_visible(node, **kwargs)
+    ]
+    candidates.sort(key=lambda node: (node.confidence, node.updated_at, node.id), reverse=True)
+    selected: list[MemoryNode] = []
+    spent = 0
+    for node in candidates:
+        cost = DEFAULT_COUNTER.count(f"- [{node.category}] {node.title}: {node.content[:160]}")
+        if len(selected) >= HOT_MAX_ITEMS or spent + cost > HOT_BUDGET_TOKENS:
+            break
+        selected.append(node)
+        spent += cost
+    return selected
 
 
 def _episode_nodes(memory: FibMind, identity: dict[str, str | None]) -> list[MemoryNode]:

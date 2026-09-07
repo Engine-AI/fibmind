@@ -249,7 +249,8 @@ Recall and record:
 | `fibbrain_plan` | Create or refresh a persisted goal and its deterministic plan. |
 | `fibbrain_coordinate` | Recommend the next capabilities and advise each one. |
 | `fibbrain_complete_goal` | Mark a persisted goal complete; it stays recallable. |
-| `fibbrain_recall` | Recall a context pack for a goal inside the current working context. |
+| `fibbrain_recall` | Recall a token-budgeted context pack: frozen hot memory first, then direct hits, then related memories, with per-section `budget` usage. |
+| `fibbrain_hot` | The session's frozen L0 hot-memory snapshot (stable preferences, conventions, evidenced decisions); `refresh` recomputes it. |
 | `fibbrain_remember` | Admit a candidate, then write it if it is worth keeping. |
 | `fibbrain_observe` | Note an episode event; persisted as session scratch when a `session_id` is given. |
 | `fibbrain_review_session` | Distil one session's episode into long-term candidates (`candidates` / `approve` / `auto`); idempotent. |
