@@ -45,6 +45,7 @@ def _node_summary(node: MemoryNode) -> dict[str, Any]:
         "task_id": node.task_id,
         "status": node.status.value,
         "status_reason": node.status_reason,
+        "memory_kind": node.memory_kind.value if node.memory_kind else None,
         "confidence": round(node.confidence, 4),
         "confidence_source": node.confidence_source,
         "familiarity": round(node.familiarity, 4),
@@ -253,6 +254,7 @@ class MemoryService:
         verdict: str,
         source: str,
         note: str | None = None,
+        session_id: str | None = None,
     ) -> dict[str, Any]:
         """Attach external evidence for or against a memory.
 
@@ -263,7 +265,9 @@ class MemoryService:
         _require_text(source, "source")
         with self._lock, self._store.transaction() as memory:
             try:
-                node = memory.record_outcome(node_id, parsed, source=source, note=note)
+                node = memory.record_outcome(
+                    node_id, parsed, source=source, note=note, session_id=session_id
+                )
             except KeyError as exc:
                 raise ValueError(str(exc)) from exc
             return _node_summary(node)

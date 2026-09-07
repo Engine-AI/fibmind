@@ -35,6 +35,8 @@ EXPECTED_TOOLS = {
     "fibbrain_pending_reviews",
     "fibbrain_approve_memory",
     "fibbrain_reject_memory",
+    "fibbrain_remember_procedure",
+    "fibbrain_render",
 }
 
 

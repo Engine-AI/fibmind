@@ -12,6 +12,7 @@ from fibmind.models import (
     EdgeDirection,
     EventOp,
     MemoryEvent,
+    MemoryKind,
     MemoryNode,
     MemoryScope,
     MemoryStatus,
@@ -20,9 +21,11 @@ from fibmind.models import (
     RelationType,
     TraversalDirection,
     Verdict,
+    infer_memory_kind,
     optional_id,
 )
 from fibmind.ranking import ScoredHit, rank_nodes, tokenize
+from fibmind.procedure import Procedure, render_skill, render_tool
 from fibmind.review import ReviewCandidate, ReviewMode, digest_episode, extract_candidates
 from fibmind.service import MemoryService
 from fibmind.storage import JsonStore, MemoryStore, SqliteStore, open_store
@@ -48,6 +51,7 @@ __all__ = [
     "LOG_VERSION",
     "MemoryCandidate",
     "MemoryEvent",
+    "MemoryKind",
     "MemoryNode",
     "MemoryScope",
     "MemoryService",
@@ -57,6 +61,7 @@ __all__ = [
     "NodeType",
     "ObservedEvent",
     "PlanStep",
+    "Procedure",
     "RelationType",
     "ReviewCandidate",
     "ReviewMode",
@@ -75,8 +80,11 @@ __all__ = [
     "synthesize_plan",
     "fib_capacities",
     "fibonacci_numbers",
+    "infer_memory_kind",
     "open_store",
     "optional_id",
     "rank_nodes",
+    "render_skill",
+    "render_tool",
     "tokenize",
 ]

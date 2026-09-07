@@ -17,7 +17,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Iterable
 
-from fibmind.models import MemoryNode, MemoryScope
+from fibmind.models import MemoryKind, MemoryNode, MemoryScope
+from fibmind.procedure import PROCEDURE_CATEGORY, PROCEDURE_TAG, procedure_from_session
 
 EPISODE_CATEGORY = "episode"
 EPISODE_TAG = "fibbrain-episode"
@@ -30,8 +31,10 @@ ERROR_KINDS = {"error", "failure", "exception", "bug"}
 TEST_KINDS = {"test", "verify", "verification", "check"}
 CORRECTION_KINDS = {"correction", "user_correction", "feedback"}
 RISK_KINDS = {"risk", "unresolved", "todo", "open_question"}
+STEP_KINDS = {"step", "action", "tool_result", "tool_call"}
 FILE_KEYS = ("files", "changed_files", "paths", "path", "file")
 COMMAND_KEYS = ("command", "cmd")
+TOOL_KEYS = ("tool", "tool_name")
 
 MAX_LIST_ITEMS = 12
 
@@ -50,6 +53,7 @@ class ReviewCandidate:
     tags: tuple[str, ...]
     source_node_ids: tuple[str, ...]
     scope: MemoryScope = MemoryScope.PERSONAL
+    memory_kind: MemoryKind | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -58,6 +62,7 @@ class ReviewCandidate:
             "content": self.content,
             "tags": list(self.tags),
             "scope": self.scope.value,
+            "memory_kind": self.memory_kind.value if self.memory_kind else None,
             "source_node_ids": list(self.source_node_ids),
         }
 
@@ -76,6 +81,9 @@ class EpisodeDigest:
     risks: list[MemoryNode] = field(default_factory=list)
     files: list[str] = field(default_factory=list)
     file_sources: list[str] = field(default_factory=list)
+    steps: list[str] = field(default_factory=list)
+    step_sources: list[str] = field(default_factory=list)
+    tools: list[str] = field(default_factory=list)
     other_kinds: dict[str, int] = field(default_factory=dict)
     episode_ids: tuple[str, ...] = ()
 
@@ -109,19 +117,36 @@ def digest_episode(
                     seen_files.add(path)
                     digest.files.append(path)
                     digest.file_sources.append(node.id)
+        for key in TOOL_KEYS:
+            value = payload.get(key) if isinstance(payload, dict) else None
+            for tool in _as_list(value):
+                if tool not in digest.tools:
+                    digest.tools.append(tool)
         if kind in DECISION_KINDS:
             digest.decisions.append(node)
         elif kind in ERROR_KINDS:
             digest.errors.append(node)
         elif kind in TEST_KINDS:
             digest.tests.append(node)
+            _add_step(digest, node, prefix="Verify: ")
         elif kind in CORRECTION_KINDS:
             digest.corrections.append(node)
         elif kind in RISK_KINDS:
             digest.risks.append(node)
+        elif kind in STEP_KINDS:
+            _add_step(digest, node)
         else:
             digest.other_kinds[kind or "unknown"] = digest.other_kinds.get(kind or "unknown", 0) + 1
     return digest
+
+
+def _add_step(digest: EpisodeDigest, node: MemoryNode, prefix: str = "") -> None:
+    """A step is the command if one was recorded, else the observation text."""
+    command = _command_of(node)
+    text = f"{prefix}{command}" if command else f"{prefix}{_first_line(node.content)}"
+    if text.strip() and text not in digest.steps:
+        digest.steps.append(text)
+        digest.step_sources.append(node.id)
 
 
 def extract_candidates(digest: EpisodeDigest) -> list[ReviewCandidate]:
@@ -203,9 +228,41 @@ def extract_candidates(digest: EpisodeDigest) -> list[ReviewCandidate]:
             )
         )
 
+    procedure = _procedure_candidate(digest, label, base_tags)
+    if procedure is not None:
+        candidates.append(procedure)
+
     if digest.episode_ids:
         candidates.append(_summary(digest, label, base_tags))
     return candidates
+
+
+def _procedure_candidate(
+    digest: EpisodeDigest, label: str, tags: tuple[str, ...]
+) -> ReviewCandidate | None:
+    """A session that stated a goal, took steps, and verified them is a
+    procedure candidate. Without verification it is just history."""
+    if not digest.objective or not digest.steps or not digest.tests:
+        return None
+    verify = "; ".join(
+        (_command_of(node) or _first_line(node.content)) for node in digest.tests[:MAX_LIST_ITEMS]
+    )
+    procedure = procedure_from_session(
+        objective=digest.objective,
+        steps=digest.steps[:MAX_LIST_ITEMS],
+        tools=digest.tools,
+        verify=verify,
+    )
+    if procedure is None:
+        return None
+    return ReviewCandidate(
+        category=PROCEDURE_CATEGORY,
+        title=f"How to: {label}",
+        content=procedure.encode(),
+        tags=tags + (PROCEDURE_TAG,),
+        source_node_ids=tuple(dict.fromkeys(digest.step_sources + [node.id for node in digest.tests])),
+        memory_kind=MemoryKind.PROCEDURE,
+    )
 
 
 def _summary(digest: EpisodeDigest, label: str, tags: tuple[str, ...]) -> ReviewCandidate:

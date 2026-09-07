@@ -65,6 +65,8 @@
     "fibbrain_reflect",
     "fibbrain_reject_memory",
     "fibbrain_remember",
+    "fibbrain_remember_procedure",
+    "fibbrain_render",
     "fibbrain_review_session",
     "fibmind_append",
     "fibmind_context",

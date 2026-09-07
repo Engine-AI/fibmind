@@ -19,7 +19,7 @@ from typing import Any
 
 from fibmind.admission import AdmitVerdict, MemoryCandidate, decide_admission
 from fibmind.graph import FibMind
-from fibmind.models import MemoryNode, MemoryScope, MemoryStatus, Verdict, optional_id, utc_now
+from fibmind.models import MemoryKind, MemoryNode, MemoryScope, MemoryStatus, RelationType, Verdict, optional_id, utc_now
 from fibmind.planning import (
     CAPABILITIES,
     CAPABILITY_ACTIONS,
@@ -33,6 +33,16 @@ from fibmind.planning import (
     is_goal_node,
     parse_goal_document,
     synthesize_plan,
+)
+from fibmind.procedure import (
+    PROCEDURE_CATEGORY,
+    PROCEDURE_TAG,
+    Procedure,
+    is_procedure_node,
+    promotion_ready,
+    render_skill,
+    render_tool,
+    retirement_due,
 )
 from fibmind.review import (
     EPISODE_CATEGORY,
@@ -333,7 +343,14 @@ class FibBrain:
         still executes. A rejected advise marks that capability as blocked.
         """
         planned = self.plan(objective=objective, goal_id=goal_id, state=state)
-        work = list(planned["capabilities"])
+        identity = (state or BrainState()).identity()
+        procedures = self._matching_procedures(planned["objective"], identity)
+        if procedures:
+            work = _capabilities_from_procedures(procedures) or list(planned["capabilities"])
+            source = "procedure"
+        else:
+            work = list(planned["capabilities"])
+            source = "heuristic"
         sequence: list[tuple[str, str]] = [("memory", CAPABILITIES["memory"])]
         for capability in work:
             sequence.append((capability, CAPABILITIES[capability]))
@@ -387,9 +404,33 @@ class FibBrain:
             "status": planned["status"],
             "steps": planned["steps"],
             "capabilities": capabilities,
+            "capability_source": source,
+            "procedures": procedures,
             "blocked": blocked,
             "state": planned["state"],
         }
+
+    def _matching_procedures(self, objective: str, identity: dict[str, str | None]) -> list[dict[str, Any]]:
+        matches: list[dict[str, Any]] = []
+        for row in self._procedures(identity, query=objective, top_k=3):
+            procedure = Procedure.parse(row["content"])
+            if procedure is None or row.get("score", 0.0) <= 0.0:
+                continue
+            outcomes = self.memory.read(lambda memory, nid=row["node_id"]: memory.outcome_counts(nid))
+            matches.append(
+                {
+                    "node_id": row["node_id"],
+                    "title": row["title"],
+                    "trigger": procedure.trigger,
+                    "steps": list(procedure.steps),
+                    "tools": list(procedure.tools),
+                    "verify": procedure.verify,
+                    "score": row.get("score", 0.0),
+                    "maturity": _maturity(outcomes),
+                    "outcomes": outcomes,
+                }
+            )
+        return matches
 
     def complete_goal(
         self,
@@ -434,7 +475,12 @@ class FibBrain:
             if not results:
                 raise ValueError("reflect found no memory matching the goal")
             target = results[0]["node_id"]
-        updated = self.memory.record_outcome(target, parsed.value, source, note=note)
+        identity = (state or BrainState()).identity()
+        updated = self.memory.record_outcome(
+            target, parsed.value, source, note=note, session_id=identity["session_id"]
+        )
+        if updated.get("memory_kind") == MemoryKind.PROCEDURE.value:
+            updated["evolution"] = self._evolve_procedure(target)
         self.observe(
             "reflect",
             f"{parsed.value} {updated['title']} via {source}",
@@ -442,6 +488,159 @@ class FibBrain:
             state=state,
         )
         return updated
+
+    def _evolve_procedure(self, node_id: str) -> dict[str, Any]:
+        """Apply the deterministic evolution rules to one procedure.
+
+        Retirement is automatic: refuted twice with no confirmation means the
+        procedure does not work here. Promotion into shared knowledge is only
+        *reported*: it still goes through ``promote_knowledge`` and its
+        three-supporter bar, which one node cannot satisfy by itself.
+        """
+        outcomes = self.memory.read(lambda memory: memory.outcome_counts(node_id))
+        retired = False
+        if retirement_due(outcomes):
+            current = self.memory.inspect(node_id)
+            if current["status"] == MemoryStatus.ACTIVE.value:
+                self.memory.mark_stale(
+                    node_id,
+                    f"procedure refuted {outcomes['refuted']}× with no confirmation",
+                )
+            retired = True
+        return {
+            **outcomes,
+            "maturity": _maturity(outcomes),
+            "promotion_ready": promotion_ready(outcomes),
+            "retired": retired,
+        }
+
+    # ------------------------------------------------------------------
+    # Procedural memory
+
+    def remember_procedure(
+        self,
+        title: str,
+        trigger: str,
+        steps: list[str],
+        when: list[str] | None = None,
+        tools: list[str] | None = None,
+        verify: str = "",
+        inputs: dict[str, str] | None = None,
+        state: BrainState | None = None,
+    ) -> dict[str, Any]:
+        """Store a repeatable way of doing a class of task.
+
+        Goes through the same admission gate as any memory. If an active
+        procedure with the same trigger already exists in this working context,
+        the new one is linked to it as a ``version_of`` so both stay traceable;
+        outcomes decide which one ``render`` prefers.
+        """
+        procedure = Procedure(
+            trigger=_require_text(trigger, "trigger"),
+            steps=tuple(step.strip() for step in steps if step and step.strip()),
+            when=tuple(item.strip() for item in (when or []) if item and item.strip()),
+            tools=tuple(item.strip() for item in (tools or []) if item and item.strip()),
+            verify=(verify or "").strip(),
+            inputs={str(k): str(v) for k, v in (inputs or {}).items()},
+        )
+        if not procedure.steps:
+            raise ValueError("a procedure needs at least one step")
+        identity = (state or BrainState()).identity()
+        previous = [
+            node["node_id"]
+            for node in self._procedures(identity, query=None)
+            if Procedure.parse(node["content"]) is not None
+            and Procedure.parse(node["content"]).trigger.casefold() == procedure.trigger.casefold()
+        ]
+        result = self.remember(
+            PROCEDURE_CATEGORY,
+            _require_text(title, "title"),
+            procedure.encode(),
+            tags=[PROCEDURE_TAG],
+            metadata={"kind": "fibbrain_procedure_node", "trigger": procedure.trigger},
+            state=state,
+        )
+        if result.get("verdict") == AdmitVerdict.WRITE.value:
+            for old_id in previous:
+                self.memory.link(result["node_id"], old_id, RelationType.VERSION_OF.value, weight=1.0)
+            result["supersedes"] = previous
+        return result
+
+    def render(
+        self,
+        goal: str,
+        state: BrainState | None = None,
+        format: str = "skill",
+        top_k: int = 3,
+        min_maturity: str = "candidate",
+    ) -> dict[str, Any]:
+        """Turn the procedures that fit ``goal`` into skills or tool definitions.
+
+        ``format`` is ``skill`` (a SKILL.md document per procedure) or ``tool``
+        (a JSON-Schema tool definition per procedure). ``min_maturity`` filters
+        by evidence: ``candidate`` (anything active), ``verified`` (confirmed at
+        least once), ``established`` (meets the promotion bar). Rendering never
+        executes anything; the harness decides whether to register the result.
+        """
+        _require_text(goal, "goal")
+        if format not in {"skill", "tool"}:
+            raise ValueError("format must be 'skill' or 'tool'")
+        if min_maturity not in _MATURITY_ORDER:
+            raise ValueError(f"min_maturity must be one of {sorted(_MATURITY_ORDER)}")
+        identity = (state or BrainState()).identity()
+        rendered: list[dict[str, Any]] = []
+        for row in self._procedures(identity, query=goal, top_k=top_k * 2):
+            procedure = Procedure.parse(row["content"])
+            if procedure is None:
+                continue
+            outcomes = self.memory.read(lambda memory, nid=row["node_id"]: memory.outcome_counts(nid))
+            maturity = _maturity(outcomes)
+            if _MATURITY_ORDER[maturity] < _MATURITY_ORDER[min_maturity]:
+                continue
+            node = self.memory.read(lambda memory, nid=row["node_id"]: memory.nodes[nid])
+            item = render_skill(node, procedure, outcomes) if format == "skill" else render_tool(node, procedure, outcomes)
+            item.update(
+                {
+                    "node_id": row["node_id"],
+                    "title": row["title"],
+                    "score": row.get("score", 0.0),
+                    "confidence": row.get("confidence", 0.0),
+                    "maturity": maturity,
+                    "outcomes": outcomes,
+                }
+            )
+            rendered.append(item)
+            if len(rendered) >= top_k:
+                break
+        return {"goal": goal, "format": format, "state": identity, "items": rendered}
+
+    def _procedures(
+        self,
+        identity: dict[str, str | None],
+        query: str | None,
+        top_k: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Active procedure nodes visible to this identity, best match first."""
+        kwargs = _identity_kwargs(identity)
+        if query:
+            found = self.memory.search(query, top_k=top_k, categories=[PROCEDURE_CATEGORY], **kwargs)
+            rows = list(found["results"])
+        else:
+            rows = self.memory.read(
+                lambda memory: [
+                    {**_node_summary(node), "score": 0.0}
+                    for node in memory.nodes.values()
+                    if is_procedure_node(node) and memory.is_visible(node, **kwargs)
+                ]
+            )
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            inspected = self.memory.inspect(row["node_id"])
+            if not is_procedure_node(_node_from_summary(inspected)):
+                continue
+            out.append({**row, "content": inspected["content"]})
+        out.sort(key=lambda row: (row.get("score", 0.0), row.get("confidence", 0.0)), reverse=True)
+        return out
 
     # ------------------------------------------------------------------
     # Session review
@@ -509,6 +708,7 @@ class FibBrain:
                     session_id=session_id,
                     task_id=identity["task_id"],
                     status=status,
+                    memory_kind=candidate.memory_kind,
                 )
                 entry.update(_node_summary(memory.nodes[node_id]))
                 written.append(entry)
@@ -615,6 +815,47 @@ class FibBrain:
             **_identity_kwargs(identity),
         )
         return list(found["results"])
+
+
+_MATURITY_ORDER = {"candidate": 0, "verified": 1, "established": 2}
+
+# Which harness capability a tool name implies. Unknown tools fall back to the
+# objective heuristic in ``planning.infer_capabilities``.
+_TOOL_CAPABILITIES: tuple[tuple[tuple[str, ...], str], ...] = (
+    (("pytest", "test", "unittest", "jest", "vitest", "go test", "cargo test"), "test"),
+    (("edit", "write", "patch", "apply_patch", "sed", "refactor"), "code"),
+    (("search", "grep", "web", "fetch", "browse"), "search"),
+    (("doc", "readme", "markdown"), "docs"),
+    (("diff", "review", "read"), "review"),
+)
+
+
+def _maturity(outcomes: dict[str, int]) -> str:
+    if promotion_ready(outcomes):
+        return "established"
+    if outcomes.get("confirmed", 0) > 0:
+        return "verified"
+    return "candidate"
+
+
+def _capabilities_from_procedures(procedures: list[dict[str, Any]]) -> list[str]:
+    found: list[str] = []
+    for procedure in procedures:
+        for name in [*procedure.get("tools", []), *procedure.get("steps", [])]:
+            text = str(name).casefold()
+            for needles, capability in _TOOL_CAPABILITIES:
+                if capability not in found and any(needle in text for needle in needles):
+                    found.append(capability)
+    return found
+
+
+def _node_from_summary(inspected: dict[str, Any]) -> MemoryNode:
+    """A light node view for ``is_procedure_node``; only kind and tags matter."""
+    node = MemoryNode(title=inspected["title"], content=inspected.get("content", ""), category=inspected["category"])
+    node.tags = set(inspected.get("tags") or [])
+    kind = inspected.get("memory_kind")
+    node.memory_kind = MemoryKind(kind) if kind else None
+    return node
 
 
 def _episode_nodes(memory: FibMind, identity: dict[str, str | None]) -> list[MemoryNode]:

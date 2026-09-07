@@ -18,8 +18,10 @@ into the conversation.
 
 ## Before acting
 
-Call `fibbrain_coordinate` to see which capabilities to involve next. Call
-`fibbrain_advise` when past evidence might say a specific tool should not run.
+Call `fibbrain_coordinate` to see which capabilities to involve next; when it
+returns `procedures`, follow their steps. Call `fibbrain_render(goal)` to get
+those procedures as SKILL.md text or tool definitions. Call `fibbrain_advise`
+when past evidence might say a specific tool should not run.
 
 ## During a task
 
@@ -45,6 +47,11 @@ review could not derive, with:
 - verification commands
 
 The admit gate skips duplicates, raw dumps, and empty speculation.
+
+When a task turned out to be a repeatable recipe, call
+`fibbrain_remember_procedure` with the trigger, ordered steps, tools, and how
+to verify. After using a procedure, `fibbrain_reflect` on its node_id with
+`confirmed` or `refuted`; that is what promotes or retires it.
 
 ## Whenever evidence appears
 

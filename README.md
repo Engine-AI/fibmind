@@ -250,6 +250,8 @@ Recall and record:
 | `fibbrain_observe` | Note an episode event; persisted as session scratch when a `session_id` is given. |
 | `fibbrain_review_session` | Distil one session's episode into long-term candidates (`candidates` / `approve` / `auto`); idempotent. |
 | `fibbrain_pending_reviews` | List review memories waiting for approval. |
+| `fibbrain_remember_procedure` | Store a repeatable way of doing a class of task (trigger, steps, tools, verify, inputs). |
+| `fibbrain_render` | Render the procedures that fit a goal as `skill` (SKILL.md) or `tool` (JSON-Schema) definitions, filtered by maturity. |
 | `fibbrain_approve_memory` / `fibbrain_reject_memory` | Let a pending review memory in, or retire it as stale. |
 | `fibbrain_advise` | Allow or reject an action given stored evidence. |
 | `fibbrain_reflect` | Record that a memory turned out right or wrong. |

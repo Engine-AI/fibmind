@@ -9,6 +9,8 @@ from typing import Iterable
 
 from fibmind.fibonacci import DEFAULT_LAYER_POLICY, FibonacciLayerPolicy
 from fibmind.models import (
+    MemoryKind,
+    infer_memory_kind,
     Edge,
     EdgeDirection,
     EventOp,
@@ -122,6 +124,7 @@ class FibMind:
         auto_link: bool = True,
         status: MemoryStatus = MemoryStatus.ACTIVE,
         compress: bool = True,
+        memory_kind: MemoryKind | str | None = None,
     ) -> str:
         parsed_scope = MemoryScope(scope)
         workspace_id = optional_id(workspace_id)
@@ -149,6 +152,9 @@ class FibMind:
             session_id=session_id,
             task_id=task_id,
             status=MemoryStatus(status),
+            memory_kind=(
+                MemoryKind(memory_kind) if memory_kind else infer_memory_kind(category, parsed_scope)
+            ),
         )
         node.tree_ids.add(tree_id)
         self._add_node(node)
@@ -250,6 +256,7 @@ class FibMind:
         verdict: Verdict,
         source: str,
         note: str | None = None,
+        session_id: str | None = None,
     ) -> MemoryNode:
         """Attach external evidence about whether a memory is correct.
 
@@ -280,9 +287,33 @@ class FibMind:
                 "confidence": node.confidence,
                 "status": node.status.value,
                 "status_reason": node.status_reason,
+                "session_id": optional_id(session_id),
             },
         )
         return node
+
+    def outcome_counts(self, node_id: str) -> dict[str, int]:
+        """Tally the evidence recorded against one node, from the log.
+
+        Derived from ``observe`` events rather than kept as a counter, so it
+        survives replay and cannot drift from the log. ``sessions`` counts the
+        distinct sessions that supplied a confirmation; evidence from one
+        session repeated three times is weaker than from three sessions.
+        """
+        confirmed = refuted = 0
+        sessions: set[str] = set()
+        for event in self.events:
+            if event.op != EventOp.OBSERVE or event.payload.get("node_id") != node_id:
+                continue
+            verdict = event.payload.get("verdict")
+            if verdict == Verdict.CONFIRMED.value:
+                confirmed += 1
+                session = event.payload.get("session_id")
+                if session:
+                    sessions.add(str(session))
+            elif verdict == Verdict.REFUTED.value:
+                refuted += 1
+        return {"confirmed": confirmed, "refuted": refuted, "sessions": len(sessions)}
 
     def mark_stale(self, node_id: str, reason: str) -> MemoryNode:
         """Retire an outdated memory without deleting its provenance."""

@@ -394,6 +394,68 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
         )
 
     @mcp.tool()
+    def fibbrain_remember_procedure(
+        title: str,
+        trigger: str,
+        steps: list[str],
+        when: list[str] | None = None,
+        tools: list[str] | None = None,
+        verify: str = "",
+        inputs: dict[str, str] | None = None,
+        owner: str | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Store a repeatable way of doing a class of task (procedural memory).
+
+        ``trigger`` says what task it solves, ``when`` lists cue words, ``steps``
+        are the ordered actions, ``tools`` the tools they need, ``verify`` how
+        to tell it worked, ``inputs`` names any parameters. Later,
+        fibbrain_render turns it into a skill or tool and fibbrain_reflect on
+        its node_id records whether it worked; two refutations with no
+        confirmation retire it automatically.
+        """
+        return brain.remember_procedure(
+            title,
+            trigger,
+            steps,
+            when=when,
+            tools=tools,
+            verify=verify,
+            inputs=inputs,
+            state=_state(owner, workspace_id, project_id, session_id, task_id),
+        )
+
+    @mcp.tool()
+    def fibbrain_render(
+        goal: str,
+        format: str = "skill",
+        top_k: int = 3,
+        min_maturity: str = "candidate",
+        owner: str | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Render the procedures that fit ``goal`` as skills or tool definitions.
+
+        ``format`` is ``skill`` (SKILL.md text you can save under a skills
+        directory) or ``tool`` (a JSON-Schema tool definition). ``min_maturity``
+        is ``candidate``, ``verified`` (confirmed once), or ``established``
+        (confirmed three times across two sessions). Nothing is executed.
+        """
+        return brain.render(
+            goal,
+            state=_state(owner, workspace_id, project_id, session_id, task_id),
+            format=format,
+            top_k=top_k,
+            min_maturity=min_maturity,
+        )
+
+    @mcp.tool()
     def fibbrain_review_session(
         session_id: str,
         mode: str = "approve",

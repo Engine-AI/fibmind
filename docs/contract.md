@@ -67,6 +67,7 @@ unknown fields and default missing ones.
 | `confidence`, `confidence_source` | Moves only through `observe` events with a named source. The only trust signal ranking may use. |
 | `familiarity`, `access_count` | Usage counters. Never enter ranking. Not replayed. |
 | `folded_into` | Set by `fold`. Folded nodes are excluded from normal recall but keep their text. |
+| `memory_kind` | `preference` / `decision` / `error` / `requirement` / `summary` / `knowledge` / `procedure`, or absent. Inferred from the category when not given. `procedure` nodes carry a JSON body with `kind: fibbrain_procedure` and are the only kind `render` emits. |
 
 ## 2. Brain protocol
 
@@ -88,6 +89,8 @@ Every `fibbrain_*` tool accepts the identity quintet `owner`, `workspace_id`,
 | `fibbrain_observe(kind, summary, payload, identity)` | What just happened? | with a `session_id`: yes, as `scope=session` scratch in category `episode`; recall never returns it as a hit |
 | `fibbrain_review_session(session_id, mode, close, identity)` | What from this session is worth keeping? | `approve`: as `pending`; `auto`: as `active`; `candidates`: nothing |
 | `fibbrain_pending_reviews(identity)` / `fibbrain_approve_memory` / `fibbrain_reject_memory` | Which review memories wait, and do they get in? | status changes only |
+| `fibbrain_remember_procedure(title, trigger, steps, when, tools, verify, inputs, identity)` | How do I do this class of task? | yes: a `procedure` node; same-trigger predecessors get a `version_of` edge |
+| `fibbrain_render(goal, format, top_k, min_maturity, identity)` | Which procedures fit, as skills or tools? | no |
 | `fibbrain_advise(action, kind, identity)` | Should this action run? | no |
 | `fibbrain_reflect(verdict, source, node_id \| goal, identity)` | Did a memory hold up? | yes: an `observe` event |
 | `fibbrain_complete_goal(goal_id \| objective, identity)` | Done. | yes: goal status `complete` |
@@ -111,6 +114,13 @@ fields may appear.
   the same candidates, and a second run writes nothing.
 - Episode scratch (`category=episode`) never appears as a `recall` hit, only
   in the pack's `episode` list, and only to its own session.
+- `render` only ever emits `procedure` nodes visible to the caller. Maturity
+  is derived from `observe` events in the log: `verified` after one
+  confirmation, `established` after three confirmations from at least two
+  distinct sessions. A procedure refuted twice with no confirmation is
+  retired to `stale` by `reflect` itself.
+- `coordinate` reports `capability_source: procedure` when a matching
+  procedure drove the capability list, else `heuristic`.
 
 ## 3. Conformance fixture
 
@@ -140,6 +150,8 @@ Deliberately *not* promised, so they can change without notice:
 - the ranking formula and its weights (`ranking.py`);
 - Fibonacci layer capacities and the fold / summarize strategy;
 - the deterministic plan template and capability hints (`planning.py`);
+- the exact SKILL.md / tool-schema layout `render` produces, and the
+  promotion / retirement thresholds (`procedure.py`);
 - the admission heuristics (`admission.py`);
 - SQLite table layout beyond `meta.log_version`.
 

@@ -391,7 +391,8 @@ class IdentityVisibilityTests(unittest.TestCase):
             self.assertIsNone(node.task_id)
             hits = restored.search("legacy retry")
             self.assertEqual(hits[0].node.id, "node_legacy")
-            self.assertEqual(store.SCHEMA_VERSION, 4)
+            self.assertGreaterEqual(store.SCHEMA_VERSION, 4)
+            self.assertIsNone(node.memory_kind)
 
 
 if __name__ == "__main__":

@@ -21,7 +21,7 @@ def _state(**overrides: str) -> BrainState:
 
 def _review_hits(pack: dict) -> list[dict]:
     """Hits written by session review; goals and hand-written memories are ignored."""
-    return [hit for hit in pack["hits"] if hit["category"] in {"summary", "verification", "code", "decision", "error", "correction", "risk"}]
+    return [hit for hit in pack["hits"] if hit["category"] in {"summary", "verification", "code", "decision", "error", "correction", "risk", "procedure"}]
 
 
 class FibBrainTests(unittest.TestCase):
@@ -127,7 +127,7 @@ class FibBrainTests(unittest.TestCase):
 
         self.assertEqual(report["objective"], "Fix flaky upload retry test")
         categories = sorted(item["category"] for item in report["written"])
-        self.assertEqual(categories, ["code", "decision", "error", "summary", "verification"])
+        self.assertEqual(categories, ["code", "decision", "error", "procedure", "summary", "verification"])
         self.assertTrue(all("node_id" not in item for item in report["written"]))
         self.assertEqual(before, after)
 
@@ -331,3 +331,160 @@ class FibBrainTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProcedureTests(unittest.TestCase):
+    """Procedural memory: store, render, steer coordinate, evolve on evidence."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.brain = FibBrain(MemoryService(Path(self._tmp.name) / "memory.db"))
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _regression_procedure(self, state: BrainState | None = None) -> dict:
+        return self.brain.remember_procedure(
+            "Run the fibmind regression",
+            "Verify a fibmind change did not regress tests or retrieval quality",
+            steps=[".venv/bin/pytest -q", ".venv/bin/python -m evals.runner"],
+            when=["pytest", "regression", "评测", "回归"],
+            tools=["shell"],
+            verify="all tests pass and fibmind_current keeps R@K 1.0 with stale and forbidden at 0",
+            inputs={"change": "what was changed, for the memory that follows"},
+            state=state or _state(),
+        )
+
+    def test_remember_procedure_stores_a_procedure_node(self) -> None:
+        result = self._regression_procedure()
+        self.assertEqual(result["verdict"], AdmitVerdict.WRITE.value)
+        self.assertEqual(result["memory_kind"], "procedure")
+        self.assertEqual(result["category"], "procedure")
+        inspected = self.brain.memory.inspect(result["node_id"])
+        self.assertIn('"kind": "fibbrain_procedure"', inspected["content"])
+
+    def test_render_skill_is_a_skill_md_document(self) -> None:
+        stored = self._regression_procedure()
+        rendered = self.brain.render("run the pytest regression before committing", state=_state(), format="skill")
+
+        self.assertEqual(len(rendered["items"]), 1)
+        item = rendered["items"][0]
+        self.assertEqual(item["node_id"], stored["node_id"])
+        self.assertEqual(item["path"], "run-the-fibmind-regression/SKILL.md")
+        text = item["text"]
+        self.assertTrue(text.startswith("---\nname: run-the-fibmind-regression\ndescription: "))
+        self.assertIn("1. .venv/bin/pytest -q", text)
+        self.assertIn("2. .venv/bin/python -m evals.runner", text)
+        self.assertIn("## Verify", text)
+        self.assertIn("`change`", text)
+        self.assertIn(stored["node_id"], text)
+        self.assertEqual(item["maturity"], "candidate")
+
+    def test_render_tool_is_a_json_schema_tool_definition(self) -> None:
+        self._regression_procedure()
+        rendered = self.brain.render("regression check", state=_state(), format="tool")
+
+        item = rendered["items"][0]
+        self.assertEqual(item["name"], "run_the_fibmind_regression")
+        schema = item["inputSchema"]
+        self.assertEqual(schema["type"], "object")
+        self.assertEqual(schema["required"], ["change"])
+        self.assertEqual(schema["properties"]["change"]["type"], "string")
+        self.assertFalse(schema["additionalProperties"])
+        self.assertEqual(item["steps"][0], ".venv/bin/pytest -q")
+
+    def test_render_rejects_bad_arguments(self) -> None:
+        with self.assertRaises(ValueError):
+            self.brain.render("x", state=_state(), format="yaml")
+        with self.assertRaises(ValueError):
+            self.brain.render("x", state=_state(), min_maturity="legendary")
+
+    def test_render_does_not_cross_projects_or_owners(self) -> None:
+        self._regression_procedure(state=_state(project_id="fibmind"))
+        self.assertEqual(self.brain.render("pytest regression", state=_state(project_id="gateway"))["items"], [])
+        self.assertEqual(self.brain.render("pytest regression", state=_state(owner="bob"))["items"], [])
+        self.assertEqual(len(self.brain.render("pytest regression", state=_state(session_id="another"))["items"]), 1)
+
+    def test_render_never_returns_declarative_memories(self) -> None:
+        self.brain.remember("decision", "Use pytest for regression", "pytest is the regression runner", state=_state())
+        self.assertEqual(self.brain.render("pytest regression", state=_state())["items"], [])
+
+    def test_coordinate_prefers_a_matching_procedure(self) -> None:
+        stored = self._regression_procedure()
+        coordinated = self.brain.coordinate("run the pytest regression for the ranking change", state=_state())
+
+        self.assertEqual(coordinated["capability_source"], "procedure")
+        self.assertEqual([item["node_id"] for item in coordinated["procedures"]], [stored["node_id"]])
+        self.assertIn("test", [item["capability"] for item in coordinated["capabilities"]])
+
+    def test_coordinate_falls_back_to_heuristics_without_a_procedure(self) -> None:
+        coordinated = self.brain.coordinate("write the README section", state=_state())
+        self.assertEqual(coordinated["capability_source"], "heuristic")
+        self.assertEqual(coordinated["procedures"], [])
+
+    def test_confirmations_across_sessions_make_a_procedure_established(self) -> None:
+        stored = self._regression_procedure()
+        node_id = stored["node_id"]
+
+        first = self.brain.reflect("confirmed", "pytest -q", node_id=node_id, state=_state(session_id="s1"))
+        self.assertEqual(first["evolution"]["maturity"], "verified")
+        self.assertFalse(first["evolution"]["promotion_ready"])
+        self.brain.reflect("confirmed", "pytest -q", node_id=node_id, state=_state(session_id="s1"))
+        same_session = self.brain.reflect("confirmed", "pytest -q", node_id=node_id, state=_state(session_id="s1"))
+        self.assertFalse(same_session["evolution"]["promotion_ready"], "three confirmations from one session are not enough")
+
+        other = self.brain.reflect("confirmed", "pytest -q", node_id=node_id, state=_state(session_id="s2"))
+        self.assertTrue(other["evolution"]["promotion_ready"])
+        self.assertEqual(other["evolution"]["maturity"], "established")
+        self.assertEqual(other["evolution"]["sessions"], 2)
+
+        established_only = self.brain.render("pytest regression", state=_state(), min_maturity="established")
+        self.assertEqual([item["node_id"] for item in established_only["items"]], [node_id])
+
+    def test_two_refutations_without_confirmation_retire_a_procedure(self) -> None:
+        stored = self._regression_procedure()
+        node_id = stored["node_id"]
+
+        first = self.brain.reflect("refuted", "pytest failed: fixture missing", node_id=node_id, state=_state(session_id="s1"))
+        self.assertFalse(first["evolution"]["retired"])
+        second = self.brain.reflect("refuted", "pytest failed again", node_id=node_id, state=_state(session_id="s2"))
+
+        self.assertTrue(second["evolution"]["retired"])
+        self.assertEqual(self.brain.render("pytest regression", state=_state())["items"], [])
+        self.assertEqual(self.brain.coordinate("run the pytest regression", state=_state())["procedures"], [])
+
+    def test_same_trigger_links_the_new_version_to_the_old(self) -> None:
+        old = self._regression_procedure()
+        new = self.brain.remember_procedure(
+            "Run the fibmind regression (fast)",
+            "Verify a fibmind change did not regress tests or retrieval quality",
+            steps=[".venv/bin/pytest -q -x"],
+            state=_state(),
+        )
+        self.assertEqual(new["supersedes"], [old["node_id"]])
+        links = self.brain.memory.search_from(new["node_id"], depth=1, relation_types=["version_of"], owner="alice", workspace_id="ws-1", project_id="fibmind")
+        neighbours = [hit["node_id"] for hit in links["hits"] if hit["depth"] > 0]
+        self.assertEqual(neighbours, [old["node_id"]])
+
+    def test_session_review_extracts_a_procedure_when_steps_were_verified(self) -> None:
+        state = _state()
+        self.brain.plan("Fix flaky upload retry test", state=state)
+        self.brain.observe("tool_result", "edited upload.py", {"tool": "edit_file", "files": ["src/upload.py"]}, state=state)
+        self.brain.observe("step", "ran the suite", {"command": ".venv/bin/pytest -q tests/test_upload.py", "tool": "shell"}, state=state)
+        self.brain.observe("test", "3 passed", {"command": ".venv/bin/pytest -q tests/test_upload.py"}, state=state)
+
+        report = self.brain.review_session(state, mode="auto")
+        procedures = [item for item in report["written"] if item["category"] == "procedure"]
+        self.assertEqual(len(procedures), 1)
+        self.assertEqual(procedures[0]["memory_kind"], "procedure")
+
+        rendered = self.brain.render("fix the flaky upload retry test", state=_state(session_id="sess-2"), format="skill")
+        self.assertEqual([item["node_id"] for item in rendered["items"]], [procedures[0]["node_id"]])
+        self.assertIn("Verify: .venv/bin/pytest -q tests/test_upload.py", rendered["items"][0]["text"])
+
+    def test_session_review_without_verification_yields_no_procedure(self) -> None:
+        state = _state()
+        self.brain.plan("Poke around the codebase", state=state)
+        self.brain.observe("tool_result", "read graph.py", {"tool": "read_file"}, state=state)
+        report = self.brain.review_session(state, mode="candidates")
+        self.assertEqual([item for item in report["written"] if item["category"] == "procedure"], [])

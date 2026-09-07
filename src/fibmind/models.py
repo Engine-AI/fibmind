@@ -81,6 +81,33 @@ class MemoryScope(StrEnum):
     KNOWLEDGE = "knowledge"
 
 
+class MemoryKind(StrEnum):
+    """What sort of thing a memory records.
+
+    Most kinds are declarative — facts about the world or the work. ``PROCEDURE``
+    is the one procedural kind: a repeatable way of doing a class of task,
+    which is what ``render`` turns into a skill or tool definition.
+    """
+
+    PREFERENCE = "preference"
+    DECISION = "decision"
+    ERROR = "error"
+    REQUIREMENT = "requirement"
+    SUMMARY = "summary"
+    KNOWLEDGE = "knowledge"
+    PROCEDURE = "procedure"
+
+
+def infer_memory_kind(category: str, scope: "MemoryScope") -> MemoryKind | None:
+    """Default kind from the category name; ``None`` when nothing fits."""
+    if scope == MemoryScope.KNOWLEDGE:
+        return MemoryKind.KNOWLEDGE
+    try:
+        return MemoryKind(category.strip().casefold())
+    except ValueError:
+        return None
+
+
 class MemoryStatus(StrEnum):
     """Whether a memory may participate in normal recall.
 
@@ -177,6 +204,7 @@ class MemoryNode:
     task_id: str | None = None
     status: MemoryStatus = MemoryStatus.ACTIVE
     status_reason: str | None = None
+    memory_kind: MemoryKind | None = None
     # How often this node has been recalled. A cache derived from access
     # patterns, deliberately kept OUT of relevance scoring: rewarding recall
     # frequency creates a recalled -> ranked-higher -> recalled-more loop that
@@ -219,6 +247,7 @@ class MemoryNode:
             "task_id": self.task_id,
             "status": self.status.value,
             "status_reason": self.status_reason,
+            "memory_kind": self.memory_kind.value if self.memory_kind else None,
             "familiarity": self.familiarity,
             "access_count": self.access_count,
             "confidence": self.confidence,
@@ -254,6 +283,7 @@ class MemoryNode:
             task_id=optional_id(data.get("task_id")),
             status=MemoryStatus(data.get("status", MemoryStatus.ACTIVE.value)),
             status_reason=data.get("status_reason"),
+            memory_kind=_parse_kind(data.get("memory_kind")),
             familiarity=float(familiarity),
             access_count=int(data.get("access_count", 0)),
             confidence=float(data.get("confidence", 0.0)),
@@ -262,6 +292,15 @@ class MemoryNode:
             memory_weight=int(data.get("memory_weight", 1)),
         )
         return node
+
+
+def _parse_kind(value: Any) -> MemoryKind | None:
+    if not value:
+        return None
+    try:
+        return MemoryKind(str(value))
+    except ValueError:
+        return None
 
 
 @dataclass(slots=True)
