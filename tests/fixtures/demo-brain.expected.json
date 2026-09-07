@@ -2,13 +2,14 @@
   "log_version": 1,
   "fixture": "data/demo-brain.json",
   "shape": {
-    "nodes": 9,
-    "edges": 6,
-    "trees": 3,
+    "nodes": 11,
+    "edges": 7,
+    "trees": 4,
     "categories": [
       "decision",
       "episode",
-      "goal"
+      "goal",
+      "hot"
     ]
   },
   "queries": [
