@@ -44,6 +44,7 @@ from fibmind.procedure import (
     render_tool,
     retirement_due,
 )
+from fibmind.ranking import tokenize
 from fibmind.review import (
     EPISODE_CATEGORY,
     EPISODE_TAG,
@@ -251,25 +252,43 @@ class FibBrain:
         kind: str = "tool",
         state: BrainState | None = None,
         top_k: int = 5,
+        arguments: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Should this action run, given what we already know?"""
+        """Should this action run, given what we already know?
+
+        A refuted memory blocks the action only when it matches the action
+        name itself — not merely a word from the arguments. When ``arguments``
+        are given, the blocker must also share at least one argument term, so
+        evidence that ``rm build/`` failed does not block ``rm tmp/``; without
+        arguments, any refuted memory about the action blocks it.
+        """
         _require_text(action, "action")
         identity = (state or BrainState()).identity()
-        query = f"{kind} {action}"
+        action_terms = set(tokenize(action))
+        argument_terms = set(tokenize(_flatten_arguments(arguments))) - action_terms if arguments else set()
+        query = " ".join([kind, action, *sorted(argument_terms)])
         search_kwargs = _identity_kwargs(identity)
         active = self.memory.search(query, top_k=top_k, **search_kwargs)
         refuted = self.memory.search(
             query,
-            top_k=top_k,
+            top_k=top_k * 2,
             statuses=[MemoryStatus.REFUTED.value],
             **search_kwargs,
         )
         notes = list(active["results"])
-        blockers = list(refuted["results"])
+        blockers = []
+        for hit in refuted["results"]:
+            matched = set(hit.get("matched_terms") or [])
+            if not matched & action_terms:
+                continue
+            if argument_terms and not matched & argument_terms:
+                continue
+            blockers.append(hit)
         if blockers:
             decision = AdviseDecision(
                 AdviseVerdict.REJECT,
-                f"refuted evidence advises against {action}",
+                f"refuted evidence advises against {action}"
+                + (f" with {', '.join(sorted(argument_terms))}" if argument_terms else ""),
                 memories=tuple(blockers + notes),
             )
         else:
@@ -918,6 +937,21 @@ def _candidate(
         session_id=identity["session_id"],
         task_id=identity["task_id"],
     )
+
+
+def _flatten_arguments(arguments: dict[str, Any] | None) -> str:
+    """Argument values as searchable text; keys are structure, not content."""
+    if not arguments:
+        return ""
+    parts: list[str] = []
+    for value in arguments.values():
+        if isinstance(value, (list, tuple, set)):
+            parts.extend(str(item) for item in value)
+        elif isinstance(value, dict):
+            parts.append(_flatten_arguments(value))
+        elif value is not None:
+            parts.append(str(value))
+    return " ".join(parts)
 
 
 def _identity_kwargs(identity: dict[str, str | None]) -> dict[str, str | None]:

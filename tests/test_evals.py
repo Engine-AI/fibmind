@@ -99,6 +99,7 @@ def test_full_evaluation_compares_all_p0_baselines() -> None:
         "agents_md",
         "hermes_hot",
         "fibmind_current",
+        "fibmind_hybrid",
     }
     assert report["baselines"]["no_memory"]["total_estimated_tokens"] == 0
     assert report["baselines"]["fibmind_current"]["recall_at_k"] == 1.0

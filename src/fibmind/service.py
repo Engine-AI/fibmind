@@ -8,12 +8,15 @@ Every method returns plain JSON-serializable dicts so the MCP layer stays thin.
 from __future__ import annotations
 
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, TypeVar
 
 T = TypeVar("T")
 
 from fibmind.admission import AdmitVerdict, MemoryCandidate, decide_admission
+from fibmind.embedding import EmbeddingCache, EmbeddingProvider
 from fibmind.context import build_context
 from fibmind.graph import FibMind, SearchHit
 from fibmind.models import (
@@ -145,19 +148,94 @@ def _require_weight(weight: float) -> float:
 class MemoryService:
     """Thread-safe facade over a persisted FibMind memory forest."""
 
-    def __init__(self, store_path: str | Path) -> None:
+    def __init__(
+        self,
+        store_path: str | Path,
+        embedding_provider: EmbeddingProvider | None = None,
+    ) -> None:
         self._store: MemoryStore = open_store(store_path)
         self._lock = threading.RLock()
+        # Vectors are cached per process, keyed by content hash, and attached
+        # to every forest this service loads. No provider means lexical only.
+        self._embeddings = EmbeddingCache(embedding_provider)
+
+    @property
+    def embeddings(self) -> EmbeddingCache:
+        return self._embeddings
+
+    def _load(self) -> FibMind:
+        memory = self._store.load()
+        memory.embeddings = self._embeddings
+        return memory
+
+    @contextmanager
+    def _transaction(self) -> Iterator[FibMind]:
+        with self._store.transaction() as memory:
+            memory.embeddings = self._embeddings
+            yield memory
 
     def read(self, fn: Callable[[FibMind], T]) -> T:
         """Run ``fn`` against a loaded forest without persisting anything."""
         with self._lock:
-            return fn(self._store.load())
+            return fn(self._load())
 
     def run(self, fn: Callable[[FibMind], T]) -> T:
         """Run ``fn`` inside one store transaction; changes persist on return."""
-        with self._lock, self._store.transaction() as memory:
+        with self._lock, self._transaction() as memory:
             return fn(memory)
+
+    def status(self) -> dict[str, Any]:
+        """Store size, index state, pending reviews, and embedding health."""
+        with self._lock:
+            memory = self._load()
+            by_status: dict[str, int] = {}
+            for node in memory.nodes.values():
+                by_status[node.status.value] = by_status.get(node.status.value, 0) + 1
+            return {
+                "store": str(self._store.path),
+                "nodes": len(memory.nodes),
+                "edges": len(memory.edges),
+                "trees": len(memory.trees),
+                "events": len(memory.events),
+                "by_status": by_status,
+                "lexical_terms": len(memory.lexical.postings),
+                "embedding": {
+                    "enabled": self._embeddings.enabled,
+                    "provider": self._embeddings.provider.name if self._embeddings.provider else None,
+                    "cached_vectors": len(self._embeddings),
+                    "failures": self._embeddings.failures,
+                    "last_error": self._embeddings.last_error,
+                },
+            }
+
+    def explain_recall(
+        self,
+        query: str,
+        top_k: int = 5,
+        categories: list[str] | None = None,
+        scopes: list[str] | None = None,
+        owner: str | None = None,
+        statuses: list[str] | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        exclude_categories: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Account for a recall: every signal per result, and why others were left out."""
+        _require_text(query, "query")
+        with self._lock:
+            return self._load().explain_recall(
+                query,
+                top_k=top_k,
+                categories=set(categories) if categories else None,
+                scopes=_parse_scopes(scopes),
+                owner=owner,
+                statuses=_parse_statuses(statuses),
+                workspace_id=workspace_id,
+                project_id=project_id,
+                session_id=session_id,
+                exclude_categories=set(exclude_categories) if exclude_categories else None,
+            )
 
     def append(
         self,
@@ -184,7 +262,7 @@ class MemoryService:
                 "supporting observations; append writes personal or session memories"
             )
 
-        with self._lock, self._store.transaction() as memory:
+        with self._lock, self._transaction() as memory:
             node_id = memory.append(
                 category=category,
                 title=title,
@@ -204,7 +282,7 @@ class MemoryService:
     def admit(self, candidate: MemoryCandidate) -> dict[str, Any]:
         """Preview whether ``candidate`` would be written. Does not persist."""
         with self._lock:
-            return decide_admission(self._store.load(), candidate).to_dict()
+            return decide_admission(self._load(), candidate).to_dict()
 
     def remember(
         self,
@@ -212,7 +290,7 @@ class MemoryService:
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Admit then write inside one transaction. Skips are not persisted."""
-        with self._lock, self._store.transaction() as memory:
+        with self._lock, self._transaction() as memory:
             decision = decide_admission(memory, candidate)
             payload = decision.to_dict()
             if decision.verdict != AdmitVerdict.WRITE:
@@ -238,7 +316,7 @@ class MemoryService:
         """Return one node including content and metadata."""
         _require_text(node_id, "node_id")
         with self._lock:
-            memory = self._store.load()
+            memory = self._load()
             node = memory.nodes.get(node_id)
             if node is None:
                 raise ValueError(f"unknown node: {node_id}")
@@ -263,7 +341,7 @@ class MemoryService:
         """
         parsed = _parse_verdict(verdict)
         _require_text(source, "source")
-        with self._lock, self._store.transaction() as memory:
+        with self._lock, self._transaction() as memory:
             try:
                 node = memory.record_outcome(
                     node_id, parsed, source=source, note=note, session_id=session_id
@@ -282,7 +360,7 @@ class MemoryService:
         """Correct a memory. Its accumulated confidence is reset."""
         if title is None and content is None and tags is None:
             raise ValueError("revise needs at least one of title, content, or tags")
-        with self._lock, self._store.transaction() as memory:
+        with self._lock, self._transaction() as memory:
             try:
                 node = memory.revise(node_id, title=title, content=content, tags=tags)
             except KeyError as exc:
@@ -293,7 +371,7 @@ class MemoryService:
         """Move a memory between lifecycle states (approve / reject a pending one)."""
         parsed = _parse_status(status)
         _require_text(reason, "reason")
-        with self._lock, self._store.transaction() as memory:
+        with self._lock, self._transaction() as memory:
             try:
                 return _node_summary(memory.set_status(node_id, parsed, reason))
             except KeyError as exc:
@@ -302,7 +380,7 @@ class MemoryService:
     def mark_stale(self, node_id: str, reason: str) -> dict[str, Any]:
         """Retire an outdated memory while preserving its provenance."""
         _require_text(reason, "reason")
-        with self._lock, self._store.transaction() as memory:
+        with self._lock, self._transaction() as memory:
             try:
                 return _node_summary(memory.mark_stale(node_id, reason))
             except KeyError as exc:
@@ -311,7 +389,7 @@ class MemoryService:
     def forget(self, node_id: str, reason: str) -> dict[str, Any]:
         """Delete a memory and redact it from the event log."""
         _require_text(reason, "reason")
-        with self._lock, self._store.transaction() as memory:
+        with self._lock, self._transaction() as memory:
             try:
                 return memory.forget(node_id, reason=reason)
             except KeyError as exc:
@@ -334,7 +412,7 @@ class MemoryService:
         _require_text(content, "content")
         if not supporting_node_ids:
             raise ValueError("supporting_node_ids must list the observations behind the claim")
-        with self._lock, self._store.transaction() as memory:
+        with self._lock, self._transaction() as memory:
             try:
                 node_id = memory.promote_to_knowledge(
                     title=title,
@@ -365,7 +443,7 @@ class MemoryService:
         assert relation is not None
         weight = _require_weight(weight)
         direction = EdgeDirection.BIDIRECTIONAL if bidirectional else EdgeDirection.DIRECTED
-        with self._lock, self._store.transaction() as memory:
+        with self._lock, self._transaction() as memory:
             try:
                 edge_id = memory.link_nodes(
                     from_node_id,
@@ -406,7 +484,7 @@ class MemoryService:
         scope_set = _parse_scopes(scopes)
         status_set = _parse_statuses(statuses)
         with self._lock:
-            memory = self._store.load()
+            memory = self._load()
             hits = memory.search(
                 query,
                 top_k=top_k,
@@ -466,9 +544,9 @@ class MemoryService:
 
         with self._lock:
             if reinforce:
-                with self._store.transaction() as memory:
+                with self._transaction() as memory:
                     return execute(memory)
-            return execute(self._store.load())
+            return execute(self._load())
 
     def context(
         self,
@@ -492,7 +570,7 @@ class MemoryService:
         excluded = set(exclude_categories) if exclude_categories else None
         with self._lock:
             if reinforce:
-                with self._store.transaction() as memory:
+                with self._transaction() as memory:
                     return build_context(
                         memory,
                         goal,
@@ -509,7 +587,7 @@ class MemoryService:
                         exclude_categories=excluded,
                     ).to_dict()
             return build_context(
-                self._store.load(),
+                self._load(),
                 goal,
                 top_k=top_k,
                 depth=depth,

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Iterable
+from typing import Any, Iterable
 
 from fibmind.fibonacci import DEFAULT_LAYER_POLICY, FibonacciLayerPolicy
 from fibmind.models import (
@@ -27,6 +27,7 @@ from fibmind.models import (
     utc_now,
 )
 from fibmind.ranking import ScoredHit, rank_nodes
+from fibmind.retrieval import LexicalIndex, retrieve, to_scored_hits
 
 # How much a single confirmation/refutation moves a node's confidence. Evidence
 # accumulates rather than deciding outright, so one lucky pass does not make a
@@ -69,6 +70,11 @@ class FibMind:
         self.adjacency: dict[str, set[str]] = {}
         self.reverse_adjacency: dict[str, set[str]] = {}
         self.by_cat_layer: dict[tuple[str, str], set[str]] = {}
+        # Inverted index for lexical recall; kept in step by _index_node /
+        # _unindex_node and the text mutations in revise / replay.
+        self.lexical = LexicalIndex()
+        # Optional vector cache attached by the service; None means lexical only.
+        self.embeddings: Any = None
 
     def _record(self, op: EventOp, payload: dict) -> MemoryEvent:
         """Append one entry to the log. Every semantic mutation goes through here."""
@@ -199,24 +205,18 @@ class FibMind:
         nothing else, so a one-hop expansion reaches only the root — which
         context building filters out — and yields nothing.
         """
-        candidates = rank_nodes(
-            (
-                other
-                for other in self.nodes.values()
-                if other.id != node.id
-                and self.is_visible(
-                    other,
-                    scopes={node.scope},
-                    owner=node.owner,
-                    workspace_id=node.workspace_id,
-                    project_id=node.project_id,
-                    session_id=node.session_id,
-                )
-            ),
+        ranked, _ = retrieve(
+            self,
             f"{node.title} {node.content}",
-            top_k=AUTO_LINK_TOP_K,
+            top_k=AUTO_LINK_TOP_K + 1,
             min_score=AUTO_LINK_MIN_SCORE,
+            scopes={node.scope},
+            owner=node.owner,
+            workspace_id=node.workspace_id,
+            project_id=node.project_id,
+            session_id=node.session_id,
         )
+        candidates = [hit for hit in to_scored_hits(ranked) if hit.node.id != node.id][:AUTO_LINK_TOP_K]
         for hit in candidates:
             self.link_nodes(
                 node.id,
@@ -353,6 +353,7 @@ class FibMind:
             node.content = content
         if tags is not None:
             node.tags = set(tags)
+        self.lexical.add(node)
         node.confidence = 0.0
         node.confidence_source = None
         node.status = MemoryStatus.ACTIVE
@@ -682,23 +683,70 @@ class FibMind:
         is represented by the node that absorbed them. Workspace and project
         are exact-match labels: omitting them only sees unlabelled memories.
         """
-        return rank_nodes(
-            self._visible_nodes(
-                scopes=scopes,
-                owner=owner,
-                include_folded=include_folded,
-                statuses=statuses,
-                workspace_id=workspace_id,
-                project_id=project_id,
-                session_id=session_id,
-            ),
+        ranked, _ = retrieve(
+            self,
             query,
             top_k=top_k,
             categories=categories,
             exclude_categories=exclude_categories,
             min_score=min_score,
             include_roots=include_roots,
+            scopes=scopes,
+            owner=owner,
+            include_folded=include_folded,
+            statuses=statuses,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            session_id=session_id,
+            embeddings=self.embeddings,
         )
+        return to_scored_hits(ranked)
+
+    def explain_recall(
+        self,
+        query: str,
+        top_k: int = 5,
+        categories: set[str] | None = None,
+        scopes: set[MemoryScope] | None = None,
+        owner: str | None = None,
+        statuses: set[MemoryStatus] | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        exclude_categories: set[str] | None = None,
+    ) -> dict:
+        """Why did recall return what it returned?
+
+        Every ranked candidate comes back with its lexical, vector, fusion,
+        confidence, and recency components; nodes that shared a query term but
+        were excluded come back with the reason (status, visibility, folded,
+        category). Read-only.
+        """
+        ranked, report = retrieve(
+            self,
+            query,
+            top_k=top_k,
+            categories=categories,
+            exclude_categories=exclude_categories,
+            scopes=scopes,
+            owner=owner,
+            statuses=statuses,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            session_id=session_id,
+            embeddings=self.embeddings,
+            explain=True,
+        )
+        report["results"] = [candidate.to_dict() for candidate in ranked]
+        report["weights"] = {
+            "coverage_part": 0.6,
+            "bm25_part": 0.4,
+            "title": 0.6,
+            "confidence": 0.3,
+            "recency": 0.2,
+            "familiarity": 0.0,
+        }
+        return report
 
     def _visible_nodes(
         self,
@@ -963,8 +1011,10 @@ class FibMind:
 
     def _index_node(self, node: MemoryNode) -> None:
         self.by_cat_layer.setdefault((node.category, node.layer), set()).add(node.id)
+        self.lexical.add(node)
 
     def _unindex_node(self, node: MemoryNode) -> None:
+        self.lexical.remove(node.id)
         bucket = self.by_cat_layer.get((node.category, node.layer))
         if bucket is None:
             return
@@ -1006,6 +1056,7 @@ class FibMind:
         self.adjacency = {}
         self.reverse_adjacency = {}
         self.by_cat_layer = {}
+        self.lexical = LexicalIndex()
         for node in self.nodes.values():
             self._index_node(node)
         for edge in self.edges.values():
@@ -1080,6 +1131,7 @@ class FibMind:
                 node.title = after["title"]
                 node.content = after["content"]
                 node.tags = set(after.get("tags", []))
+                self.lexical.add(node)
                 node.confidence = 0.0
                 node.confidence_source = None
                 node.status = MemoryStatus(after.get("status", MemoryStatus.ACTIVE.value))

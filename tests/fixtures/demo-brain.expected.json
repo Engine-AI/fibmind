@@ -70,6 +70,7 @@
     "fibbrain_review_session",
     "fibmind_append",
     "fibmind_context",
+    "fibmind_explain_recall",
     "fibmind_forget",
     "fibmind_link",
     "fibmind_mark_stale",
@@ -77,6 +78,7 @@
     "fibmind_record_outcome",
     "fibmind_revise",
     "fibmind_search",
-    "fibmind_search_from"
+    "fibmind_search_from",
+    "fibmind_status"
   ]
 }

@@ -147,7 +147,10 @@ the commit; a silent diff there is a contract break.
 
 Deliberately *not* promised, so they can change without notice:
 
-- the ranking formula and its weights (`ranking.py`);
+- the retrieval engine and its weights (`retrieval.py`, `ranking.py`): BM25
+  constants, fusion, the vector floor, and which embedding provider is used;
+- the shape of `fibmind_explain_recall` beyond `results[].node_id` and
+  `excluded[].reason`;
 - Fibonacci layer capacities and the fold / summarize strategy;
 - the deterministic plan template and capability hints (`planning.py`);
 - the exact SKILL.md / tool-schema layout `render` produces, and the

@@ -488,3 +488,36 @@ class ProcedureTests(unittest.TestCase):
         self.brain.observe("tool_result", "read graph.py", {"tool": "read_file"}, state=state)
         report = self.brain.review_session(state, mode="candidates")
         self.assertEqual([item for item in report["written"] if item["category"] == "procedure"], [])
+
+
+class AdviseArgumentTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.brain = FibBrain(MemoryService(Path(self._tmp.name) / "memory.json"))
+        written = self.brain.remember(
+            "decision",
+            "rm build directory before packaging",
+            "running rm on the build directory before packaging deletes the cached wheels",
+            state=_state(),
+        )
+        self.brain.reflect("refuted", "CI: wheels missing after rm build", node_id=written["node_id"], state=_state())
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_refuted_action_blocks_without_arguments(self) -> None:
+        self.assertEqual(self.brain.advise("rm", state=_state())["verdict"], AdviseVerdict.REJECT.value)
+
+    def test_matching_arguments_block(self) -> None:
+        decision = self.brain.advise("rm", arguments={"path": "build/"}, state=_state())
+        self.assertEqual(decision["verdict"], AdviseVerdict.REJECT.value)
+        self.assertIn("build", decision["reason"])
+
+    def test_different_arguments_do_not_block(self) -> None:
+        decision = self.brain.advise("rm", arguments={"path": "tmp/scratch"}, state=_state())
+        self.assertEqual(decision["verdict"], AdviseVerdict.ALLOW.value)
+
+    def test_argument_only_overlap_does_not_block(self) -> None:
+        # The refuted memory mentions "packaging"; a different tool touching packaging is fine.
+        decision = self.brain.advise("edit_file", arguments={"path": "packaging/setup.cfg"}, state=_state())
+        self.assertEqual(decision["verdict"], AdviseVerdict.ALLOW.value)

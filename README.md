@@ -38,8 +38,12 @@ The memory engine models long-term knowledge as:
 - Fibonacci-sized layers for raw, compressed, summary, and long-term memory
 - graph edges between related nodes, plus local graph search
 
-The graph, ranking, context, admission, and storage modules use only the Python
-standard library. The agent-facing server uses the MCP Python SDK 2.x. Prefer
+The graph, retrieval, context, admission, and storage modules use only the
+Python standard library. Recall is an inverted index with BM25 plus title,
+confidence, and recency signals; set `FIBMIND_EMBEDDING=hashing` (offline) or
+`FIBMIND_EMBEDDING=openai` with `FIBMIND_EMBEDDING_URL` / `_MODEL` / `_API_KEY`
+to fuse a vector candidate list in with reciprocal rank fusion. A provider
+failure degrades to lexical recall instead of failing the call. The agent-facing server uses the MCP Python SDK 2.x. Prefer
 the `fibbrain_*` tools; `fibmind_*` remains the direct store API.
 
 > [!WARNING]
@@ -260,6 +264,8 @@ Recall and record:
 | `fibmind_search` | Rank memories by keyword relevance to a query (read-only). |
 | `fibmind_search_from` | Expand the association tree rooted at a node. |
 | `fibmind_link` | Create a typed relationship between two memories. |
+| `fibmind_explain_recall` | Per-result lexical / vector / fusion / confidence / recency signals, and why other candidates were excluded. |
+| `fibmind_status` | Store size, lifecycle counts, lexical index size, embedding health. |
 
 Judgement and upkeep — the half that keeps the store from degrading:
 

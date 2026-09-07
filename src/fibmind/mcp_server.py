@@ -23,6 +23,7 @@ from typing import Any
 from mcp.server import MCPServer
 
 from fibmind.brain import BrainState, FibBrain
+from fibmind.embedding import provider_from_env
 from fibmind.service import MemoryService
 
 DEFAULT_STORE = ".fibmind/memory.db"
@@ -312,6 +313,41 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
         )
 
     @mcp.tool()
+    def fibmind_explain_recall(
+        query: str,
+        top_k: int = 5,
+        categories: list[str] | None = None,
+        scopes: list[str] | None = None,
+        owner: str | None = None,
+        statuses: list[str] | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Explain a recall: per-result lexical / vector / fusion / confidence /
+        recency signals, matched terms, and why other candidates were excluded
+        (status, visibility, folded, category). Read-only; use it when a recall
+        looks wrong before revising or marking memories stale.
+        """
+        return service.explain_recall(
+            query,
+            top_k=top_k,
+            categories=categories,
+            scopes=scopes,
+            owner=owner,
+            statuses=statuses,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            session_id=session_id,
+            exclude_categories=["episode"],
+        )
+
+    @mcp.tool()
+    def fibmind_status() -> dict[str, Any]:
+        """Store size, lifecycle counts, lexical index size, and embedding health."""
+        return service.status()
+
+    @mcp.tool()
     def fibbrain_recall(
         goal: str,
         top_k: int = 5,
@@ -504,6 +540,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
     def fibbrain_advise(
         action: str,
         kind: str = "tool",
+        arguments: dict[str, Any] | None = None,
         owner: str | None = None,
         workspace_id: str | None = None,
         project_id: str | None = None,
@@ -513,14 +550,17 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
     ) -> dict[str, Any]:
         """Ask whether an action should run, given stored evidence.
 
-        Rejects when a refuted memory with enough confidence warns against the
-        action. Otherwise allows and returns related memories as notes.
+        Rejects when a refuted memory matches the action — and, if you pass the
+        tool ``arguments``, also shares a term with them, so ``rm build/`` being
+        refuted does not block ``rm tmp/``. Otherwise allows and returns related
+        memories as notes.
         """
         return brain.advise(
             action,
             kind=kind,
             state=_state(owner, workspace_id, project_id, session_id, task_id),
             top_k=top_k,
+            arguments=arguments,
         )
 
     @mcp.tool()
@@ -628,7 +668,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> None:
     args = _parse_args(argv)
-    service = MemoryService(Path(args.store))
+    # Semantic recall is opt-in through FIBMIND_EMBEDDING=hashing|openai (plus
+    # FIBMIND_EMBEDDING_URL / _MODEL / _API_KEY for openai). Unset = lexical.
+    service = MemoryService(Path(args.store), embedding_provider=provider_from_env())
     server = build_server(service)
     server.run(transport="stdio")
 

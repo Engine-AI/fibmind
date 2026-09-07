@@ -14,6 +14,7 @@ from time import perf_counter
 from typing import Any, Iterable
 
 from fibmind.context import build_context
+from fibmind.embedding import EmbeddingCache, HashingEmbeddingProvider
 from fibmind.graph import FibMind
 from fibmind.models import MemoryScope
 
@@ -309,11 +310,27 @@ class FibMindCurrentBaseline(Baseline):
         return self._result(case, started_at, ids, pack.text)
 
 
+class FibMindHybridBaseline(FibMindCurrentBaseline):
+    """The same engine with the offline hashing vector provider fused in.
+
+    Measures whether the fusion path helps or hurts on the fixed datasets.
+    The hashing provider is not semantic, so a real embedding model can only
+    be judged on the imported real-session datasets, not here.
+    """
+
+    name = "fibmind_hybrid"
+
+    def __init__(self, dataset: EvaluationDataset, max_context_chars: int = 5200) -> None:
+        super().__init__(dataset, max_context_chars=max_context_chars)
+        self.memory.embeddings = EmbeddingCache(HashingEmbeddingProvider())
+
+
 BASELINE_TYPES: tuple[type[Baseline], ...] = (
     NoMemoryBaseline,
     AgentsMdBaseline,
     HermesHotBaseline,
     FibMindCurrentBaseline,
+    FibMindHybridBaseline,
 )
 
 

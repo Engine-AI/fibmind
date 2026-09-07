@@ -3,6 +3,13 @@
 from fibmind.admission import AdmitDecision, AdmitVerdict, MemoryCandidate, decide_admission
 from fibmind.brain import AdviseDecision, AdviseVerdict, BrainState, FibBrain, ObservedEvent, brain_state
 from fibmind.planning import BrainGoal, GoalStatus, PlanStep, StepStatus, infer_capabilities, synthesize_plan
+from fibmind.embedding import (
+    EmbeddingCache,
+    EmbeddingProvider,
+    HashingEmbeddingProvider,
+    OpenAICompatibleEmbeddingProvider,
+    provider_from_env,
+)
 from fibmind.context import ContextHit, ContextPack, build_context
 from fibmind.fibonacci import DEFAULT_LAYER_POLICY, FibonacciLayerPolicy, fib_capacities, fibonacci_numbers
 from fibmind.graph import FibMind, SearchHit
@@ -25,6 +32,7 @@ from fibmind.models import (
     optional_id,
 )
 from fibmind.ranking import ScoredHit, rank_nodes, tokenize
+from fibmind.retrieval import Candidate, LexicalIndex, retrieve
 from fibmind.procedure import Procedure, render_skill, render_tool
 from fibmind.review import ReviewCandidate, ReviewMode, digest_episode, extract_candidates
 from fibmind.service import MemoryService
@@ -40,7 +48,13 @@ __all__ = [
     "ContextHit",
     "ContextPack",
     "DEFAULT_LAYER_POLICY",
+    "Candidate",
     "Edge",
+    "EmbeddingCache",
+    "EmbeddingProvider",
+    "HashingEmbeddingProvider",
+    "LexicalIndex",
+    "OpenAICompatibleEmbeddingProvider",
     "EdgeDirection",
     "EventOp",
     "FibBrain",
@@ -83,7 +97,9 @@ __all__ = [
     "infer_memory_kind",
     "open_store",
     "optional_id",
+    "provider_from_env",
     "rank_nodes",
+    "retrieve",
     "render_skill",
     "render_tool",
     "tokenize",

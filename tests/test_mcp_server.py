@@ -23,6 +23,8 @@ EXPECTED_TOOLS = {
     "fibmind_mark_stale",
     "fibmind_forget",
     "fibmind_promote_knowledge",
+    "fibmind_explain_recall",
+    "fibmind_status",
     "fibbrain_recall",
     "fibbrain_remember",
     "fibbrain_observe",
