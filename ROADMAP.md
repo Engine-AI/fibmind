@@ -302,6 +302,13 @@ Session 开始时自动注入：
 
 ## P4：自动记忆闭环
 
+> 状态（2026-09）：前半已落地（S2）：`observe` 持久化为 session 作用域 episode；
+> `fibbrain_review_session` 确定性抽取决策 / 错误 / 纠正 / 风险 / 验证 / 改动文件 /
+> 摘要 / 程序（S3），三种模式（candidates / approve / auto），幂等；`pending`
+> 状态与 approve / reject 工具。DSH 原生插件（`integrations/dsh/`）在
+> `agent/turn-stopping` 自动触发 review，`tools/result` 自动 observe。
+> 语义近重复检测与冲突版本识别（VERSION_OF 自动化）未做。
+
 解决当前主要依赖 Agent 主动调用 `fibmind_append` 的问题。
 
 ### 写入准入

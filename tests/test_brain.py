@@ -393,6 +393,13 @@ class ProcedureTests(unittest.TestCase):
         self.assertFalse(schema["additionalProperties"])
         self.assertEqual(item["steps"][0], ".venv/bin/pytest -q")
 
+    def test_render_star_lists_every_visible_procedure(self) -> None:
+        self._regression_procedure()
+        self.brain.remember_procedure("Release", "Cut a release", steps=["bump version", "tag"], state=_state())
+        rendered = self.brain.render("*", state=_state(), top_k=10)
+        self.assertEqual(sorted(item["name"] for item in rendered["items"]), ["release", "run-the-fibmind-regression"])
+        self.assertEqual(self.brain.render("*", state=_state(project_id="other"))["items"], [])
+
     def test_render_rejects_bad_arguments(self) -> None:
         with self.assertRaises(ValueError):
             self.brain.render("x", state=_state(), format="yaml")

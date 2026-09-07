@@ -1,0 +1,30 @@
+{
+  "name": "@fibmind/dsh-fibbrain",
+  "version": "0.1.0",
+  "description": "FibBrain as a native DeepSeek-Harness (Cordis) plugin: recall on every step, advise before tools, observe results, review on turn end, procedures as skills.",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": ["src", "README.md", "fibbrain.cordis.yml"],
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-agent": "^0.1.2-rc.1",
+    "@deepseek-ai/dsh-llm": "^0.1.2-rc.1",
+    "@deepseek-ai/dsh-skill": "^0.1.2-rc.1",
+    "@deepseek-ai/dsh-tools": "^0.1.2-rc.1",
+    "@deepseek-ai/schemastery": "^3.18.2"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-skill": { "optional": true },
+    "@deepseek-ai/schemastery": { "optional": true }
+  },
+  "license": "MIT"
+}

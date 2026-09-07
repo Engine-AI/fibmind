@@ -685,17 +685,22 @@ class FibBrain:
         ``format`` is ``skill`` (a SKILL.md document per procedure) or ``tool``
         (a JSON-Schema tool definition per procedure). ``min_maturity`` filters
         by evidence: ``candidate`` (anything active), ``verified`` (confirmed at
-        least once), ``established`` (meets the promotion bar). Rendering never
-        executes anything; the harness decides whether to register the result.
+        least once), ``established`` (meets the promotion bar). A ``goal`` of
+        ``"*"`` lists every visible procedure instead of searching — what a
+        host's skill catalog needs, since it has no goal at lookup time.
+        Rendering never executes anything; the harness decides whether to
+        register the result.
         """
         _require_text(goal, "goal")
+        list_all = goal.strip() == "*"
         if format not in {"skill", "tool"}:
             raise ValueError("format must be 'skill' or 'tool'")
         if min_maturity not in _MATURITY_ORDER:
             raise ValueError(f"min_maturity must be one of {sorted(_MATURITY_ORDER)}")
         identity = (state or BrainState()).identity()
         rendered: list[dict[str, Any]] = []
-        for row in self._procedures(identity, query=goal, top_k=top_k * 2):
+        rows = self._procedures(identity, query=None if list_all else goal, top_k=top_k * 2)
+        for row in rows:
             procedure = Procedure.parse(row["content"])
             if procedure is None:
                 continue

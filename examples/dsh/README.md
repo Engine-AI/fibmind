@@ -6,9 +6,10 @@ is the same shape dsh uses for its own third-party memory examples
 (`docs/user/guide/mcp-memory.md`).
 
 What you get: every `fibbrain_*` / `fibmind_*` tool callable by the model as
-`mcp__fibbrain__<tool>`. What you do not get yet: automatic recall on every
-step, tool-call interception, or skills rendered from memory. Those need the
-native Cordis plugin (slice S6 in [`PLAN-evolve.md`](../../PLAN-evolve.md)).
+`mcp__fibbrain__<tool>`. What you do not get: automatic recall on every step,
+tool-call interception, or skills rendered from memory. For those, mount the
+native Cordis plugin in [`integrations/dsh/`](../../integrations/dsh/README.md);
+its overlay includes this row too.
 
 ## Prerequisites
 

@@ -299,6 +299,17 @@ Paste [`examples/host_mcp_prompt.md`](examples/host_mcp_prompt.md) into a **new*
 interactive session to repeat it by hand. Restart or open a new task after
 changing MCP config; an already-open session will not see the server.
 
+### DeepSeek-Harness
+
+Two ways, both in this repository:
+
+- **Zero-code**: [`examples/dsh/`](examples/dsh/README.md) mounts the MCP server
+  through `@deepseek-ai/dsh-mcp-client`; the model calls `mcp__fibbrain__*` tools.
+- **Native plugin**: [`integrations/dsh/`](integrations/dsh/README.md) is a
+  Cordis plugin that recalls before every prompt, advises before every tool call,
+  observes results, reviews the session on turn end, and publishes verified
+  procedures as skills — without the model having to remember to call anything.
+
 ### Register with Codex
 
 Use absolute paths so Codex can launch the server regardless of its current
