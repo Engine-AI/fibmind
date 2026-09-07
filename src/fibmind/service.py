@@ -20,6 +20,7 @@ from fibmind.embedding import EmbeddingCache, EmbeddingProvider
 from fibmind.context import build_context
 from fibmind.graph import FibMind, SearchHit
 from fibmind.models import (
+    MemoryKind,
     EdgeDirection,
     MemoryNode,
     MemoryScope,
@@ -29,6 +30,7 @@ from fibmind.models import (
     Verdict,
 )
 from fibmind.ranking import ScoredHit
+from fibmind.retrieval import DEFAULT_WEIGHTS, RankingWeights
 from fibmind.storage import MemoryStore, open_store
 
 
@@ -145,6 +147,9 @@ def _require_weight(weight: float) -> float:
     return weight
 
 
+WEIGHTS_SETTING = "ranking_weights"
+
+
 class MemoryService:
     """Thread-safe facade over a persisted FibMind memory forest."""
 
@@ -158,21 +163,43 @@ class MemoryService:
         # Vectors are cached per process, keyed by content hash, and attached
         # to every forest this service loads. No provider means lexical only.
         self._embeddings = EmbeddingCache(embedding_provider)
+        # Ranking weights accepted by a past tuning run, else the defaults.
+        self._weights = self._load_weights()
 
     @property
     def embeddings(self) -> EmbeddingCache:
         return self._embeddings
 
-    def _load(self) -> FibMind:
-        memory = self._store.load()
+    @property
+    def weights(self) -> RankingWeights:
+        return self._weights
+
+    def set_weights(self, weights: RankingWeights, *, persist: bool = True) -> RankingWeights:
+        """Adopt ``weights`` for every later recall; persisted in the store."""
+        self._weights = weights.validated()
+        if persist:
+            with self._lock:
+                self._store.write_setting(WEIGHTS_SETTING, self._weights.to_dict())
+        return self._weights
+
+    def _load_weights(self) -> RankingWeights:
+        try:
+            return RankingWeights.from_dict(self._store.read_setting(WEIGHTS_SETTING))
+        except (ValueError, TypeError):
+            return DEFAULT_WEIGHTS
+
+    def _attach(self, memory: FibMind) -> FibMind:
         memory.embeddings = self._embeddings
+        memory.weights = self._weights
         return memory
+
+    def _load(self) -> FibMind:
+        return self._attach(self._store.load())
 
     @contextmanager
     def _transaction(self) -> Iterator[FibMind]:
         with self._store.transaction() as memory:
-            memory.embeddings = self._embeddings
-            yield memory
+            yield self._attach(memory)
 
     def read(self, fn: Callable[[FibMind], T]) -> T:
         """Run ``fn`` against a loaded forest without persisting anything."""
@@ -189,8 +216,26 @@ class MemoryService:
         with self._lock:
             memory = self._load()
             by_status: dict[str, int] = {}
+            by_kind: dict[str, int] = {}
+            pending_reviews = 0
+            stale_knowledge = 0
             for node in memory.nodes.values():
                 by_status[node.status.value] = by_status.get(node.status.value, 0) + 1
+                kind = node.memory_kind.value if node.memory_kind else "unknown"
+                by_kind[kind] = by_kind.get(kind, 0) + 1
+                if node.status == MemoryStatus.PENDING and "fibbrain-review" in node.tags:
+                    pending_reviews += 1
+                if node.scope == MemoryScope.KNOWLEDGE and node.status == MemoryStatus.STALE:
+                    stale_knowledge += 1
+            outcomes = {"confirmed": 0, "refuted": 0, "propagated": 0, "tuning": 0}
+            for event in memory.events:
+                if event.op.value == "observe":
+                    verdict = str(event.payload.get("verdict"))
+                    if verdict in outcomes:
+                        outcomes[verdict] += 1
+            from fibmind.tuning import tuning_history
+
+            history = tuning_history(memory)
             return {
                 "store": str(self._store.path),
                 "nodes": len(memory.nodes),
@@ -198,7 +243,17 @@ class MemoryService:
                 "trees": len(memory.trees),
                 "events": len(memory.events),
                 "by_status": by_status,
+                "by_kind": by_kind,
+                "pending_reviews": pending_reviews,
+                "stale_knowledge": stale_knowledge,
+                "outcomes": outcomes,
                 "lexical_terms": len(memory.lexical.postings),
+                "weights": self._weights.to_dict(),
+                "tuning": {
+                    "attempts": len(history),
+                    "adopted": sum(1 for row in history if row.get("adopted")),
+                    "last": history[-1] if history else None,
+                },
                 "embedding": {
                     "enabled": self._embeddings.enabled,
                     "provider": self._embeddings.provider.name if self._embeddings.provider else None,

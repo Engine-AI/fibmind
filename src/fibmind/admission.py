@@ -13,6 +13,7 @@ from enum import StrEnum
 
 from fibmind.graph import FibMind
 from fibmind.models import MemoryNode, MemoryScope, MemoryStatus, optional_id
+from fibmind.safety import scan_candidate
 
 # Raw dumps belong in logs, not long-term memory.
 MAX_CONTENT_CHARS = 12_000
@@ -53,13 +54,17 @@ class AdmitDecision:
     verdict: AdmitVerdict
     reason: str
     duplicate_node_id: str | None = None
+    findings: tuple[dict, ...] = ()
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             "verdict": self.verdict.value,
             "reason": self.reason,
             "duplicate_node_id": self.duplicate_node_id,
         }
+        if self.findings:
+            data["findings"] = list(self.findings)
+        return data
 
 
 def fingerprint(title: str, content: str) -> str:
@@ -83,6 +88,10 @@ def decide_admission(memory: FibMind, candidate: MemoryCandidate) -> AdmitDecisi
 
     if _is_empty_speculation(candidate):
         return AdmitDecision(AdmitVerdict.SKIP, "short speculation without a conclusion")
+
+    safety = scan_candidate(candidate.title, candidate.content, candidate.tags)
+    if safety.blocked:
+        return AdmitDecision(AdmitVerdict.SKIP, safety.reason(), findings=tuple(f.to_dict() for f in safety.findings))
 
     match = _duplicate_of(memory, candidate)
     if match is not None:

@@ -13,11 +13,12 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
 from fibmind.admission import AdmitVerdict, MemoryCandidate, decide_admission
+from fibmind.distill import DEFAULT_PLANNER, Planner
 from fibmind.graph import FibMind
 from fibmind.models import MemoryKind, MemoryNode, MemoryScope, MemoryStatus, RelationType, Verdict, optional_id, utc_now
 import json
@@ -151,8 +152,9 @@ class AdviseDecision:
 class FibBrain:
     """Cognitive facade over a persisted FibMind store."""
 
-    def __init__(self, service: MemoryService) -> None:
+    def __init__(self, service: MemoryService, planner: Planner = DEFAULT_PLANNER) -> None:
         self.memory = service
+        self.planner = planner
         self._episode: deque[ObservedEvent] = deque(maxlen=EPISODE_LIMIT)
 
     def observe(
@@ -407,7 +409,7 @@ class FibBrain:
                 GOAL_CATEGORY,
                 _goal_title(resolved_objective),
                 encode_goal(
-                    synthesize_plan(resolved_objective, memories=evidence)
+                    self.planner.plan(resolved_objective, memories=evidence)
                 ),
                 tags=[GOAL_TAG],
                 metadata={"kind": "fibbrain_goal"},
@@ -417,7 +419,7 @@ class FibBrain:
             goal_id = written["node_id"]
         else:
             goal_id = existing.goal_id
-        goal = synthesize_plan(
+        goal = self.planner.plan(
             resolved_objective,
             memories=evidence,
             status=GoalStatus.ACTIVE,
@@ -435,6 +437,7 @@ class FibBrain:
         payload["hits"] = pack.get("hits", [])
         payload["state"] = identity
         payload["capabilities"] = infer_capabilities(resolved_objective)
+        payload["planner"] = self.planner.name
         return payload
 
     def coordinate(
@@ -754,6 +757,96 @@ class FibBrain:
         return out
 
     # ------------------------------------------------------------------
+    # Self-tuning
+
+    def tune(
+        self,
+        apply: bool = True,
+        evaluate: Any = None,
+        dataset_dir: str | None = None,
+    ) -> dict[str, Any]:
+        """Propose a bounded ranking-weight change from evidence; adopt it only
+        if the evaluation gate passes.
+
+        Deterministic and auditable: the evidence profile, the proposal, the
+        gate scores, and the decision are all returned and appended to the log
+        as one ``tuning`` observation. ``apply=False`` runs everything but the
+        adoption. ``evaluate`` may replace the P0 suite in tests.
+        """
+        from fibmind.tuning import (
+            admission_pressure,
+            evaluate_with_weights,
+            gate,
+            profile_evidence,
+            propose,
+            record_tuning,
+        )
+
+        current = self.memory.weights
+        profile = self.memory.read(profile_evidence)
+        pressure = self.memory.read(admission_pressure)
+        proposal = propose(current, profile)
+        outcome: dict[str, Any] = {
+            "current": current.to_dict(),
+            "evidence": profile.to_dict(),
+            "admission_pressure": pressure,
+            "proposal": proposal.to_dict() if proposal else None,
+            "gate": None,
+            "adopted": False,
+        }
+        if proposal is None:
+            outcome["decision"] = "no_change: insufficient or non-directional evidence"
+        else:
+            runner = evaluate or (lambda weights: evaluate_with_weights(weights, dataset_dir))
+            result = gate(current, proposal.weights, evaluate=runner)
+            outcome["gate"] = result.to_dict()
+            if result.passed and apply:
+                self.memory.set_weights(proposal.weights)
+                outcome["adopted"] = True
+                outcome["decision"] = "adopted: gate passed"
+            elif result.passed:
+                outcome["decision"] = "gate passed; not applied (apply=False)"
+            else:
+                outcome["decision"] = "rejected: " + "; ".join(result.reasons)
+        self.memory.run(lambda memory: record_tuning(memory, outcome))
+        return outcome
+
+    def revalidation_candidates(self, state: BrainState | None = None, older_than_days: int = 90) -> list[dict[str, Any]]:
+        """Knowledge and procedures with no confirmation for a long time.
+
+        Output only: nothing is changed. The list is what a maintenance pass or
+        a human should re-check; auto-retiring on age alone would throw away
+        true-but-quiet knowledge.
+        """
+        identity = (state or BrainState()).identity()
+        cutoff = utc_now() - timedelta(days=older_than_days)
+
+        def run(memory: FibMind) -> list[dict[str, Any]]:
+            rows = []
+            for node in memory.nodes.values():
+                if node.status != MemoryStatus.ACTIVE:
+                    continue
+                if node.scope != MemoryScope.KNOWLEDGE and node.memory_kind != MemoryKind.PROCEDURE:
+                    continue
+                if not memory.is_visible(node, **_identity_kwargs(identity)):
+                    continue
+                last = _last_confirmation(memory, node.id) or node.created_at
+                if last >= cutoff:
+                    continue
+                rows.append(
+                    {
+                        **_node_summary(node),
+                        "last_confirmed_at": last.isoformat(),
+                        "days_since": (utc_now() - last).days,
+                        "outcomes": memory.outcome_counts(node.id),
+                    }
+                )
+            rows.sort(key=lambda row: row["days_since"], reverse=True)
+            return rows
+
+        return self.memory.read(run)
+
+    # ------------------------------------------------------------------
     # Session review
 
     def review_session(
@@ -970,6 +1063,16 @@ def _node_from_summary(inspected: dict[str, Any]) -> MemoryNode:
     kind = inspected.get("memory_kind")
     node.memory_kind = MemoryKind(kind) if kind else None
     return node
+
+
+def _last_confirmation(memory: FibMind, node_id: str) -> datetime | None:
+    last = None
+    for event in memory.events:
+        if event.op.value != "observe" or event.payload.get("node_id") != node_id:
+            continue
+        if event.payload.get("verdict") == Verdict.CONFIRMED.value:
+            last = event.created_at if last is None or event.created_at > last else last
+    return last
 
 
 def _select_hot(memory: FibMind, identity: dict[str, str | None]) -> list[MemoryNode]:

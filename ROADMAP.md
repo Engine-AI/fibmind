@@ -374,6 +374,15 @@ Session 结束后提取：
 
 ## P5：总结、知识治理、安全和可观测性
 
+> 状态（2026-09）：已落地一版（S7）。`Summarizer` / `Planner` 可插拔（`distill.py`），
+> 默认仍是确定性实现，LLM 版本记录 model / prompt_version / 来源并可从日志重生成；
+> 支撑节点 refuted 时派生知识按存活支撑比例降 confidence，全部失效则 `stale`；
+> 写入前扫密钥 / 注入 / 隐形 Unicode（`safety.py`）；`fibbrain_tune` 用 confirmed
+> vs refuted 证据提出一步有界权重调整，过 P0 评测门才采纳，每次尝试写入日志；
+> `fibbrain_revalidation_candidates` 列出长期未确认的知识与程序（只输出）；
+> `fibmind_status` 报告 kind / pending / 失效知识 / 结果计数 / 权重 / 调参历史。
+> 未做：备份恢复导出、数据库加密接口、admit 门槛自动调整（只报告压力，不自动收紧）。
+
 ### 真正的总结
 
 用可插拔 Summarizer 替换当前摘录拼接。总结必须：

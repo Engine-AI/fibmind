@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Iterable
 
+from fibmind.distill import DEFAULT_SUMMARIZER, Summarizer
 from fibmind.fibonacci import DEFAULT_LAYER_POLICY, FibonacciLayerPolicy
 from fibmind.models import (
     MemoryKind,
@@ -27,7 +28,7 @@ from fibmind.models import (
     utc_now,
 )
 from fibmind.ranking import ScoredHit, rank_nodes
-from fibmind.retrieval import LexicalIndex, retrieve, to_scored_hits
+from fibmind.retrieval import DEFAULT_WEIGHTS, LexicalIndex, RankingWeights, retrieve, to_scored_hits
 
 # How much a single confirmation/refutation moves a node's confidence. Evidence
 # accumulates rather than deciding outright, so one lucky pass does not make a
@@ -60,8 +61,14 @@ class SearchHit:
 class FibMind:
     """A prototype Fibonacci forest graph for long-term AI memory."""
 
-    def __init__(self, layer_policy: FibonacciLayerPolicy = DEFAULT_LAYER_POLICY) -> None:
+    def __init__(
+        self,
+        layer_policy: FibonacciLayerPolicy = DEFAULT_LAYER_POLICY,
+        summarizer: Summarizer = DEFAULT_SUMMARIZER,
+    ) -> None:
         self.layer_policy = layer_policy
+        # How folds are summarized. Swappable; provenance lands in node metadata.
+        self.summarizer = summarizer
         self.nodes: dict[str, MemoryNode] = {}
         self.edges: dict[str, Edge] = {}
         self.trees: dict[str, MemoryTree] = {}
@@ -75,6 +82,8 @@ class FibMind:
         self.lexical = LexicalIndex()
         # Optional vector cache attached by the service; None means lexical only.
         self.embeddings: Any = None
+        # Tunable ranking weights; the service loads accepted ones from the store.
+        self.weights: RankingWeights = DEFAULT_WEIGHTS
 
     def _record(self, op: EventOp, payload: dict) -> MemoryEvent:
         """Append one entry to the log. Every semantic mutation goes through here."""
@@ -290,7 +299,73 @@ class FibMind:
                 "session_id": optional_id(session_id),
             },
         )
+        if verdict == Verdict.REFUTED:
+            self._propagate_refutation(node)
         return node
+
+    def derived_knowledge(self, node_id: str) -> list[MemoryNode]:
+        """Knowledge nodes that cite ``node_id`` as a supporter (DERIVED_FROM)."""
+        out: list[MemoryNode] = []
+        for edge_id in self.reverse_adjacency.get(node_id, set()):
+            edge = self.edges.get(edge_id)
+            if edge is None or edge.relation_type != RelationType.DERIVED_FROM:
+                continue
+            claim = self.nodes.get(edge.from_node_id)
+            if claim is not None and claim.scope == MemoryScope.KNOWLEDGE:
+                out.append(claim)
+        return out
+
+    def supporters_of(self, claim_id: str) -> list[MemoryNode]:
+        out: list[MemoryNode] = []
+        for edge_id in self.adjacency.get(claim_id, set()):
+            edge = self.edges.get(edge_id)
+            if edge is None or edge.relation_type != RelationType.DERIVED_FROM:
+                continue
+            supporter = self.nodes.get(edge.to_node_id)
+            if supporter is not None:
+                out.append(supporter)
+        return out
+
+    def _propagate_refutation(self, supporter: MemoryNode) -> None:
+        """A refuted supporter weakens every claim built on it.
+
+        The claim's confidence is scaled by the share of its supporters still
+        active. When none remain, the claim is retired to ``stale`` — it is
+        no longer evidenced, though it may be re-promoted from new evidence.
+        Recorded as an ``observe`` event with a named source so replay and
+        ``outcome_counts`` see it the same way as any other evidence.
+        """
+        for claim in self.derived_knowledge(supporter.id):
+            if claim.status != MemoryStatus.ACTIVE:
+                continue
+            supporters = self.supporters_of(claim.id)
+            if not supporters:
+                continue
+            active = [item for item in supporters if item.status == MemoryStatus.ACTIVE]
+            share = len(active) / len(supporters)
+            claim.confidence = round(claim.confidence * share, 4)
+            claim.confidence_source = f"supporter refuted: {supporter.id}"
+            reason = None
+            if not active:
+                claim.status = MemoryStatus.STALE
+                reason = f"all {len(supporters)} supporting memories were refuted"
+                claim.status_reason = reason
+            claim.updated_at = utc_now()
+            self._record(
+                EventOp.OBSERVE,
+                {
+                    "node_id": claim.id,
+                    "verdict": "propagated",
+                    "source": claim.confidence_source,
+                    "note": reason,
+                    "confidence": claim.confidence,
+                    "status": claim.status.value,
+                    "status_reason": claim.status_reason,
+                    "supporter_id": supporter.id,
+                    "active_supporters": len(active),
+                    "total_supporters": len(supporters),
+                },
+            )
 
     def outcome_counts(self, node_id: str) -> dict[str, int]:
         """Tally the evidence recorded against one node, from the log.
@@ -738,14 +813,6 @@ class FibMind:
             explain=True,
         )
         report["results"] = [candidate.to_dict() for candidate in ranked]
-        report["weights"] = {
-            "coverage_part": 0.6,
-            "bm25_part": 0.4,
-            "title": 0.6,
-            "confidence": 0.3,
-            "recency": 0.2,
-            "familiarity": 0.0,
-        }
         return report
 
     def _visible_nodes(
@@ -859,7 +926,8 @@ class FibMind:
         if source_nodes and len({self._identity_key(node) for node in source_nodes}) != 1:
             return ""
         title = f"{category} {source_layer} compression ({len(source_nodes)} nodes)"
-        summary = self._summarize(source_nodes)
+        distilled = self.summarizer.summarize(source_nodes)
+        summary = distilled.text
         node_type = NodeType.COMPRESSED if target_layer == "compressed" else NodeType.SUMMARY
         if target_layer == "long_term":
             node_type = NodeType.ARCHIVE
@@ -875,6 +943,7 @@ class FibMind:
                 "source_layer": source_layer,
                 "source_node_ids": [node.id for node in source_nodes],
                 "source_memory_weight": sum(node.memory_weight for node in source_nodes),
+                "distillation": distilled.provenance,
             },
             scope=source_nodes[0].scope if source_nodes else MemoryScope.PERSONAL,
             owner=source_nodes[0].owner if source_nodes else None,
@@ -919,20 +988,8 @@ class FibMind:
             node.touch()
 
     def _summarize(self, nodes: list[MemoryNode]) -> str:
-        """Concatenate truncated excerpts of the folded nodes.
-
-        This is a placeholder, not distillation: the output sits at the same
-        level of abstraction as its inputs, merely shorter. Real promotion of
-        specifics into general claims goes through ``promote_to_knowledge``,
-        which requires supporting evidence and keeps provenance pointers.
-        """
-        lines = []
-        for node in nodes:
-            excerpt = node.content.strip().replace("\n", " ")
-            if len(excerpt) > 120:
-                excerpt = f"{excerpt[:117]}..."
-            lines.append(f"- {node.title}: {excerpt}")
-        return "\n".join(lines)
+        """Kept for callers; folds now go through ``self.summarizer``."""
+        return self.summarizer.summarize(nodes).text
 
     def _nodes_in_category_layer(self, category: str, layer: str) -> list[MemoryNode]:
         node_ids = self.by_cat_layer.get((category, layer), set())

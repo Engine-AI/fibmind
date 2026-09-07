@@ -40,6 +40,8 @@ EXPECTED_TOOLS = {
     "fibbrain_remember_procedure",
     "fibbrain_render",
     "fibbrain_hot",
+    "fibbrain_tune",
+    "fibbrain_revalidation_candidates",
 }
 
 

@@ -10,6 +10,8 @@ from fibmind.embedding import (
     OpenAICompatibleEmbeddingProvider,
     provider_from_env,
 )
+from fibmind.distill import CallableSummarizer, DeterministicPlanner, ExcerptSummarizer, Planner, Summarizer, Summary
+from fibmind.safety import SafetyFinding, SafetyReport, scan_candidate, scan_text
 from fibmind.context import BudgetReport, ContextHit, ContextPack, build_context
 from fibmind.tokens import CallableCounter, EstimatingCounter, TokenCounter, estimate_tokens
 from fibmind.fibonacci import DEFAULT_LAYER_POLICY, FibonacciLayerPolicy, fib_capacities, fibonacci_numbers
@@ -33,7 +35,8 @@ from fibmind.models import (
     optional_id,
 )
 from fibmind.ranking import ScoredHit, rank_nodes, tokenize
-from fibmind.retrieval import Candidate, LexicalIndex, retrieve
+from fibmind.retrieval import Candidate, LexicalIndex, RankingWeights, retrieve
+from fibmind.tuning import EvidenceProfile, Proposal, gate, profile_evidence, propose
 from fibmind.procedure import Procedure, render_skill, render_tool
 from fibmind.review import ReviewCandidate, ReviewMode, digest_episode, extract_candidates
 from fibmind.service import MemoryService
@@ -47,6 +50,9 @@ __all__ = [
     "BrainGoal",
     "BrainState",
     "BudgetReport",
+    "CallableSummarizer",
+    "DeterministicPlanner",
+    "ExcerptSummarizer",
     "CallableCounter",
     "ContextHit",
     "ContextPack",
@@ -78,12 +84,20 @@ __all__ = [
     "MemoryTree",
     "NodeType",
     "ObservedEvent",
+    "EvidenceProfile",
     "PlanStep",
+    "Proposal",
+    "RankingWeights",
+    "Planner",
     "Procedure",
     "RelationType",
     "ReviewCandidate",
     "ReviewMode",
+    "SafetyFinding",
+    "SafetyReport",
     "ScoredHit",
+    "Summarizer",
+    "Summary",
     "SearchHit",
     "SqliteStore",
     "StepStatus",
@@ -99,12 +113,17 @@ __all__ = [
     "infer_capabilities",
     "synthesize_plan",
     "fib_capacities",
+    "gate",
+    "profile_evidence",
+    "propose",
     "fibonacci_numbers",
     "infer_memory_kind",
     "open_store",
     "optional_id",
     "provider_from_env",
     "rank_nodes",
+    "scan_candidate",
+    "scan_text",
     "retrieve",
     "render_skill",
     "render_tool",

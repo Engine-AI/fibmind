@@ -519,6 +519,34 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
         )
 
     @mcp.tool()
+    def fibbrain_tune(apply: bool = True) -> dict[str, Any]:
+        """Let the brain adjust its own ranking weights from evidence — but only
+        if the fixed evaluation suite proves nothing regressed.
+
+        Returns the evidence profile (confirmed vs refuted memories), the
+        bounded proposal, the gate scores before and after, and the decision.
+        Every attempt is appended to the log. ``apply=False`` previews.
+        """
+        return brain.tune(apply=apply)
+
+    @mcp.tool()
+    def fibbrain_revalidation_candidates(
+        older_than_days: int = 90,
+        owner: str | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Knowledge and procedures with no confirmation for ``older_than_days``.
+        Nothing is changed; re-check them and fibbrain_reflect the result.
+        """
+        return brain.revalidation_candidates(
+            _state(owner, workspace_id, project_id, session_id, task_id),
+            older_than_days=older_than_days,
+        )
+
+    @mcp.tool()
     def fibbrain_review_session(
         session_id: str,
         mode: str = "approve",

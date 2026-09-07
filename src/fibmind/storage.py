@@ -27,6 +27,10 @@ class MemoryStore(Protocol):
 
     def transaction(self) -> Iterator[FibMind]: ...
 
+    def read_setting(self, key: str) -> Any | None: ...
+
+    def write_setting(self, key: str, value: Any) -> None: ...
+
 
 class JsonStore:
     """Atomic JSON persistence retained for demos and compatibility."""
@@ -35,8 +39,15 @@ class JsonStore:
         self.path = Path(path)
 
     def save(self, memory: FibMind) -> None:
+        settings: dict[str, Any] = {}
+        if self.path.exists():
+            try:
+                settings = json.loads(self.path.read_text(encoding="utf-8")).get("settings") or {}
+            except (json.JSONDecodeError, OSError):
+                settings = {}
         payload: dict[str, Any] = {
             "log_version": LOG_VERSION,
+            "settings": settings,
             "nodes": [node.to_dict() for node in memory.nodes.values()],
             "edges": [edge.to_dict() for edge in memory.edges.values()],
             "trees": [tree.to_dict() for tree in memory.trees.values()],
@@ -60,6 +71,20 @@ class JsonStore:
         except BaseException:
             Path(tmp_path).unlink(missing_ok=True)
             raise
+
+    def read_setting(self, key: str) -> Any | None:
+        if not self.path.exists():
+            return None
+        payload = json.loads(self.path.read_text(encoding="utf-8"))
+        return (payload.get("settings") or {}).get(key)
+
+    def write_setting(self, key: str, value: Any) -> None:
+        payload: dict[str, Any] = {}
+        if self.path.exists():
+            payload = json.loads(self.path.read_text(encoding="utf-8"))
+        payload.setdefault("settings", {})[key] = value
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._atomic_write(json.dumps(payload, ensure_ascii=False, indent=2))
 
     def load(self) -> FibMind:
         if not self.path.exists():
@@ -279,6 +304,20 @@ class SqliteStore:
             "UPDATE meta SET value = ? WHERE key = 'schema_version'",
             (str(self.SCHEMA_VERSION),),
         )
+
+    def read_setting(self, key: str) -> Any | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT value FROM meta WHERE key = ?", (f"setting:{key}",)
+            ).fetchone()
+        return json.loads(row["value"]) if row else None
+
+    def write_setting(self, key: str, value: Any) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (f"setting:{key}", json.dumps(value, ensure_ascii=False)),
+            )
 
     def load(self) -> FibMind:
         with self._connect() as connection:

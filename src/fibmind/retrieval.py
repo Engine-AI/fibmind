@@ -36,14 +36,67 @@ if TYPE_CHECKING:
     from fibmind.embedding import EmbeddingCache
     from fibmind.graph import FibMind
 
+@dataclass(frozen=True, slots=True)
+class RankingWeights:
+    """The tunable part of the score. Everything else in retrieval is fixed.
+
+    ``familiarity`` is deliberately not a field: no tuning may reintroduce it.
+    Bounds keep a tuner from zeroing relevance or letting recency dominate.
+    """
+
+    title: float = WEIGHT_TITLE
+    confidence: float = WEIGHT_CONFIDENCE
+    recency: float = WEIGHT_RECENCY
+    coverage_part: float = 0.6
+    bm25_part: float = 0.4
+
+    BOUNDS = {
+        "title": (0.0, 1.0),
+        "confidence": (0.0, 1.0),
+        "recency": (0.0, 0.5),
+        "coverage_part": (0.3, 0.9),
+    }
+
+    def validated(self) -> "RankingWeights":
+        for name, (low, high) in self.BOUNDS.items():
+            value = getattr(self, name)
+            if not low <= value <= high:
+                raise ValueError(f"ranking weight {name}={value} outside [{low}, {high}]")
+        if abs(self.coverage_part + self.bm25_part - 1.0) > 1e-6:
+            raise ValueError("coverage_part and bm25_part must sum to 1")
+        return self
+
+    def to_dict(self) -> dict[str, float]:
+        return {
+            "title": self.title,
+            "confidence": self.confidence,
+            "recency": self.recency,
+            "coverage_part": self.coverage_part,
+            "bm25_part": self.bm25_part,
+            "familiarity": 0.0,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "RankingWeights":
+        if not data:
+            return cls()
+        coverage = float(data.get("coverage_part", 0.6))
+        return cls(
+            title=float(data.get("title", WEIGHT_TITLE)),
+            confidence=float(data.get("confidence", WEIGHT_CONFIDENCE)),
+            recency=float(data.get("recency", WEIGHT_RECENCY)),
+            coverage_part=coverage,
+            bm25_part=float(data.get("bm25_part", round(1.0 - coverage, 6))),
+        ).validated()
+
+
+DEFAULT_WEIGHTS = RankingWeights()
+
 # BM25 constants. k1 saturates term frequency; b normalizes for document length.
 BM25_K1 = 1.2
 BM25_B = 0.75
-# How lexical relevance splits between "how many query terms appear" and BM25.
-# Coverage keeps short memories with all the terms ahead of long ones repeating
-# one term; BM25 breaks ties and rewards rare terms.
-WEIGHT_COVERAGE_PART = 0.6
-WEIGHT_BM25_PART = 0.4
+# The lexical split (coverage vs BM25) and the title / confidence / recency
+# weights live on RankingWeights so they can be tuned per store; see tuning.py.
 # Reciprocal rank fusion constant (Cormack et al.); 60 is the usual choice.
 RRF_K = 60
 # Vector candidates must clear the provider's own absolute floor (what counts
@@ -217,8 +270,10 @@ def retrieve(
     session_id: str | None = None,
     embeddings: "EmbeddingCache | None" = None,
     explain: bool = False,
+    weights: RankingWeights | None = None,
 ) -> tuple[list[Candidate], dict[str, Any]]:
     """Rank visible nodes for ``query``. Returns (ranked candidates, explanation)."""
+    weights = weights or getattr(memory, "weights", None) or DEFAULT_WEIGHTS
     query_terms = set(tokenize(query))
     report: dict[str, Any] = {
         "query": query,
@@ -227,6 +282,7 @@ def retrieve(
         "vector_candidates": 0,
         "vector_enabled": embeddings is not None and embeddings.enabled,
         "vector_error": None,
+        "weights": weights.to_dict(),
         "excluded": [],
     }
     if not query_terms:
@@ -294,7 +350,7 @@ def retrieve(
         for candidate in candidates.values():
             candidate.bm25_norm = candidate.bm25 / max_bm25
             candidate.lexical = (
-                candidate.coverage * WEIGHT_COVERAGE_PART + candidate.bm25_norm * WEIGHT_BM25_PART
+                candidate.coverage * weights.coverage_part + candidate.bm25_norm * weights.bm25_part
             )
         ordered = sorted(
             candidates.values(),
@@ -369,9 +425,9 @@ def retrieve(
         candidate.recency = _recency_factor(candidate.node)
         candidate.score = (
             candidate.relevance
-            + candidate.title_coverage * WEIGHT_TITLE
-            + candidate.confidence * WEIGHT_CONFIDENCE
-            + candidate.recency * WEIGHT_RECENCY
+            + candidate.title_coverage * weights.title
+            + candidate.confidence * weights.confidence
+            + candidate.recency * weights.recency
         )
         if candidate.score <= min_score:
             continue

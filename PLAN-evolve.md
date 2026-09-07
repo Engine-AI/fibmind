@@ -244,8 +244,26 @@ S4 可与 S2 / S3 并行，它不改 Brain 接口。
 | v0.4 Native Brain | S6 | dsh 原生插件每步召回、拦截、渲染 skill 全部走通 |
 | v1.0 Evolving Brain | S7 | 至少一次自动调参被评测门放行并保留；知识失效传播可演示 |
 
-## 现在就该做的三件事
+## 执行记录（2026-09）
 
-1. 提交 Brain v1 工作树。
-2. 写 `examples/dsh/fibbrain.cordis.yml` 并在本机走通三步验证（S1）。
-3. 开 `memory_kind` + `procedure` 文档格式的设计稿（S3 的数据模型），因为 S2 的 review 抽取和 S6 的 skills provider 都依赖它。
+| 切片 | 提交 | 结果 |
+| --- | --- | --- |
+| S0 | 75755e3 | `log_version`、`docs/contract.md`、一致性夹具 |
+| S1 | 943a30f | dsh 零代码覆盖层、会话日志导入器；未在本机跑真实 dsh（无 API key） |
+| S2 | 7f46511 | 持久 episode、`review_session` 三模式幂等、pending 审批 |
+| S3 | a93be4d | `memory_kind` / procedure / `render`，coordinate 优先程序 |
+| S4 | 2b6c03d | 倒排索引 + BM25 + 可选向量 + RRF；1 万节点 P95 48 ms；explain |
+| S5 | 732f1c7 | token 预算分段渲染、L0 热记忆冻结 |
+| S6 | 5fbfa22 | 原生 Cordis 插件（JS，11 个单测，真实 Python 端到端） |
+| S7 | 本次 | 安全扫描、知识失效传播、可插拔蒸馏 / 规划、评测门调参、重验候选 |
+
+v1.0 的两条验收都有测试：注入错误权重后 `tune()` 经真实评测门逐步纠正
+（`test_a_wrong_weight_is_corrected_by_evidence_with_the_real_gate`）；支撑全部
+refuted 后派生知识退出 recall（`test_all_supporters_refuted_retires_the_claim_from_recall`）。
+
+## 之后
+
+- 用真实 dsh 会话（S1 导入器）替代固定小数据集校准 token 节省阈值与调参步长。
+- 向量缓存持久化；FTS5 仅在内存索引不够时再考虑。
+- admit 门槛自动收紧：现在只报告 `admission_pressure`，是否让它改行为要看真实拒绝率。
+- 语义近重复与冲突版本自动识别（`VERSION_OF`）。

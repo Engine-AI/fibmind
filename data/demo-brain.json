@@ -1,17 +1,18 @@
 {
   "log_version": 1,
+  "settings": {},
   "nodes": [
     {
-      "id": "node_0586efcf5df5477ab9edf94582ede20a",
+      "id": "node_1396277461d54fdabcddaf458959fad1",
       "title": "decision root",
       "content": "",
       "category": "decision",
       "node_type": "root",
       "layer": "long_term",
-      "created_at": "2026-09-07T01:21:28.119248+00:00",
-      "updated_at": "2026-09-07T01:21:28.119368+00:00",
+      "created_at": "2026-09-07T02:08:09.207707+00:00",
+      "updated_at": "2026-09-07T02:08:09.207839+00:00",
       "tree_ids": [
-        "tree_6c40107957744ed7977bde6efc71f98b"
+        "tree_b1918d8db2a840ab8b44b013b5da6fed"
       ],
       "tags": [],
       "metadata": {},
@@ -32,16 +33,16 @@
       "memory_weight": 0
     },
     {
-      "id": "node_7c9809b7a27340f7974ce4399c21b65c",
+      "id": "node_fd468f22199e4e2a868f296d688aa396",
       "title": "Refresh tokens before retrying login",
       "content": "A 401 after token expiry is fixed by refreshing before the next request.",
       "category": "decision",
       "node_type": "raw",
       "layer": "raw",
-      "created_at": "2026-09-07T01:21:28.119415+00:00",
-      "updated_at": "2026-09-07T01:21:28.119415+00:00",
+      "created_at": "2026-09-07T02:08:09.207891+00:00",
+      "updated_at": "2026-09-07T02:08:09.207891+00:00",
       "tree_ids": [
-        "tree_6c40107957744ed7977bde6efc71f98b"
+        "tree_b1918d8db2a840ab8b44b013b5da6fed"
       ],
       "tags": [],
       "metadata": {},
@@ -62,16 +63,16 @@
       "memory_weight": 1
     },
     {
-      "id": "node_68c63babb3a949c4bfab48d09c98d8d2",
+      "id": "node_b42a5c372f0941799617a49eec167ad3",
       "title": "hot root",
       "content": "",
       "category": "hot",
       "node_type": "root",
       "layer": "long_term",
-      "created_at": "2026-09-07T01:21:28.120188+00:00",
-      "updated_at": "2026-09-07T01:21:28.120188+00:00",
+      "created_at": "2026-09-07T02:08:09.208715+00:00",
+      "updated_at": "2026-09-07T02:08:09.208716+00:00",
       "tree_ids": [
-        "tree_937023e5fada4fac9daf32fd04fa8111"
+        "tree_41e5961a0f9147c2a0aec5550706c28a"
       ],
       "tags": [],
       "metadata": {},
@@ -92,16 +93,16 @@
       "memory_weight": 0
     },
     {
-      "id": "node_cfd0f7f194eb41a9bfd62da65c679135",
+      "id": "node_b4183672247c4c6fb96665228468b39f",
       "title": "hot snapshot for demo-session",
-      "content": "{\"kind\": \"fibbrain_hot_snapshot\", \"node_ids\": [\"node_7c9809b7a27340f7974ce4399c21b65c\"]}",
+      "content": "{\"kind\": \"fibbrain_hot_snapshot\", \"node_ids\": [\"node_fd468f22199e4e2a868f296d688aa396\"]}",
       "category": "hot",
       "node_type": "raw",
       "layer": "raw",
-      "created_at": "2026-09-07T01:21:28.120214+00:00",
-      "updated_at": "2026-09-07T01:21:28.120214+00:00",
+      "created_at": "2026-09-07T02:08:09.208741+00:00",
+      "updated_at": "2026-09-07T02:08:09.208741+00:00",
       "tree_ids": [
-        "tree_937023e5fada4fac9daf32fd04fa8111"
+        "tree_41e5961a0f9147c2a0aec5550706c28a"
       ],
       "tags": [
         "fibbrain-hot"
@@ -127,16 +128,16 @@
       "memory_weight": 1
     },
     {
-      "id": "node_ae4de7ac4de942beaef7114d14841df7",
+      "id": "node_976aec51356b4d48b6c8e92eca5a7df4",
       "title": "goal root",
       "content": "",
       "category": "goal",
       "node_type": "root",
       "layer": "long_term",
-      "created_at": "2026-09-07T01:21:28.121401+00:00",
-      "updated_at": "2026-09-07T01:21:28.121402+00:00",
+      "created_at": "2026-09-07T02:08:09.209930+00:00",
+      "updated_at": "2026-09-07T02:08:09.209930+00:00",
       "tree_ids": [
-        "tree_5ac27f7f9a48476e944d761d8a25f411"
+        "tree_b20b738d08314d32866534cc95fe8a6b"
       ],
       "tags": [],
       "metadata": {},
@@ -157,16 +158,16 @@
       "memory_weight": 0
     },
     {
-      "id": "node_34fc3645b5ad48bd84210da06714ebe6",
+      "id": "node_a985617e3d404de7b886b632d69060cf",
       "title": "Fix login 401 after token expiry",
-      "content": "{\n  \"kind\": \"fibbrain_goal\",\n  \"objective\": \"Fix login 401 after token expiry\",\n  \"status\": \"complete\",\n  \"steps\": [\n    {\n      \"id\": \"step_b339c93a66d44372a0774036325ed5c5\",\n      \"title\": \"Recall related history\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Load what this working context already knows before acting\"\n    },\n    {\n      \"id\": \"step_194e48342fd0410db8e4727eae8cea24\",\n      \"title\": \"Do the work: Fix login 401 after token expiry\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"code\"\n      ],\n      \"reason\": \"Capabilities inferred from the objective\"\n    },\n    {\n      \"id\": \"step_43ab728b3a664f13a6b5ac5034977e3c\",\n      \"title\": \"Verify the result\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"review\"\n      ],\n      \"reason\": \"Check the work against something outside the model\"\n    },\n    {\n      \"id\": \"step_c0efe22684b7437583182dac65dd52dc\",\n      \"title\": \"Reflect and remember\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Record whether prior memories held, then write only what is worth keeping\"\n    }\n  ]\n}",
+      "content": "{\n  \"kind\": \"fibbrain_goal\",\n  \"objective\": \"Fix login 401 after token expiry\",\n  \"status\": \"complete\",\n  \"steps\": [\n    {\n      \"id\": \"step_328796498dab455abb34c1c67325d2b2\",\n      \"title\": \"Recall related history\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Load what this working context already knows before acting\"\n    },\n    {\n      \"id\": \"step_b4c022dd84754886aa1d445528414860\",\n      \"title\": \"Do the work: Fix login 401 after token expiry\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"code\"\n      ],\n      \"reason\": \"Capabilities inferred from the objective\"\n    },\n    {\n      \"id\": \"step_cd433445bfd840fdb93572d9150785ae\",\n      \"title\": \"Verify the result\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"review\"\n      ],\n      \"reason\": \"Check the work against something outside the model\"\n    },\n    {\n      \"id\": \"step_6d3ebe4789754f01a0a175d19ce1cfaa\",\n      \"title\": \"Reflect and remember\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Record whether prior memories held, then write only what is worth keeping\"\n    }\n  ]\n}",
       "category": "goal",
       "node_type": "raw",
       "layer": "raw",
-      "created_at": "2026-09-07T01:21:28.121429+00:00",
-      "updated_at": "2026-09-07T01:21:28.136131+00:00",
+      "created_at": "2026-09-07T02:08:09.209954+00:00",
+      "updated_at": "2026-09-07T02:08:09.225911+00:00",
       "tree_ids": [
-        "tree_5ac27f7f9a48476e944d761d8a25f411"
+        "tree_b20b738d08314d32866534cc95fe8a6b"
       ],
       "tags": [
         "fibbrain-goal"
@@ -191,16 +192,16 @@
       "memory_weight": 1
     },
     {
-      "id": "node_9957a6491a0c4e5d8a6ac18ee1b186e8",
+      "id": "node_e57328f136c043729db985579f7215d8",
       "title": "episode root",
       "content": "",
       "category": "episode",
       "node_type": "root",
       "layer": "long_term",
-      "created_at": "2026-09-07T01:21:28.123651+00:00",
-      "updated_at": "2026-09-07T01:21:28.123651+00:00",
+      "created_at": "2026-09-07T02:08:09.212159+00:00",
+      "updated_at": "2026-09-07T02:08:09.212159+00:00",
       "tree_ids": [
-        "tree_f8a26fa1166a4f6793b3b19252761d42"
+        "tree_707e425e1a784bd0bb85430b0bdf0d08"
       ],
       "tags": [],
       "metadata": {},
@@ -221,16 +222,16 @@
       "memory_weight": 0
     },
     {
-      "id": "node_6486d76ad60f40ae845c4c6e32cab7ea",
+      "id": "node_a86a52bf37d64daaae72377eb542c304",
       "title": "plan: planned Fix login 401 after token expiry",
       "content": "planned Fix login 401 after token expiry",
       "category": "episode",
       "node_type": "raw",
       "layer": "raw",
-      "created_at": "2026-09-07T01:21:28.123674+00:00",
-      "updated_at": "2026-09-07T01:21:28.123674+00:00",
+      "created_at": "2026-09-07T02:08:09.212179+00:00",
+      "updated_at": "2026-09-07T02:08:09.212179+00:00",
       "tree_ids": [
-        "tree_f8a26fa1166a4f6793b3b19252761d42"
+        "tree_707e425e1a784bd0bb85430b0bdf0d08"
       ],
       "tags": [
         "fibbrain-episode"
@@ -238,7 +239,7 @@
       "metadata": {
         "kind": "plan",
         "payload": {
-          "goal_id": "node_34fc3645b5ad48bd84210da06714ebe6",
+          "goal_id": "node_a985617e3d404de7b886b632d69060cf",
           "steps": 4
         },
         "episode": "fibbrain_episode"
@@ -260,16 +261,16 @@
       "memory_weight": 1
     },
     {
-      "id": "node_94a9c1c22a6145e78b1da230b80e7843",
+      "id": "node_996f84d30c374981a92f94a648b5a073",
       "title": "plan: planned Fix login 401 after token expiry",
       "content": "planned Fix login 401 after token expiry",
       "category": "episode",
       "node_type": "raw",
       "layer": "raw",
-      "created_at": "2026-09-07T01:21:28.128291+00:00",
-      "updated_at": "2026-09-07T01:21:28.128292+00:00",
+      "created_at": "2026-09-07T02:08:09.217448+00:00",
+      "updated_at": "2026-09-07T02:08:09.217449+00:00",
       "tree_ids": [
-        "tree_f8a26fa1166a4f6793b3b19252761d42"
+        "tree_707e425e1a784bd0bb85430b0bdf0d08"
       ],
       "tags": [
         "fibbrain-episode"
@@ -277,7 +278,7 @@
       "metadata": {
         "kind": "plan",
         "payload": {
-          "goal_id": "node_34fc3645b5ad48bd84210da06714ebe6",
+          "goal_id": "node_a985617e3d404de7b886b632d69060cf",
           "steps": 4
         },
         "episode": "fibbrain_episode"
@@ -299,16 +300,16 @@
       "memory_weight": 1
     },
     {
-      "id": "node_ac8712f1cc8a44a1af2945083490f5ec",
+      "id": "node_2f273273c0894aac9d0f9e1351df147a",
       "title": "coordinate: coordinated Fix login 401 after token expiry",
       "content": "coordinated Fix login 401 after token expiry",
       "category": "episode",
       "node_type": "raw",
       "layer": "raw",
-      "created_at": "2026-09-07T01:21:28.132247+00:00",
-      "updated_at": "2026-09-07T01:21:28.132247+00:00",
+      "created_at": "2026-09-07T02:08:09.221661+00:00",
+      "updated_at": "2026-09-07T02:08:09.221662+00:00",
       "tree_ids": [
-        "tree_f8a26fa1166a4f6793b3b19252761d42"
+        "tree_707e425e1a784bd0bb85430b0bdf0d08"
       ],
       "tags": [
         "fibbrain-episode"
@@ -316,7 +317,7 @@
       "metadata": {
         "kind": "coordinate",
         "payload": {
-          "goal_id": "node_34fc3645b5ad48bd84210da06714ebe6",
+          "goal_id": "node_a985617e3d404de7b886b632d69060cf",
           "blocked": false
         },
         "episode": "fibbrain_episode"
@@ -338,16 +339,16 @@
       "memory_weight": 1
     },
     {
-      "id": "node_e05b9aed3710431e83c74c78b02eb526",
+      "id": "node_1db1159009a545a3b2c410bb6fef1dca",
       "title": "complete_goal: completed Fix login 401 after token expiry",
       "content": "completed Fix login 401 after token expiry",
       "category": "episode",
       "node_type": "raw",
       "layer": "raw",
-      "created_at": "2026-09-07T01:21:28.137306+00:00",
-      "updated_at": "2026-09-07T01:21:28.137307+00:00",
+      "created_at": "2026-09-07T02:08:09.227185+00:00",
+      "updated_at": "2026-09-07T02:08:09.227185+00:00",
       "tree_ids": [
-        "tree_f8a26fa1166a4f6793b3b19252761d42"
+        "tree_707e425e1a784bd0bb85430b0bdf0d08"
       ],
       "tags": [
         "fibbrain-episode"
@@ -355,7 +356,7 @@
       "metadata": {
         "kind": "complete_goal",
         "payload": {
-          "goal_id": "node_34fc3645b5ad48bd84210da06714ebe6"
+          "goal_id": "node_a985617e3d404de7b886b632d69060cf"
         },
         "episode": "fibbrain_episode"
       },
@@ -378,137 +379,137 @@
   ],
   "edges": [
     {
-      "id": "edge_2c3acd3f654f43118b15e9da0abe4b59",
-      "from_node_id": "node_0586efcf5df5477ab9edf94582ede20a",
-      "to_node_id": "node_7c9809b7a27340f7974ce4399c21b65c",
+      "id": "edge_20edf78eef274a5aa4095afc85654d27",
+      "from_node_id": "node_1396277461d54fdabcddaf458959fad1",
+      "to_node_id": "node_fd468f22199e4e2a868f296d688aa396",
       "relation_type": "tree_child",
       "weight": 1.0,
       "direction": "directed",
-      "created_at": "2026-09-07T01:21:28.119458+00:00",
+      "created_at": "2026-09-07T02:08:09.207936+00:00",
       "metadata": {}
     },
     {
-      "id": "edge_61b237d644e34aeabc97430a0679fbb7",
-      "from_node_id": "node_68c63babb3a949c4bfab48d09c98d8d2",
-      "to_node_id": "node_cfd0f7f194eb41a9bfd62da65c679135",
+      "id": "edge_49d3fe5c208841f4908293eee25f33e8",
+      "from_node_id": "node_b42a5c372f0941799617a49eec167ad3",
+      "to_node_id": "node_b4183672247c4c6fb96665228468b39f",
       "relation_type": "tree_child",
       "weight": 1.0,
       "direction": "directed",
-      "created_at": "2026-09-07T01:21:28.120249+00:00",
+      "created_at": "2026-09-07T02:08:09.208823+00:00",
       "metadata": {}
     },
     {
-      "id": "edge_b5f0a7c301cb4ec2be2ef029b4cc3224",
-      "from_node_id": "node_ae4de7ac4de942beaef7114d14841df7",
-      "to_node_id": "node_34fc3645b5ad48bd84210da06714ebe6",
+      "id": "edge_51344701bef646c6bdabce06d1828536",
+      "from_node_id": "node_976aec51356b4d48b6c8e92eca5a7df4",
+      "to_node_id": "node_a985617e3d404de7b886b632d69060cf",
       "relation_type": "tree_child",
       "weight": 1.0,
       "direction": "directed",
-      "created_at": "2026-09-07T01:21:28.121594+00:00",
+      "created_at": "2026-09-07T02:08:09.210138+00:00",
       "metadata": {}
     },
     {
-      "id": "edge_8600ed3194a645ad8a9f73e562a07bf8",
-      "from_node_id": "node_9957a6491a0c4e5d8a6ac18ee1b186e8",
-      "to_node_id": "node_6486d76ad60f40ae845c4c6e32cab7ea",
+      "id": "edge_c298ad3f78744d2fa135619b10c33c01",
+      "from_node_id": "node_e57328f136c043729db985579f7215d8",
+      "to_node_id": "node_a86a52bf37d64daaae72377eb542c304",
       "relation_type": "tree_child",
       "weight": 1.0,
       "direction": "directed",
-      "created_at": "2026-09-07T01:21:28.123706+00:00",
+      "created_at": "2026-09-07T02:08:09.212211+00:00",
       "metadata": {}
     },
     {
-      "id": "edge_8a876514833c44f090c198c5dd95629c",
-      "from_node_id": "node_9957a6491a0c4e5d8a6ac18ee1b186e8",
-      "to_node_id": "node_94a9c1c22a6145e78b1da230b80e7843",
+      "id": "edge_82756b2f6e1946b0bda1f78d563550a0",
+      "from_node_id": "node_e57328f136c043729db985579f7215d8",
+      "to_node_id": "node_996f84d30c374981a92f94a648b5a073",
       "relation_type": "tree_child",
       "weight": 1.0,
       "direction": "directed",
-      "created_at": "2026-09-07T01:21:28.128326+00:00",
+      "created_at": "2026-09-07T02:08:09.217487+00:00",
       "metadata": {}
     },
     {
-      "id": "edge_919e16c3a4c749b4833ab4d8633177b7",
-      "from_node_id": "node_9957a6491a0c4e5d8a6ac18ee1b186e8",
-      "to_node_id": "node_ac8712f1cc8a44a1af2945083490f5ec",
+      "id": "edge_6bdcdba936d74ac19846af6224b398b8",
+      "from_node_id": "node_e57328f136c043729db985579f7215d8",
+      "to_node_id": "node_2f273273c0894aac9d0f9e1351df147a",
       "relation_type": "tree_child",
       "weight": 1.0,
       "direction": "directed",
-      "created_at": "2026-09-07T01:21:28.132284+00:00",
+      "created_at": "2026-09-07T02:08:09.221708+00:00",
       "metadata": {}
     },
     {
-      "id": "edge_7938e38d50bc4468a074675219ffb5ca",
-      "from_node_id": "node_9957a6491a0c4e5d8a6ac18ee1b186e8",
-      "to_node_id": "node_e05b9aed3710431e83c74c78b02eb526",
+      "id": "edge_0fb225be86ed42f2beebc41e6e35c734",
+      "from_node_id": "node_e57328f136c043729db985579f7215d8",
+      "to_node_id": "node_1db1159009a545a3b2c410bb6fef1dca",
       "relation_type": "tree_child",
       "weight": 1.0,
       "direction": "directed",
-      "created_at": "2026-09-07T01:21:28.137342+00:00",
+      "created_at": "2026-09-07T02:08:09.227223+00:00",
       "metadata": {}
     }
   ],
   "trees": [
     {
-      "id": "tree_6c40107957744ed7977bde6efc71f98b",
+      "id": "tree_b1918d8db2a840ab8b44b013b5da6fed",
       "category": "decision",
       "title": "decision",
-      "root_node_id": "node_0586efcf5df5477ab9edf94582ede20a",
-      "created_at": "2026-09-07T01:21:28.119375+00:00",
+      "root_node_id": "node_1396277461d54fdabcddaf458959fad1",
+      "created_at": "2026-09-07T02:08:09.207847+00:00",
       "metadata": {}
     },
     {
-      "id": "tree_937023e5fada4fac9daf32fd04fa8111",
+      "id": "tree_41e5961a0f9147c2a0aec5550706c28a",
       "category": "hot",
       "title": "hot",
-      "root_node_id": "node_68c63babb3a949c4bfab48d09c98d8d2",
-      "created_at": "2026-09-07T01:21:28.120191+00:00",
+      "root_node_id": "node_b42a5c372f0941799617a49eec167ad3",
+      "created_at": "2026-09-07T02:08:09.208719+00:00",
       "metadata": {}
     },
     {
-      "id": "tree_5ac27f7f9a48476e944d761d8a25f411",
+      "id": "tree_b20b738d08314d32866534cc95fe8a6b",
       "category": "goal",
       "title": "goal",
-      "root_node_id": "node_ae4de7ac4de942beaef7114d14841df7",
-      "created_at": "2026-09-07T01:21:28.121405+00:00",
+      "root_node_id": "node_976aec51356b4d48b6c8e92eca5a7df4",
+      "created_at": "2026-09-07T02:08:09.209933+00:00",
       "metadata": {}
     },
     {
-      "id": "tree_f8a26fa1166a4f6793b3b19252761d42",
+      "id": "tree_707e425e1a784bd0bb85430b0bdf0d08",
       "category": "episode",
       "title": "episode",
-      "root_node_id": "node_9957a6491a0c4e5d8a6ac18ee1b186e8",
-      "created_at": "2026-09-07T01:21:28.123654+00:00",
+      "root_node_id": "node_e57328f136c043729db985579f7215d8",
+      "created_at": "2026-09-07T02:08:09.212162+00:00",
       "metadata": {}
     }
   ],
   "category_roots": {
-    "decision": "tree_6c40107957744ed7977bde6efc71f98b",
-    "hot": "tree_937023e5fada4fac9daf32fd04fa8111",
-    "goal": "tree_5ac27f7f9a48476e944d761d8a25f411",
-    "episode": "tree_f8a26fa1166a4f6793b3b19252761d42"
+    "decision": "tree_b1918d8db2a840ab8b44b013b5da6fed",
+    "hot": "tree_41e5961a0f9147c2a0aec5550706c28a",
+    "goal": "tree_b20b738d08314d32866534cc95fe8a6b",
+    "episode": "tree_707e425e1a784bd0bb85430b0bdf0d08"
   },
   "events": [
     {
-      "id": "event_7623a672521f47a68d452902f39b3d34",
+      "id": "event_e8e72c847be84aee98523a57c6174aeb",
       "seq": 1,
       "op": "create_tree",
       "payload": {
-        "tree_id": "tree_6c40107957744ed7977bde6efc71f98b",
+        "tree_id": "tree_b1918d8db2a840ab8b44b013b5da6fed",
         "category": "decision",
         "title": "decision",
-        "created_at": "2026-09-07T01:21:28.119375+00:00",
+        "created_at": "2026-09-07T02:08:09.207847+00:00",
         "root": {
-          "id": "node_0586efcf5df5477ab9edf94582ede20a",
+          "id": "node_1396277461d54fdabcddaf458959fad1",
           "title": "decision root",
           "content": "",
           "category": "decision",
           "node_type": "root",
           "layer": "long_term",
-          "created_at": "2026-09-07T01:21:28.119248+00:00",
-          "updated_at": "2026-09-07T01:21:28.119368+00:00",
+          "created_at": "2026-09-07T02:08:09.207707+00:00",
+          "updated_at": "2026-09-07T02:08:09.207839+00:00",
           "tree_ids": [
-            "tree_6c40107957744ed7977bde6efc71f98b"
+            "tree_b1918d8db2a840ab8b44b013b5da6fed"
           ],
           "tags": [],
           "metadata": {},
@@ -529,25 +530,25 @@
           "memory_weight": 0
         }
       },
-      "created_at": "2026-09-07T01:21:28.119409+00:00",
+      "created_at": "2026-09-07T02:08:09.207884+00:00",
       "log_version": 1
     },
     {
-      "id": "event_74bd83efeb9a40f2859ad43f6993b2a0",
+      "id": "event_e716346700584e0fbc6b71f6dc36e310",
       "seq": 2,
       "op": "create_node",
       "payload": {
         "node": {
-          "id": "node_7c9809b7a27340f7974ce4399c21b65c",
+          "id": "node_fd468f22199e4e2a868f296d688aa396",
           "title": "Refresh tokens before retrying login",
           "content": "A 401 after token expiry is fixed by refreshing before the next request.",
           "category": "decision",
           "node_type": "raw",
           "layer": "raw",
-          "created_at": "2026-09-07T01:21:28.119415+00:00",
-          "updated_at": "2026-09-07T01:21:28.119415+00:00",
+          "created_at": "2026-09-07T02:08:09.207891+00:00",
+          "updated_at": "2026-09-07T02:08:09.207891+00:00",
           "tree_ids": [
-            "tree_6c40107957744ed7977bde6efc71f98b"
+            "tree_b1918d8db2a840ab8b44b013b5da6fed"
           ],
           "tags": [],
           "metadata": {},
@@ -568,48 +569,48 @@
           "memory_weight": 1
         }
       },
-      "created_at": "2026-09-07T01:21:28.119454+00:00",
+      "created_at": "2026-09-07T02:08:09.207930+00:00",
       "log_version": 1
     },
     {
-      "id": "event_b33fd4440d424b3595082a79b9d76b82",
+      "id": "event_924c2e5bb5fa420ca9f7230bc5a20239",
       "seq": 3,
       "op": "link",
       "payload": {
         "edge": {
-          "id": "edge_2c3acd3f654f43118b15e9da0abe4b59",
-          "from_node_id": "node_0586efcf5df5477ab9edf94582ede20a",
-          "to_node_id": "node_7c9809b7a27340f7974ce4399c21b65c",
+          "id": "edge_20edf78eef274a5aa4095afc85654d27",
+          "from_node_id": "node_1396277461d54fdabcddaf458959fad1",
+          "to_node_id": "node_fd468f22199e4e2a868f296d688aa396",
           "relation_type": "tree_child",
           "weight": 1.0,
           "direction": "directed",
-          "created_at": "2026-09-07T01:21:28.119458+00:00",
+          "created_at": "2026-09-07T02:08:09.207936+00:00",
           "metadata": {}
         }
       },
-      "created_at": "2026-09-07T01:21:28.119463+00:00",
+      "created_at": "2026-09-07T02:08:09.207942+00:00",
       "log_version": 1
     },
     {
-      "id": "event_b245d382790d4a999fb2f6ccb83f0156",
+      "id": "event_69869a01538c4e3a8579f63554fc16dd",
       "seq": 4,
       "op": "create_tree",
       "payload": {
-        "tree_id": "tree_937023e5fada4fac9daf32fd04fa8111",
+        "tree_id": "tree_41e5961a0f9147c2a0aec5550706c28a",
         "category": "hot",
         "title": "hot",
-        "created_at": "2026-09-07T01:21:28.120191+00:00",
+        "created_at": "2026-09-07T02:08:09.208719+00:00",
         "root": {
-          "id": "node_68c63babb3a949c4bfab48d09c98d8d2",
+          "id": "node_b42a5c372f0941799617a49eec167ad3",
           "title": "hot root",
           "content": "",
           "category": "hot",
           "node_type": "root",
           "layer": "long_term",
-          "created_at": "2026-09-07T01:21:28.120188+00:00",
-          "updated_at": "2026-09-07T01:21:28.120188+00:00",
+          "created_at": "2026-09-07T02:08:09.208715+00:00",
+          "updated_at": "2026-09-07T02:08:09.208716+00:00",
           "tree_ids": [
-            "tree_937023e5fada4fac9daf32fd04fa8111"
+            "tree_41e5961a0f9147c2a0aec5550706c28a"
           ],
           "tags": [],
           "metadata": {},
@@ -630,25 +631,25 @@
           "memory_weight": 0
         }
       },
-      "created_at": "2026-09-07T01:21:28.120206+00:00",
+      "created_at": "2026-09-07T02:08:09.208733+00:00",
       "log_version": 1
     },
     {
-      "id": "event_0773f25890864de3bccb3acef1d92106",
+      "id": "event_6e2bd89dd3ca466089dd8e2dff927a9b",
       "seq": 5,
       "op": "create_node",
       "payload": {
         "node": {
-          "id": "node_cfd0f7f194eb41a9bfd62da65c679135",
+          "id": "node_b4183672247c4c6fb96665228468b39f",
           "title": "hot snapshot for demo-session",
-          "content": "{\"kind\": \"fibbrain_hot_snapshot\", \"node_ids\": [\"node_7c9809b7a27340f7974ce4399c21b65c\"]}",
+          "content": "{\"kind\": \"fibbrain_hot_snapshot\", \"node_ids\": [\"node_fd468f22199e4e2a868f296d688aa396\"]}",
           "category": "hot",
           "node_type": "raw",
           "layer": "raw",
-          "created_at": "2026-09-07T01:21:28.120214+00:00",
-          "updated_at": "2026-09-07T01:21:28.120214+00:00",
+          "created_at": "2026-09-07T02:08:09.208741+00:00",
+          "updated_at": "2026-09-07T02:08:09.208741+00:00",
           "tree_ids": [
-            "tree_937023e5fada4fac9daf32fd04fa8111"
+            "tree_41e5961a0f9147c2a0aec5550706c28a"
           ],
           "tags": [
             "fibbrain-hot"
@@ -674,48 +675,48 @@
           "memory_weight": 1
         }
       },
-      "created_at": "2026-09-07T01:21:28.120246+00:00",
+      "created_at": "2026-09-07T02:08:09.208820+00:00",
       "log_version": 1
     },
     {
-      "id": "event_f55e3d08408d475f9b9bea6db2893588",
+      "id": "event_6be8f972dc8f4bdb8c5761601198244d",
       "seq": 6,
       "op": "link",
       "payload": {
         "edge": {
-          "id": "edge_61b237d644e34aeabc97430a0679fbb7",
-          "from_node_id": "node_68c63babb3a949c4bfab48d09c98d8d2",
-          "to_node_id": "node_cfd0f7f194eb41a9bfd62da65c679135",
+          "id": "edge_49d3fe5c208841f4908293eee25f33e8",
+          "from_node_id": "node_b42a5c372f0941799617a49eec167ad3",
+          "to_node_id": "node_b4183672247c4c6fb96665228468b39f",
           "relation_type": "tree_child",
           "weight": 1.0,
           "direction": "directed",
-          "created_at": "2026-09-07T01:21:28.120249+00:00",
+          "created_at": "2026-09-07T02:08:09.208823+00:00",
           "metadata": {}
         }
       },
-      "created_at": "2026-09-07T01:21:28.120253+00:00",
+      "created_at": "2026-09-07T02:08:09.208828+00:00",
       "log_version": 1
     },
     {
-      "id": "event_5253a2e1f36e4a4bb68d15b0020256ef",
+      "id": "event_b2ae21013a07451bb3d1459582a3e80c",
       "seq": 7,
       "op": "create_tree",
       "payload": {
-        "tree_id": "tree_5ac27f7f9a48476e944d761d8a25f411",
+        "tree_id": "tree_b20b738d08314d32866534cc95fe8a6b",
         "category": "goal",
         "title": "goal",
-        "created_at": "2026-09-07T01:21:28.121405+00:00",
+        "created_at": "2026-09-07T02:08:09.209933+00:00",
         "root": {
-          "id": "node_ae4de7ac4de942beaef7114d14841df7",
+          "id": "node_976aec51356b4d48b6c8e92eca5a7df4",
           "title": "goal root",
           "content": "",
           "category": "goal",
           "node_type": "root",
           "layer": "long_term",
-          "created_at": "2026-09-07T01:21:28.121401+00:00",
-          "updated_at": "2026-09-07T01:21:28.121402+00:00",
+          "created_at": "2026-09-07T02:08:09.209930+00:00",
+          "updated_at": "2026-09-07T02:08:09.209930+00:00",
           "tree_ids": [
-            "tree_5ac27f7f9a48476e944d761d8a25f411"
+            "tree_b20b738d08314d32866534cc95fe8a6b"
           ],
           "tags": [],
           "metadata": {},
@@ -736,25 +737,25 @@
           "memory_weight": 0
         }
       },
-      "created_at": "2026-09-07T01:21:28.121421+00:00",
+      "created_at": "2026-09-07T02:08:09.209947+00:00",
       "log_version": 1
     },
     {
-      "id": "event_5745051605444e0ba0fdb576b0111950",
+      "id": "event_0400c85b57b54560b726884b1d53d2f1",
       "seq": 8,
       "op": "create_node",
       "payload": {
         "node": {
-          "id": "node_34fc3645b5ad48bd84210da06714ebe6",
+          "id": "node_a985617e3d404de7b886b632d69060cf",
           "title": "Fix login 401 after token expiry",
-          "content": "{\n  \"kind\": \"fibbrain_goal\",\n  \"objective\": \"Fix login 401 after token expiry\",\n  \"status\": \"active\",\n  \"steps\": [\n    {\n      \"id\": \"step_58f8210444bf451db826f7e197dce5e9\",\n      \"title\": \"Recall related history\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Load what this working context already knows before acting\"\n    },\n    {\n      \"id\": \"step_26698786714347a28510a81e5828df1c\",\n      \"title\": \"Do the work: Fix login 401 after token expiry\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"code\"\n      ],\n      \"reason\": \"Capabilities inferred from the objective\"\n    },\n    {\n      \"id\": \"step_c647639b7ccd44a38442a2f2ad34588e\",\n      \"title\": \"Verify the result\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"review\"\n      ],\n      \"reason\": \"Check the work against something outside the model\"\n    },\n    {\n      \"id\": \"step_acca2da1a98f4c7c8c37129998523927\",\n      \"title\": \"Reflect and remember\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Record whether prior memories held, then write only what is worth keeping\"\n    }\n  ]\n}",
+          "content": "{\n  \"kind\": \"fibbrain_goal\",\n  \"objective\": \"Fix login 401 after token expiry\",\n  \"status\": \"active\",\n  \"steps\": [\n    {\n      \"id\": \"step_c161305e798f4e1d8b9273fdc0a2b292\",\n      \"title\": \"Recall related history\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Load what this working context already knows before acting\"\n    },\n    {\n      \"id\": \"step_07f23b645ba0423abff533a5a99bf963\",\n      \"title\": \"Do the work: Fix login 401 after token expiry\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"code\"\n      ],\n      \"reason\": \"Capabilities inferred from the objective\"\n    },\n    {\n      \"id\": \"step_ec4579453b58447b9150f4d9e80b0441\",\n      \"title\": \"Verify the result\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"review\"\n      ],\n      \"reason\": \"Check the work against something outside the model\"\n    },\n    {\n      \"id\": \"step_e2457de65450443591f12f4111251c3b\",\n      \"title\": \"Reflect and remember\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Record whether prior memories held, then write only what is worth keeping\"\n    }\n  ]\n}",
           "category": "goal",
           "node_type": "raw",
           "layer": "raw",
-          "created_at": "2026-09-07T01:21:28.121429+00:00",
-          "updated_at": "2026-09-07T01:21:28.121429+00:00",
+          "created_at": "2026-09-07T02:08:09.209954+00:00",
+          "updated_at": "2026-09-07T02:08:09.209954+00:00",
           "tree_ids": [
-            "tree_5ac27f7f9a48476e944d761d8a25f411"
+            "tree_b20b738d08314d32866534cc95fe8a6b"
           ],
           "tags": [
             "fibbrain-goal"
@@ -779,73 +780,73 @@
           "memory_weight": 1
         }
       },
-      "created_at": "2026-09-07T01:21:28.121591+00:00",
+      "created_at": "2026-09-07T02:08:09.210135+00:00",
       "log_version": 1
     },
     {
-      "id": "event_358cf3e737824b789b37af21092bc53c",
+      "id": "event_20f8a41f4b2143ffaa1ba244edfbcefc",
       "seq": 9,
       "op": "link",
       "payload": {
         "edge": {
-          "id": "edge_b5f0a7c301cb4ec2be2ef029b4cc3224",
-          "from_node_id": "node_ae4de7ac4de942beaef7114d14841df7",
-          "to_node_id": "node_34fc3645b5ad48bd84210da06714ebe6",
+          "id": "edge_51344701bef646c6bdabce06d1828536",
+          "from_node_id": "node_976aec51356b4d48b6c8e92eca5a7df4",
+          "to_node_id": "node_a985617e3d404de7b886b632d69060cf",
           "relation_type": "tree_child",
           "weight": 1.0,
           "direction": "directed",
-          "created_at": "2026-09-07T01:21:28.121594+00:00",
+          "created_at": "2026-09-07T02:08:09.210138+00:00",
           "metadata": {}
         }
       },
-      "created_at": "2026-09-07T01:21:28.121598+00:00",
+      "created_at": "2026-09-07T02:08:09.210142+00:00",
       "log_version": 1
     },
     {
-      "id": "event_cdb2a06daa924686b54340bf7e7be6a3",
+      "id": "event_8f598de203484086ad5674ca78e69257",
       "seq": 10,
       "op": "revise",
       "payload": {
-        "node_id": "node_34fc3645b5ad48bd84210da06714ebe6",
+        "node_id": "node_a985617e3d404de7b886b632d69060cf",
         "before": {
           "title": "Fix login 401 after token expiry",
-          "content": "{\n  \"kind\": \"fibbrain_goal\",\n  \"objective\": \"Fix login 401 after token expiry\",\n  \"status\": \"active\",\n  \"steps\": [\n    {\n      \"id\": \"step_58f8210444bf451db826f7e197dce5e9\",\n      \"title\": \"Recall related history\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Load what this working context already knows before acting\"\n    },\n    {\n      \"id\": \"step_26698786714347a28510a81e5828df1c\",\n      \"title\": \"Do the work: Fix login 401 after token expiry\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"code\"\n      ],\n      \"reason\": \"Capabilities inferred from the objective\"\n    },\n    {\n      \"id\": \"step_c647639b7ccd44a38442a2f2ad34588e\",\n      \"title\": \"Verify the result\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"review\"\n      ],\n      \"reason\": \"Check the work against something outside the model\"\n    },\n    {\n      \"id\": \"step_acca2da1a98f4c7c8c37129998523927\",\n      \"title\": \"Reflect and remember\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Record whether prior memories held, then write only what is worth keeping\"\n    }\n  ]\n}",
+          "content": "{\n  \"kind\": \"fibbrain_goal\",\n  \"objective\": \"Fix login 401 after token expiry\",\n  \"status\": \"active\",\n  \"steps\": [\n    {\n      \"id\": \"step_c161305e798f4e1d8b9273fdc0a2b292\",\n      \"title\": \"Recall related history\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Load what this working context already knows before acting\"\n    },\n    {\n      \"id\": \"step_07f23b645ba0423abff533a5a99bf963\",\n      \"title\": \"Do the work: Fix login 401 after token expiry\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"code\"\n      ],\n      \"reason\": \"Capabilities inferred from the objective\"\n    },\n    {\n      \"id\": \"step_ec4579453b58447b9150f4d9e80b0441\",\n      \"title\": \"Verify the result\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"review\"\n      ],\n      \"reason\": \"Check the work against something outside the model\"\n    },\n    {\n      \"id\": \"step_e2457de65450443591f12f4111251c3b\",\n      \"title\": \"Reflect and remember\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Record whether prior memories held, then write only what is worth keeping\"\n    }\n  ]\n}",
           "tags": [
             "fibbrain-goal"
           ]
         },
         "after": {
           "title": "Fix login 401 after token expiry",
-          "content": "{\n  \"kind\": \"fibbrain_goal\",\n  \"objective\": \"Fix login 401 after token expiry\",\n  \"status\": \"active\",\n  \"steps\": [\n    {\n      \"id\": \"step_11eb3d0d257a464eb3db9baebbea2f88\",\n      \"title\": \"Recall related history\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Load what this working context already knows before acting\"\n    },\n    {\n      \"id\": \"step_28a7f3e1e3ae48389eadadcd8bf15e92\",\n      \"title\": \"Do the work: Fix login 401 after token expiry\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"code\"\n      ],\n      \"reason\": \"Capabilities inferred from the objective\"\n    },\n    {\n      \"id\": \"step_9e807077521741ac8e596162099ed197\",\n      \"title\": \"Verify the result\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"review\"\n      ],\n      \"reason\": \"Check the work against something outside the model\"\n    },\n    {\n      \"id\": \"step_fecb3975a3354b5ca1228ef2dece7767\",\n      \"title\": \"Reflect and remember\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Record whether prior memories held, then write only what is worth keeping\"\n    }\n  ]\n}",
+          "content": "{\n  \"kind\": \"fibbrain_goal\",\n  \"objective\": \"Fix login 401 after token expiry\",\n  \"status\": \"active\",\n  \"steps\": [\n    {\n      \"id\": \"step_bfba260ced6b4f279bbe03bfb2072d6e\",\n      \"title\": \"Recall related history\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Load what this working context already knows before acting\"\n    },\n    {\n      \"id\": \"step_75f03da2dfe8426380a43883709a2539\",\n      \"title\": \"Do the work: Fix login 401 after token expiry\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"code\"\n      ],\n      \"reason\": \"Capabilities inferred from the objective\"\n    },\n    {\n      \"id\": \"step_0e109cab762642d5912acc95ca68bec8\",\n      \"title\": \"Verify the result\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"review\"\n      ],\n      \"reason\": \"Check the work against something outside the model\"\n    },\n    {\n      \"id\": \"step_89fb2c00e8dd45dfa6f5250e0726ff21\",\n      \"title\": \"Reflect and remember\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Record whether prior memories held, then write only what is worth keeping\"\n    }\n  ]\n}",
           "tags": [
             "fibbrain-goal"
           ],
           "status": "active"
         }
       },
-      "created_at": "2026-09-07T01:21:28.122874+00:00",
+      "created_at": "2026-09-07T02:08:09.211337+00:00",
       "log_version": 1
     },
     {
-      "id": "event_0f5da7520b6a4b79bef592776e32cc91",
+      "id": "event_2260c9ce760a435c8e697651cb7d4b1e",
       "seq": 11,
       "op": "create_tree",
       "payload": {
-        "tree_id": "tree_f8a26fa1166a4f6793b3b19252761d42",
+        "tree_id": "tree_707e425e1a784bd0bb85430b0bdf0d08",
         "category": "episode",
         "title": "episode",
-        "created_at": "2026-09-07T01:21:28.123654+00:00",
+        "created_at": "2026-09-07T02:08:09.212162+00:00",
         "root": {
-          "id": "node_9957a6491a0c4e5d8a6ac18ee1b186e8",
+          "id": "node_e57328f136c043729db985579f7215d8",
           "title": "episode root",
           "content": "",
           "category": "episode",
           "node_type": "root",
           "layer": "long_term",
-          "created_at": "2026-09-07T01:21:28.123651+00:00",
-          "updated_at": "2026-09-07T01:21:28.123651+00:00",
+          "created_at": "2026-09-07T02:08:09.212159+00:00",
+          "updated_at": "2026-09-07T02:08:09.212159+00:00",
           "tree_ids": [
-            "tree_f8a26fa1166a4f6793b3b19252761d42"
+            "tree_707e425e1a784bd0bb85430b0bdf0d08"
           ],
           "tags": [],
           "metadata": {},
@@ -866,25 +867,25 @@
           "memory_weight": 0
         }
       },
-      "created_at": "2026-09-07T01:21:28.123668+00:00",
+      "created_at": "2026-09-07T02:08:09.212174+00:00",
       "log_version": 1
     },
     {
-      "id": "event_732b701276464cc3897cf84d21660f64",
+      "id": "event_5e755133d74b44f69d31ddc25d343237",
       "seq": 12,
       "op": "create_node",
       "payload": {
         "node": {
-          "id": "node_6486d76ad60f40ae845c4c6e32cab7ea",
+          "id": "node_a86a52bf37d64daaae72377eb542c304",
           "title": "plan: planned Fix login 401 after token expiry",
           "content": "planned Fix login 401 after token expiry",
           "category": "episode",
           "node_type": "raw",
           "layer": "raw",
-          "created_at": "2026-09-07T01:21:28.123674+00:00",
-          "updated_at": "2026-09-07T01:21:28.123674+00:00",
+          "created_at": "2026-09-07T02:08:09.212179+00:00",
+          "updated_at": "2026-09-07T02:08:09.212179+00:00",
           "tree_ids": [
-            "tree_f8a26fa1166a4f6793b3b19252761d42"
+            "tree_707e425e1a784bd0bb85430b0bdf0d08"
           ],
           "tags": [
             "fibbrain-episode"
@@ -892,7 +893,7 @@
           "metadata": {
             "kind": "plan",
             "payload": {
-              "goal_id": "node_34fc3645b5ad48bd84210da06714ebe6",
+              "goal_id": "node_a985617e3d404de7b886b632d69060cf",
               "steps": 4
             },
             "episode": "fibbrain_episode"
@@ -914,69 +915,69 @@
           "memory_weight": 1
         }
       },
-      "created_at": "2026-09-07T01:21:28.123704+00:00",
+      "created_at": "2026-09-07T02:08:09.212209+00:00",
       "log_version": 1
     },
     {
-      "id": "event_dd75628cc55c415e9467b06cb59b5987",
+      "id": "event_3c0677a10f6f44bc973b5a39748088d6",
       "seq": 13,
       "op": "link",
       "payload": {
         "edge": {
-          "id": "edge_8600ed3194a645ad8a9f73e562a07bf8",
-          "from_node_id": "node_9957a6491a0c4e5d8a6ac18ee1b186e8",
-          "to_node_id": "node_6486d76ad60f40ae845c4c6e32cab7ea",
+          "id": "edge_c298ad3f78744d2fa135619b10c33c01",
+          "from_node_id": "node_e57328f136c043729db985579f7215d8",
+          "to_node_id": "node_a86a52bf37d64daaae72377eb542c304",
           "relation_type": "tree_child",
           "weight": 1.0,
           "direction": "directed",
-          "created_at": "2026-09-07T01:21:28.123706+00:00",
+          "created_at": "2026-09-07T02:08:09.212211+00:00",
           "metadata": {}
         }
       },
-      "created_at": "2026-09-07T01:21:28.123710+00:00",
+      "created_at": "2026-09-07T02:08:09.212214+00:00",
       "log_version": 1
     },
     {
-      "id": "event_318dac1052744111a000f24abba03ce0",
+      "id": "event_bdf4cf63c2cc49d69470652821126321",
       "seq": 14,
       "op": "revise",
       "payload": {
-        "node_id": "node_34fc3645b5ad48bd84210da06714ebe6",
+        "node_id": "node_a985617e3d404de7b886b632d69060cf",
         "before": {
           "title": "Fix login 401 after token expiry",
-          "content": "{\n  \"kind\": \"fibbrain_goal\",\n  \"objective\": \"Fix login 401 after token expiry\",\n  \"status\": \"active\",\n  \"steps\": [\n    {\n      \"id\": \"step_11eb3d0d257a464eb3db9baebbea2f88\",\n      \"title\": \"Recall related history\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Load what this working context already knows before acting\"\n    },\n    {\n      \"id\": \"step_28a7f3e1e3ae48389eadadcd8bf15e92\",\n      \"title\": \"Do the work: Fix login 401 after token expiry\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"code\"\n      ],\n      \"reason\": \"Capabilities inferred from the objective\"\n    },\n    {\n      \"id\": \"step_9e807077521741ac8e596162099ed197\",\n      \"title\": \"Verify the result\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"review\"\n      ],\n      \"reason\": \"Check the work against something outside the model\"\n    },\n    {\n      \"id\": \"step_fecb3975a3354b5ca1228ef2dece7767\",\n      \"title\": \"Reflect and remember\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Record whether prior memories held, then write only what is worth keeping\"\n    }\n  ]\n}",
+          "content": "{\n  \"kind\": \"fibbrain_goal\",\n  \"objective\": \"Fix login 401 after token expiry\",\n  \"status\": \"active\",\n  \"steps\": [\n    {\n      \"id\": \"step_bfba260ced6b4f279bbe03bfb2072d6e\",\n      \"title\": \"Recall related history\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Load what this working context already knows before acting\"\n    },\n    {\n      \"id\": \"step_75f03da2dfe8426380a43883709a2539\",\n      \"title\": \"Do the work: Fix login 401 after token expiry\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"code\"\n      ],\n      \"reason\": \"Capabilities inferred from the objective\"\n    },\n    {\n      \"id\": \"step_0e109cab762642d5912acc95ca68bec8\",\n      \"title\": \"Verify the result\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"review\"\n      ],\n      \"reason\": \"Check the work against something outside the model\"\n    },\n    {\n      \"id\": \"step_89fb2c00e8dd45dfa6f5250e0726ff21\",\n      \"title\": \"Reflect and remember\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Record whether prior memories held, then write only what is worth keeping\"\n    }\n  ]\n}",
           "tags": [
             "fibbrain-goal"
           ]
         },
         "after": {
           "title": "Fix login 401 after token expiry",
-          "content": "{\n  \"kind\": \"fibbrain_goal\",\n  \"objective\": \"Fix login 401 after token expiry\",\n  \"status\": \"active\",\n  \"steps\": [\n    {\n      \"id\": \"step_b339c93a66d44372a0774036325ed5c5\",\n      \"title\": \"Recall related history\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Load what this working context already knows before acting\"\n    },\n    {\n      \"id\": \"step_194e48342fd0410db8e4727eae8cea24\",\n      \"title\": \"Do the work: Fix login 401 after token expiry\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"code\"\n      ],\n      \"reason\": \"Capabilities inferred from the objective\"\n    },\n    {\n      \"id\": \"step_43ab728b3a664f13a6b5ac5034977e3c\",\n      \"title\": \"Verify the result\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"review\"\n      ],\n      \"reason\": \"Check the work against something outside the model\"\n    },\n    {\n      \"id\": \"step_c0efe22684b7437583182dac65dd52dc\",\n      \"title\": \"Reflect and remember\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Record whether prior memories held, then write only what is worth keeping\"\n    }\n  ]\n}",
+          "content": "{\n  \"kind\": \"fibbrain_goal\",\n  \"objective\": \"Fix login 401 after token expiry\",\n  \"status\": \"active\",\n  \"steps\": [\n    {\n      \"id\": \"step_328796498dab455abb34c1c67325d2b2\",\n      \"title\": \"Recall related history\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Load what this working context already knows before acting\"\n    },\n    {\n      \"id\": \"step_b4c022dd84754886aa1d445528414860\",\n      \"title\": \"Do the work: Fix login 401 after token expiry\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"code\"\n      ],\n      \"reason\": \"Capabilities inferred from the objective\"\n    },\n    {\n      \"id\": \"step_cd433445bfd840fdb93572d9150785ae\",\n      \"title\": \"Verify the result\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"review\"\n      ],\n      \"reason\": \"Check the work against something outside the model\"\n    },\n    {\n      \"id\": \"step_6d3ebe4789754f01a0a175d19ce1cfaa\",\n      \"title\": \"Reflect and remember\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Record whether prior memories held, then write only what is worth keeping\"\n    }\n  ]\n}",
           "tags": [
             "fibbrain-goal"
           ],
           "status": "active"
         }
       },
-      "created_at": "2026-09-07T01:21:28.127337+00:00",
+      "created_at": "2026-09-07T02:08:09.216325+00:00",
       "log_version": 1
     },
     {
-      "id": "event_4c521799844c4f48b4eccbaddbb25986",
+      "id": "event_51191d9784424e27ae83c3d91cc59a34",
       "seq": 15,
       "op": "create_node",
       "payload": {
         "node": {
-          "id": "node_94a9c1c22a6145e78b1da230b80e7843",
+          "id": "node_996f84d30c374981a92f94a648b5a073",
           "title": "plan: planned Fix login 401 after token expiry",
           "content": "planned Fix login 401 after token expiry",
           "category": "episode",
           "node_type": "raw",
           "layer": "raw",
-          "created_at": "2026-09-07T01:21:28.128291+00:00",
-          "updated_at": "2026-09-07T01:21:28.128292+00:00",
+          "created_at": "2026-09-07T02:08:09.217448+00:00",
+          "updated_at": "2026-09-07T02:08:09.217449+00:00",
           "tree_ids": [
-            "tree_f8a26fa1166a4f6793b3b19252761d42"
+            "tree_707e425e1a784bd0bb85430b0bdf0d08"
           ],
           "tags": [
             "fibbrain-episode"
@@ -984,7 +985,7 @@
           "metadata": {
             "kind": "plan",
             "payload": {
-              "goal_id": "node_34fc3645b5ad48bd84210da06714ebe6",
+              "goal_id": "node_a985617e3d404de7b886b632d69060cf",
               "steps": 4
             },
             "episode": "fibbrain_episode"
@@ -1006,44 +1007,44 @@
           "memory_weight": 1
         }
       },
-      "created_at": "2026-09-07T01:21:28.128323+00:00",
+      "created_at": "2026-09-07T02:08:09.217484+00:00",
       "log_version": 1
     },
     {
-      "id": "event_738b60e6dd7240a789e9adb502b2e155",
+      "id": "event_bf54003f97d44f48b0d185cb51ad4aaf",
       "seq": 16,
       "op": "link",
       "payload": {
         "edge": {
-          "id": "edge_8a876514833c44f090c198c5dd95629c",
-          "from_node_id": "node_9957a6491a0c4e5d8a6ac18ee1b186e8",
-          "to_node_id": "node_94a9c1c22a6145e78b1da230b80e7843",
+          "id": "edge_82756b2f6e1946b0bda1f78d563550a0",
+          "from_node_id": "node_e57328f136c043729db985579f7215d8",
+          "to_node_id": "node_996f84d30c374981a92f94a648b5a073",
           "relation_type": "tree_child",
           "weight": 1.0,
           "direction": "directed",
-          "created_at": "2026-09-07T01:21:28.128326+00:00",
+          "created_at": "2026-09-07T02:08:09.217487+00:00",
           "metadata": {}
         }
       },
-      "created_at": "2026-09-07T01:21:28.128329+00:00",
+      "created_at": "2026-09-07T02:08:09.217492+00:00",
       "log_version": 1
     },
     {
-      "id": "event_23c40cc24195445e99815cca5f10e308",
+      "id": "event_7d4c454350c84ce2a17150d7ea217848",
       "seq": 17,
       "op": "create_node",
       "payload": {
         "node": {
-          "id": "node_ac8712f1cc8a44a1af2945083490f5ec",
+          "id": "node_2f273273c0894aac9d0f9e1351df147a",
           "title": "coordinate: coordinated Fix login 401 after token expiry",
           "content": "coordinated Fix login 401 after token expiry",
           "category": "episode",
           "node_type": "raw",
           "layer": "raw",
-          "created_at": "2026-09-07T01:21:28.132247+00:00",
-          "updated_at": "2026-09-07T01:21:28.132247+00:00",
+          "created_at": "2026-09-07T02:08:09.221661+00:00",
+          "updated_at": "2026-09-07T02:08:09.221662+00:00",
           "tree_ids": [
-            "tree_f8a26fa1166a4f6793b3b19252761d42"
+            "tree_707e425e1a784bd0bb85430b0bdf0d08"
           ],
           "tags": [
             "fibbrain-episode"
@@ -1051,7 +1052,7 @@
           "metadata": {
             "kind": "coordinate",
             "payload": {
-              "goal_id": "node_34fc3645b5ad48bd84210da06714ebe6",
+              "goal_id": "node_a985617e3d404de7b886b632d69060cf",
               "blocked": false
             },
             "episode": "fibbrain_episode"
@@ -1073,69 +1074,69 @@
           "memory_weight": 1
         }
       },
-      "created_at": "2026-09-07T01:21:28.132281+00:00",
+      "created_at": "2026-09-07T02:08:09.221705+00:00",
       "log_version": 1
     },
     {
-      "id": "event_437f19260cd24ae0ab5a38646b642c1c",
+      "id": "event_84c90547b90c42ac9702bacf932c4a07",
       "seq": 18,
       "op": "link",
       "payload": {
         "edge": {
-          "id": "edge_919e16c3a4c749b4833ab4d8633177b7",
-          "from_node_id": "node_9957a6491a0c4e5d8a6ac18ee1b186e8",
-          "to_node_id": "node_ac8712f1cc8a44a1af2945083490f5ec",
+          "id": "edge_6bdcdba936d74ac19846af6224b398b8",
+          "from_node_id": "node_e57328f136c043729db985579f7215d8",
+          "to_node_id": "node_2f273273c0894aac9d0f9e1351df147a",
           "relation_type": "tree_child",
           "weight": 1.0,
           "direction": "directed",
-          "created_at": "2026-09-07T01:21:28.132284+00:00",
+          "created_at": "2026-09-07T02:08:09.221708+00:00",
           "metadata": {}
         }
       },
-      "created_at": "2026-09-07T01:21:28.132288+00:00",
+      "created_at": "2026-09-07T02:08:09.221713+00:00",
       "log_version": 1
     },
     {
-      "id": "event_4653a5ab0dcc4a6b8feb827030e3ec2c",
+      "id": "event_3d827a7a39e141fabd40fb6bfbb8442a",
       "seq": 19,
       "op": "revise",
       "payload": {
-        "node_id": "node_34fc3645b5ad48bd84210da06714ebe6",
+        "node_id": "node_a985617e3d404de7b886b632d69060cf",
         "before": {
           "title": "Fix login 401 after token expiry",
-          "content": "{\n  \"kind\": \"fibbrain_goal\",\n  \"objective\": \"Fix login 401 after token expiry\",\n  \"status\": \"active\",\n  \"steps\": [\n    {\n      \"id\": \"step_b339c93a66d44372a0774036325ed5c5\",\n      \"title\": \"Recall related history\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Load what this working context already knows before acting\"\n    },\n    {\n      \"id\": \"step_194e48342fd0410db8e4727eae8cea24\",\n      \"title\": \"Do the work: Fix login 401 after token expiry\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"code\"\n      ],\n      \"reason\": \"Capabilities inferred from the objective\"\n    },\n    {\n      \"id\": \"step_43ab728b3a664f13a6b5ac5034977e3c\",\n      \"title\": \"Verify the result\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"review\"\n      ],\n      \"reason\": \"Check the work against something outside the model\"\n    },\n    {\n      \"id\": \"step_c0efe22684b7437583182dac65dd52dc\",\n      \"title\": \"Reflect and remember\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Record whether prior memories held, then write only what is worth keeping\"\n    }\n  ]\n}",
+          "content": "{\n  \"kind\": \"fibbrain_goal\",\n  \"objective\": \"Fix login 401 after token expiry\",\n  \"status\": \"active\",\n  \"steps\": [\n    {\n      \"id\": \"step_328796498dab455abb34c1c67325d2b2\",\n      \"title\": \"Recall related history\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Load what this working context already knows before acting\"\n    },\n    {\n      \"id\": \"step_b4c022dd84754886aa1d445528414860\",\n      \"title\": \"Do the work: Fix login 401 after token expiry\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"code\"\n      ],\n      \"reason\": \"Capabilities inferred from the objective\"\n    },\n    {\n      \"id\": \"step_cd433445bfd840fdb93572d9150785ae\",\n      \"title\": \"Verify the result\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"review\"\n      ],\n      \"reason\": \"Check the work against something outside the model\"\n    },\n    {\n      \"id\": \"step_6d3ebe4789754f01a0a175d19ce1cfaa\",\n      \"title\": \"Reflect and remember\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Record whether prior memories held, then write only what is worth keeping\"\n    }\n  ]\n}",
           "tags": [
             "fibbrain-goal"
           ]
         },
         "after": {
           "title": "Fix login 401 after token expiry",
-          "content": "{\n  \"kind\": \"fibbrain_goal\",\n  \"objective\": \"Fix login 401 after token expiry\",\n  \"status\": \"complete\",\n  \"steps\": [\n    {\n      \"id\": \"step_b339c93a66d44372a0774036325ed5c5\",\n      \"title\": \"Recall related history\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Load what this working context already knows before acting\"\n    },\n    {\n      \"id\": \"step_194e48342fd0410db8e4727eae8cea24\",\n      \"title\": \"Do the work: Fix login 401 after token expiry\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"code\"\n      ],\n      \"reason\": \"Capabilities inferred from the objective\"\n    },\n    {\n      \"id\": \"step_43ab728b3a664f13a6b5ac5034977e3c\",\n      \"title\": \"Verify the result\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"review\"\n      ],\n      \"reason\": \"Check the work against something outside the model\"\n    },\n    {\n      \"id\": \"step_c0efe22684b7437583182dac65dd52dc\",\n      \"title\": \"Reflect and remember\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Record whether prior memories held, then write only what is worth keeping\"\n    }\n  ]\n}",
+          "content": "{\n  \"kind\": \"fibbrain_goal\",\n  \"objective\": \"Fix login 401 after token expiry\",\n  \"status\": \"complete\",\n  \"steps\": [\n    {\n      \"id\": \"step_328796498dab455abb34c1c67325d2b2\",\n      \"title\": \"Recall related history\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Load what this working context already knows before acting\"\n    },\n    {\n      \"id\": \"step_b4c022dd84754886aa1d445528414860\",\n      \"title\": \"Do the work: Fix login 401 after token expiry\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"code\"\n      ],\n      \"reason\": \"Capabilities inferred from the objective\"\n    },\n    {\n      \"id\": \"step_cd433445bfd840fdb93572d9150785ae\",\n      \"title\": \"Verify the result\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"review\"\n      ],\n      \"reason\": \"Check the work against something outside the model\"\n    },\n    {\n      \"id\": \"step_6d3ebe4789754f01a0a175d19ce1cfaa\",\n      \"title\": \"Reflect and remember\",\n      \"status\": \"pending\",\n      \"capabilities\": [\n        \"memory\"\n      ],\n      \"reason\": \"Record whether prior memories held, then write only what is worth keeping\"\n    }\n  ]\n}",
           "tags": [
             "fibbrain-goal"
           ],
           "status": "active"
         }
       },
-      "created_at": "2026-09-07T01:21:28.136136+00:00",
+      "created_at": "2026-09-07T02:08:09.225918+00:00",
       "log_version": 1
     },
     {
-      "id": "event_e91d5b7aac884deda440e432b8afca8c",
+      "id": "event_0bc16583fea149ad991a85e2034626f6",
       "seq": 20,
       "op": "create_node",
       "payload": {
         "node": {
-          "id": "node_e05b9aed3710431e83c74c78b02eb526",
+          "id": "node_1db1159009a545a3b2c410bb6fef1dca",
           "title": "complete_goal: completed Fix login 401 after token expiry",
           "content": "completed Fix login 401 after token expiry",
           "category": "episode",
           "node_type": "raw",
           "layer": "raw",
-          "created_at": "2026-09-07T01:21:28.137306+00:00",
-          "updated_at": "2026-09-07T01:21:28.137307+00:00",
+          "created_at": "2026-09-07T02:08:09.227185+00:00",
+          "updated_at": "2026-09-07T02:08:09.227185+00:00",
           "tree_ids": [
-            "tree_f8a26fa1166a4f6793b3b19252761d42"
+            "tree_707e425e1a784bd0bb85430b0bdf0d08"
           ],
           "tags": [
             "fibbrain-episode"
@@ -1143,7 +1144,7 @@
           "metadata": {
             "kind": "complete_goal",
             "payload": {
-              "goal_id": "node_34fc3645b5ad48bd84210da06714ebe6"
+              "goal_id": "node_a985617e3d404de7b886b632d69060cf"
             },
             "episode": "fibbrain_episode"
           },
@@ -1164,26 +1165,26 @@
           "memory_weight": 1
         }
       },
-      "created_at": "2026-09-07T01:21:28.137340+00:00",
+      "created_at": "2026-09-07T02:08:09.227220+00:00",
       "log_version": 1
     },
     {
-      "id": "event_e471de2a7d8c4bfb8cea23f750c5350f",
+      "id": "event_c97e385a1ac44b6db9f2452c31ceda05",
       "seq": 21,
       "op": "link",
       "payload": {
         "edge": {
-          "id": "edge_7938e38d50bc4468a074675219ffb5ca",
-          "from_node_id": "node_9957a6491a0c4e5d8a6ac18ee1b186e8",
-          "to_node_id": "node_e05b9aed3710431e83c74c78b02eb526",
+          "id": "edge_0fb225be86ed42f2beebc41e6e35c734",
+          "from_node_id": "node_e57328f136c043729db985579f7215d8",
+          "to_node_id": "node_1db1159009a545a3b2c410bb6fef1dca",
           "relation_type": "tree_child",
           "weight": 1.0,
           "direction": "directed",
-          "created_at": "2026-09-07T01:21:28.137342+00:00",
+          "created_at": "2026-09-07T02:08:09.227223+00:00",
           "metadata": {}
         }
       },
-      "created_at": "2026-09-07T01:21:28.137346+00:00",
+      "created_at": "2026-09-07T02:08:09.227227+00:00",
       "log_version": 1
     }
   ]

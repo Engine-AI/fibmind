@@ -117,6 +117,23 @@ solely through `record_outcome`, and only with a named source — affects rankin
 Scoring recall frequency instead closes a loop (read → ranked higher → read
 more) that converges on whatever is familiar rather than whatever is true.
 
+**Nothing gets in unscanned.** Admission rejects candidates carrying API keys,
+private keys, connection strings, prompt-injection phrasing, or invisible
+Unicode, and returns the finding kind. A memory is replayed into every later
+prompt, so a leak or an injected instruction would be permanent.
+
+**Knowledge inherits its evidence.** A shared claim is linked to the
+observations it was promoted from. Refuting one supporter scales the claim's
+confidence by the share of supporters still standing; refuting all of them
+retires the claim from recall. The claim's own confirmed count is untouched:
+weakening by inheritance is not a judgement about the claim.
+
+**The brain tunes itself only through a gate.** `fibbrain_tune` derives a
+one-step, bounded proposal for the ranking weights from which memories were
+later confirmed or refuted, runs the fixed evaluation suite before and after,
+and adopts the change only if Recall@K, stale pollution, forbidden hits, and
+no-relevant accuracy did not get worse. Familiarity is not a tunable weight.
+
 **Deletion has to reach the log.** `forget` removes the node and its edges *and*
 tombstones the content in earlier log entries. Dropping only the row would let
 the next replay resurrect it.
@@ -251,6 +268,8 @@ Recall and record:
 | `fibbrain_complete_goal` | Mark a persisted goal complete; it stays recallable. |
 | `fibbrain_recall` | Recall a token-budgeted context pack: frozen hot memory first, then direct hits, then related memories, with per-section `budget` usage. |
 | `fibbrain_hot` | The session's frozen L0 hot-memory snapshot (stable preferences, conventions, evidenced decisions); `refresh` recomputes it. |
+| `fibbrain_tune` | Propose a bounded ranking-weight change from confirmed-vs-refuted evidence; adopt it only if the fixed evaluation suite shows no regression. Every attempt is logged. |
+| `fibbrain_revalidation_candidates` | Knowledge and procedures with no confirmation for N days. Output only. |
 | `fibbrain_remember` | Admit a candidate, then write it if it is worth keeping. |
 | `fibbrain_observe` | Note an episode event; persisted as session scratch when a `session_id` is given. |
 | `fibbrain_review_session` | Distil one session's episode into long-term candidates (`candidates` / `approve` / `auto`); idempotent. |
