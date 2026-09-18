@@ -147,7 +147,10 @@ async def main() -> int:
                     {"goal": "Does local MCP remember/recall work?", **STATE},
                 )
             )
-            _print("recall", {"text": recalled.get("text"), "hits": recalled.get("hits"), "episode": recalled.get("episode")})
+            _print(
+                "recall",
+                {"text": recalled.get("text"), "hits": recalled.get("hits"), "episode": recalled.get("episode")},
+            )
             if "Local MCP smoke decision" not in (recalled.get("text") or ""):
                 raise SystemExit("recall missed the written memory")
 

@@ -54,14 +54,30 @@ the `fibbrain_*` tools; `fibmind_*` remains the direct store API.
 ## Quick Start
 
 ```bash
-cd /fibmind
+cd fibmind
 uv sync --locked --extra dev
 .venv/bin/python examples/demo.py
 .venv/bin/pytest -q
 ```
 
-The demo writes a sample JSON store to `data/demo-memory.json`. SQLite is the
-recommended backend for a persistent agent memory service.
+The demo writes two sample JSON stores to `.fibmind/demo/` (gitignored). The
+tracked copies in `data/` double as the conformance fixture for
+`tests/test_contract.py`; regenerate them only on purpose with
+`examples/demo.py --fixture`. SQLite is the recommended backend for a
+persistent agent memory service.
+
+`uv` is the supported way to create the environment (`pip install uv` works if
+you do not have it). Development checks, all of which CI runs on every push:
+
+```bash
+.venv/bin/ruff check src tests evals examples     # lint
+.venv/bin/ruff format --check src tests evals examples
+.venv/bin/pytest -q
+.venv/bin/python -m evals.gate                    # evaluation suite must not fall below evals/floor.json
+```
+
+The evaluation floor is a merge gate, not a report. Raise it when the suite
+improves; do not lower it to make a build pass.
 
 ## Retrieval Evaluation
 
@@ -336,9 +352,9 @@ working directory:
 
 ```bash
 codex mcp add fibmind -- \
-  /Users/abbila/PycharmCompany/fibmind/.venv/bin/python \
+  /Users/abbila/PycharmProjects/fibmind/.venv/bin/python \
   -m fibmind.mcp_server \
-  --store /Users/abbila/PycharmCompany/fibmind/.fibmind/memory.db
+  --store /Users/abbila/PycharmProjects/fibmind/.fibmind/memory.db
 ```
 
 Verify the saved configuration:
@@ -373,9 +389,9 @@ general Codex configuration details.
 
 ```bash
 claude mcp add --scope project --transport stdio fibmind -- \
-  /Users/abbila/PycharmCompany/fibmind/.venv/bin/python \
+  /Users/abbila/PycharmProjects/fibmind/.venv/bin/python \
   -m fibmind.mcp_server \
-  --store /Users/abbila/PycharmCompany/fibmind/.fibmind/memory.db
+  --store /Users/abbila/PycharmProjects/fibmind/.fibmind/memory.db
 ```
 
 Then tell the agent when to use it via `CLAUDE.md` (Claude Code) or `AGENTS.md`

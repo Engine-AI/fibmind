@@ -4,7 +4,7 @@ A Cordis plugin (~350 lines of plain ESM JavaScript, no build step) that
 mounts FibBrain into [DeepSeek-Harness](https://github.com/deepseek-ai/deepseek-harness)
 through the harness's own lifecycle events. The Python FibBrain server stays
 the brain; this is the thin shell the plan promised in
-[`PLAN-evolve.md`](../../PLAN-evolve.md) (S6).
+[`PLAN-evolve.md`](../../docs/plans/04-evolve.md) (S6).
 
 | dsh event / service      | What the plugin does                                                                        | FibBrain call               |
 | ------------------------ | ------------------------------------------------------------------------------------------- | --------------------------- |
@@ -40,7 +40,7 @@ npx @deepseek-ai/dsh web --patch "$PWD/integrations/dsh/fibbrain.cordis.yml"
 ```
 
 Edit the absolute paths in `fibbrain.cordis.yml` if the checkout is not at
-`/Users/abbila/PycharmCompany/fibmind`. The plugin is referenced by absolute
+`/Users/abbila/PycharmProjects/fibmind`. The plugin is referenced by absolute
 path because dsh's loader resolves relative paths against the profile
 directory, not the overlay file.
 

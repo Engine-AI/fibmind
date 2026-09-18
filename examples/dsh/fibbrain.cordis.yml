@@ -16,11 +16,11 @@
       config:
         serverName: fibbrain
         transport: stdio
-        command: /Users/abbila/PycharmCompany/fibmind/.venv/bin/python
+        command: /Users/abbila/PycharmProjects/fibmind/.venv/bin/python
         args:
           - -m
           - fibmind.mcp_server
           - --store
-          - /Users/abbila/PycharmCompany/fibmind/.fibmind/memory.db
+          - /Users/abbila/PycharmProjects/fibmind/.fibmind/memory.db
         env: {}
-        cwd: /Users/abbila/PycharmCompany/fibmind
+        cwd: /Users/abbila/PycharmProjects/fibmind

@@ -20,7 +20,7 @@ its overlay includes this row too.
 ## Enable for one run
 
 Edit the three absolute paths in [`fibbrain.cordis.yml`](fibbrain.cordis.yml)
-if your checkout is not at `/Users/abbila/PycharmCompany/fibmind`, then:
+if your checkout is not at `/Users/abbila/PycharmProjects/fibmind`, then:
 
 ```sh
 npx @deepseek-ai/dsh web --patch "$PWD/examples/dsh/fibbrain.cordis.yml"

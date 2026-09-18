@@ -14,15 +14,15 @@
 # the model should also be able to call fibbrain_* tools itself.
 - insert:
     - id: fibbrain
-      name: /Users/abbila/PycharmCompany/fibmind/integrations/dsh/src/index.js
+      name: /Users/abbila/PycharmProjects/fibmind/integrations/dsh/src/index.js
       config:
-        command: /Users/abbila/PycharmCompany/fibmind/.venv/bin/python
+        command: /Users/abbila/PycharmProjects/fibmind/.venv/bin/python
         args:
           - -m
           - fibmind.mcp_server
           - --store
-          - /Users/abbila/PycharmCompany/fibmind/.fibmind/memory.db
-        cwd: /Users/abbila/PycharmCompany/fibmind
+          - /Users/abbila/PycharmProjects/fibmind/.fibmind/memory.db
+        cwd: /Users/abbila/PycharmProjects/fibmind
         # owner: iroha          # defaults to $USER
         # projectId: fibmind    # defaults to the git root's basename
         advise: deny            # deny | ask | off
@@ -34,11 +34,11 @@
       config:
         serverName: fibbrain
         transport: stdio
-        command: /Users/abbila/PycharmCompany/fibmind/.venv/bin/python
+        command: /Users/abbila/PycharmProjects/fibmind/.venv/bin/python
         args:
           - -m
           - fibmind.mcp_server
           - --store
-          - /Users/abbila/PycharmCompany/fibmind/.fibmind/memory.db
+          - /Users/abbila/PycharmProjects/fibmind/.fibmind/memory.db
         env: {}
-        cwd: /Users/abbila/PycharmCompany/fibmind
+        cwd: /Users/abbila/PycharmProjects/fibmind

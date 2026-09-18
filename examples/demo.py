@@ -1,5 +1,16 @@
-from pathlib import Path
+"""Walk through FibBrain and the FibMind store end to end.
+
+By default the two JSON stores land in ``.fibmind/demo/`` (gitignored), so
+running the demo never dirties the tree. ``data/demo-brain.json`` is also the
+conformance fixture read by ``tests/test_contract.py``; pass ``--fixture`` to
+regenerate it deliberately (ids and timestamps change on every run, so commit
+the result together with an updated ``tests/fixtures/demo-brain.expected.json``
+only when the fixture itself is meant to change).
+"""
+
+import argparse
 import sys
+from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = PROJECT_ROOT / "src"
@@ -17,8 +28,8 @@ from fibmind import (
 )
 
 
-def demo_brain() -> None:
-    output_path = PROJECT_ROOT / "data" / "demo-brain.json"
+def demo_brain(output_dir: Path) -> None:
+    output_path = output_dir / "demo-brain.json"
     output_path.unlink(missing_ok=True)
     brain = FibBrain(MemoryService(output_path))
     state = BrainState(
@@ -49,8 +60,28 @@ def demo_brain() -> None:
     print(f"Saved demo brain store to {output_path}")
 
 
-def main() -> None:
-    demo_brain()
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=PROJECT_ROOT / ".fibmind" / "demo",
+        help="where to write demo-brain.json and demo-memory.json (default: .fibmind/demo/)",
+    )
+    parser.add_argument(
+        "--fixture",
+        action="store_true",
+        help="write to data/ instead, regenerating the tracked conformance fixture",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = _parse_args(argv)
+    output_dir = PROJECT_ROOT / "data" if args.fixture else args.output_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    demo_brain(output_dir)
     print("\n--- FibMind store ---\n")
 
     memory = FibMind()
@@ -80,9 +111,7 @@ def main() -> None:
     memory.link_nodes(code_bug, requirement, RelationType.CAUSED_BY, weight=0.85)
     memory.link_nodes(fix, code_bug, RelationType.ANSWER_TO, weight=0.95)
     memory.link_nodes(fix, requirement, RelationType.DERIVED_FROM, weight=0.9)
-    memory.link_nodes(
-        code_bug, fix, RelationType.RELATED_TO, weight=0.7, direction=EdgeDirection.BIDIRECTIONAL
-    )
+    memory.link_nodes(code_bug, fix, RelationType.RELATED_TO, weight=0.7, direction=EdgeDirection.BIDIRECTIONAL)
 
     # Recall does not make a memory more trusted; only an outside check does.
     # Skip this step and the fix ranks no better than an unverified guess, however
@@ -142,13 +171,9 @@ def main() -> None:
     # The log is the source of truth; nodes and edges are a cache built from it.
     replayed = FibMind.rebuild_from_log(memory.events)
     print(f"\nEvents logged: {len(memory.events)}")
-    print(
-        "Replayed from log: "
-        f"{len(replayed.nodes)} nodes, {len(replayed.edges)} edges, "
-        f"{len(replayed.trees)} trees"
-    )
+    print(f"Replayed from log: {len(replayed.nodes)} nodes, {len(replayed.edges)} edges, {len(replayed.trees)} trees")
 
-    output_path = PROJECT_ROOT / "data" / "demo-memory.json"
+    output_path = output_dir / "demo-memory.json"
     JsonStore(output_path).save(memory)
     print(f"\nSaved demo memory to {output_path}")
 
