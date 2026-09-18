@@ -29,7 +29,9 @@ from fibmind.models import (
     utc_now,
 )
 from fibmind.ranking import ScoredHit
+from fibmind.replay import apply_event
 from fibmind.retrieval import DEFAULT_WEIGHTS, LexicalIndex, RankingWeights, retrieve, to_scored_hits
+from fibmind.visibility import identity_key, is_visible, promotion_identity
 
 # How much a single confirmation/refutation moves a node's confidence. Evidence
 # accumulates rather than deciding outright, so one lucky pass does not make a
@@ -679,9 +681,7 @@ class FibMind:
         inactive = [supporter.id for supporter in supporters if supporter.status != MemoryStatus.ACTIVE]
         if inactive:
             raise ValueError(f"promotion supporters must be active memories: {inactive}")
-        workspace_id, project_id = self._promotion_identity(
-            supporters, workspace_id=workspace_id, project_id=project_id
-        )
+        workspace_id, project_id = promotion_identity(supporters, workspace_id=workspace_id, project_id=project_id)
 
         node_id = self.append(
             category=category,
@@ -778,7 +778,7 @@ class FibMind:
             next_layer = self.layer_policy.next_layer(layer)
             groups: dict[tuple, list[MemoryNode]] = {}
             for node in overflow:
-                groups.setdefault(self._identity_key(node), []).append(node)
+                groups.setdefault(identity_key(node), []).append(node)
             for group in groups.values():
                 if next_layer is None:
                     self._archive_nodes(group)
@@ -975,54 +975,21 @@ class FibMind:
         project_id: str | None = None,
         session_id: str | None = None,
     ) -> bool:
-        """Return whether ``node`` may be recalled by this caller."""
-        allowed_statuses = statuses if statuses is not None else {MemoryStatus.ACTIVE}
-        if node.status not in allowed_statuses:
-            return False
-        if not include_folded and node.folded_into is not None:
-            return False
-        if scopes is not None and node.scope not in scopes:
-            return False
-        if node.scope != MemoryScope.KNOWLEDGE and node.owner != owner:
-            return False
-        if node.scope == MemoryScope.SESSION:
-            caller_session = optional_id(session_id)
-            if not node.session_id or not caller_session or node.session_id != caller_session:
-                return False
-        if node.scope == MemoryScope.KNOWLEDGE:
-            if node.workspace_id is not None and node.workspace_id != optional_id(workspace_id):
-                return False
-            if node.project_id is not None and node.project_id != optional_id(project_id):
-                return False
-            return True
-        if node.workspace_id != optional_id(workspace_id):
-            return False
-        if node.project_id != optional_id(project_id):
-            return False
-        return True
+        """Return whether ``node`` may be recalled by this caller.
 
-    def _identity_key(self, node: MemoryNode) -> tuple:
-        return (node.scope, node.owner, node.workspace_id, node.project_id)
-
-    def _promotion_identity(
-        self,
-        supporters: list[MemoryNode],
-        workspace_id: str | None,
-        project_id: str | None,
-    ) -> tuple[str | None, str | None]:
-        workspaces = {supporter.workspace_id for supporter in supporters}
-        projects = {supporter.project_id for supporter in supporters}
-        if len(workspaces) != 1 or len(projects) != 1:
-            raise ValueError("promotion supporters must share one workspace_id and one project_id")
-        inferred_workspace = next(iter(workspaces))
-        inferred_project = next(iter(projects))
-        requested_workspace = optional_id(workspace_id)
-        requested_project = optional_id(project_id)
-        if requested_workspace is not None and requested_workspace != inferred_workspace:
-            raise ValueError("promotion workspace_id does not match the supporting memories")
-        if requested_project is not None and requested_project != inferred_project:
-            raise ValueError("promotion project_id does not match the supporting memories")
-        return inferred_workspace, inferred_project
+        The rule itself lives in :func:`fibmind.visibility.is_visible`; this
+        method exists so callers holding a forest do not need a second import.
+        """
+        return is_visible(
+            node,
+            scopes=scopes,
+            owner=owner,
+            include_folded=include_folded,
+            statuses=statuses,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            session_id=session_id,
+        )
 
     def nodes_by_tree(self, tree_id: str) -> list[MemoryNode]:
         self._require_tree(tree_id)
@@ -1038,7 +1005,7 @@ class FibMind:
         target_layer: str,
         source_nodes: list[MemoryNode],
     ) -> str:
-        if source_nodes and len({self._identity_key(node) for node in source_nodes}) != 1:
+        if source_nodes and len({identity_key(node) for node in source_nodes}) != 1:
             return ""
         title = f"{category} {source_layer} compression ({len(source_nodes)} nodes)"
         distilled = self.summarizer.summarize(source_nodes)
@@ -1106,7 +1073,7 @@ class FibMind:
         """
         for node in nodes:
             node.node_type = NodeType.ARCHIVE
-            self._set_node_layer(node, "archive")
+            self.move_node_to_layer(node, "archive")
             node.touch()
             self._record(
                 EventOp.PROMOTE,
@@ -1205,7 +1172,8 @@ class FibMind:
         if not bucket:
             self.by_cat_layer.pop((node.category, node.layer), None)
 
-    def _set_node_layer(self, node: MemoryNode, layer: str) -> None:
+    def move_node_to_layer(self, node: MemoryNode, layer: str) -> None:
+        """Move ``node`` to ``layer`` and keep the category/layer index in step."""
         if node.layer == layer:
             return
         self._unindex_node(node)
@@ -1269,95 +1237,10 @@ class FibMind:
         """
         memory = cls(layer_policy=layer_policy)
         for event in sorted(events, key=lambda item: item.seq):
-            memory._apply(event)
+            apply_event(memory, event)
         memory.events = sorted(events, key=lambda item: item.seq)
         memory.rebuild_indices()
         return memory
-
-    def _apply(self, event: MemoryEvent) -> None:
-        payload = event.payload
-        if event.op in {EventOp.CREATE_NODE, EventOp.CREATE_TREE}:
-            node_payload = payload.get("node") or payload.get("root")
-            if node_payload is not None:
-                node = MemoryNode.from_dict(node_payload)
-                node.familiarity = 0.0
-                node.access_count = 0
-                self.nodes[node.id] = node
-            tree_id = payload.get("tree_id")
-            if tree_id is not None:
-                root_id = payload.get("existing_root_node_id") or (node_payload["id"] if node_payload else None)
-                if root_id is not None:
-                    created_at = payload.get("created_at")
-                    self.trees[tree_id] = MemoryTree(
-                        id=tree_id,
-                        category=payload["category"],
-                        title=payload.get("title", payload["category"]),
-                        root_node_id=root_id,
-                        created_at=(datetime.fromisoformat(created_at) if created_at is not None else event.created_at),
-                    )
-                    self.category_roots[payload["category"]] = tree_id
-                    if root_id in self.nodes:
-                        self.nodes[root_id].tree_ids.add(tree_id)
-                        # ``expand_node_to_tree`` promotes an existing node to
-                        # CONCEPT as it hands it a tree; replay it here.
-                        node_type = payload.get("node_type")
-                        if node_type is not None:
-                            self.nodes[root_id].node_type = NodeType(node_type)
-        elif event.op == EventOp.LINK:
-            edge = Edge.from_dict(payload["edge"])
-            self.edges[edge.id] = edge
-        elif event.op == EventOp.FOLD:
-            for node_id in payload.get("source_node_ids", []):
-                if node_id in self.nodes:
-                    self.nodes[node_id].folded_into = payload["into_node_id"]
-        elif event.op == EventOp.REVISE:
-            node = self.nodes.get(payload["node_id"])
-            after = payload.get("after")
-            if node is not None and isinstance(after, dict) and "title" in after:
-                node.title = after["title"]
-                node.content = after["content"]
-                node.tags = set(after.get("tags", []))
-                self.lexical.add(node)
-                node.confidence = 0.0
-                node.confidence_source = None
-                node.status = MemoryStatus(after.get("status", MemoryStatus.ACTIVE.value))
-                node.status_reason = None
-        elif event.op == EventOp.OBSERVE:
-            node = self.nodes.get(payload["node_id"])
-            if node is not None:
-                node.confidence = float(payload["confidence"])
-                node.confidence_source = payload.get("source")
-                status = payload.get("status")
-                if status is not None:
-                    node.status = MemoryStatus(status)
-                    node.status_reason = payload.get("status_reason")
-                elif payload.get("verdict") == Verdict.REFUTED.value:
-                    node.status = MemoryStatus.REFUTED
-                    node.status_reason = payload.get("note") or f"refuted by {payload.get('source')}"
-        elif event.op == EventOp.SET_STATUS:
-            node = self.nodes.get(payload["node_id"])
-            if node is not None:
-                node.status = MemoryStatus(payload["status"])
-                node.status_reason = payload.get("reason")
-        elif event.op == EventOp.PROMOTE:
-            node = self.nodes.get(payload["node_id"])
-            node_type = payload.get("node_type")
-            if node is not None and node_type is not None:
-                node.node_type = NodeType(node_type)
-            # Archiving also moves the node between layers. Go through
-            # ``_set_node_layer`` so the category/layer index stays in step.
-            layer = payload.get("layer")
-            if node is not None and layer is not None:
-                self._set_node_layer(node, layer)
-        elif event.op == EventOp.FORGET:
-            node_id = payload["node_id"]
-            self.nodes.pop(node_id, None)
-            for edge_id in payload.get("removed_edges", []):
-                self.edges.pop(edge_id, None)
-            for tree_id, tree in list(self.trees.items()):
-                if tree.root_node_id == node_id:
-                    self.trees.pop(tree_id)
-                    self.category_roots.pop(tree.category, None)
 
     def _tree_for_root(self, node_id: str) -> MemoryTree | None:
         for tree in self.trees.values():

@@ -103,6 +103,13 @@ evals/
 
 第一刀只做身份字段和统一可见性，实施计划见 [`PLAN-identity.md`](docs/plans/02-identity.md)。模块拆分等 `is_visible` 稳定后再搬，不要和身份规则搅在一次改动里。
 
+> 状态（2026-09-18）：第一步已做。可见性规则搬到 `visibility.py`（`is_visible` /
+> `identity_key` / `promotion_identity`，纯函数，`FibMind.is_visible` 只是委托）；
+> 事件回放搬到 `replay.py`（每个 `EventOp` 一个 handler，`rebuild_from_log` 调
+> `apply_event`）。`graph.py` 1400 → 1260 行，公共 API 未变。下一批候选按边界清晰度：
+> 折叠/压缩（`compress_overflow` 一族）、遗忘/日志红线（`forget` 一族）、证据传播
+> （`record_outcome` / `_propagate_refutation`）。
+
 当前 `graph.py` 同时负责写入、生命周期、压缩、图遍历、权限过滤、知识晋升和事件回放。继续加入检索和自动总结后会难以维护，因此先拆分边界。
 
 ### 目标结构
