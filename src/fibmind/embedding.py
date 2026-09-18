@@ -17,8 +17,9 @@ import math
 import os
 import urllib.error
 import urllib.request
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Protocol, Sequence
+from typing import Protocol
 
 from fibmind.ranking import tokenize
 
@@ -92,7 +93,7 @@ class HashingEmbeddingProvider:
             if len(token) >= 5 and token.isascii():
                 padded = f"#{token}#"
                 for index in range(len(padded) - 2):
-                    features.append((f"g:{padded[index:index + 3]}", 0.35))
+                    features.append((f"g:{padded[index : index + 3]}", 0.35))
         return features
 
 
@@ -154,7 +155,7 @@ class EmbeddingCache:
         hashes = [content_hash(text) for text in texts]
         missing = [
             (index, text)
-            for index, (text, digest) in enumerate(zip(texts, hashes))
+            for index, (text, digest) in enumerate(zip(texts, hashes, strict=True))
             if (self.provider.name, digest) not in self._vectors
         ]
         if missing:
@@ -164,7 +165,7 @@ class EmbeddingCache:
                 self.failures += 1
                 self.last_error = f"{type(exc).__name__}: {exc}"
                 return [self._vectors.get((self.provider.name, digest)) for digest in hashes]
-            for (_, text), vector in zip(missing, fresh):
+            for (_, text), vector in zip(missing, fresh, strict=False):
                 self._vectors[(self.provider.name, content_hash(text))] = vector
         return [self._vectors.get((self.provider.name, digest)) for digest in hashes]
 

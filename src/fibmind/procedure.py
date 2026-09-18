@@ -20,8 +20,9 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Any, Iterable
+from typing import Any
 
 from fibmind.models import MemoryKind, MemoryNode
 
@@ -64,7 +65,7 @@ class Procedure:
         return " ".join([self.trigger, *self.when, *self.tools, *self.steps, self.verify])
 
     @classmethod
-    def from_document(cls, data: dict[str, Any]) -> "Procedure":
+    def from_document(cls, data: dict[str, Any]) -> Procedure:
         if data.get("kind") != PROCEDURE_KIND:
             raise ValueError("not a FibBrain procedure document")
         trigger = str(data.get("trigger") or "").strip()
@@ -84,7 +85,7 @@ class Procedure:
         )
 
     @classmethod
-    def parse(cls, content: str) -> "Procedure | None":
+    def parse(cls, content: str) -> Procedure | None:
         try:
             data = json.loads(content)
         except json.JSONDecodeError:
@@ -154,7 +155,7 @@ def render_skill(node: MemoryNode, procedure: Procedure, outcomes: dict[str, int
     lines.append(
         f"FibBrain procedure `{node.id}` — confirmed {outcomes.get('confirmed', 0)}×, "
         f"refuted {outcomes.get('refuted', 0)}×, across {outcomes.get('sessions', 0)} session(s). "
-        f"Report the outcome with `fibbrain_reflect(node_id=\"{node.id}\", ...)`."
+        f'Report the outcome with `fibbrain_reflect(node_id="{node.id}", ...)`.'
     )
     return {
         "format": "skill",
@@ -202,10 +203,7 @@ def _yaml_scalar(text: str) -> str:
 
 
 def promotion_ready(outcomes: dict[str, int]) -> bool:
-    return (
-        outcomes.get("confirmed", 0) >= PROMOTE_MIN_CONFIRMED
-        and outcomes.get("sessions", 0) >= PROMOTE_MIN_SESSIONS
-    )
+    return outcomes.get("confirmed", 0) >= PROMOTE_MIN_CONFIRMED and outcomes.get("sessions", 0) >= PROMOTE_MIN_SESSIONS
 
 
 def retirement_due(outcomes: dict[str, int]) -> bool:

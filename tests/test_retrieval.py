@@ -26,7 +26,9 @@ def _memory() -> FibMind:
     memory = FibMind()
     memory.append("code", "Login bug", "401 returned after token expiry", owner="a", workspace_id="w", project_id="p")
     memory.append("code", "Cache layer", "LRU cache for search results", owner="a", workspace_id="w", project_id="p")
-    memory.append("requirement", "Refresh token", "Rotate refresh token on expiry", owner="a", workspace_id="w", project_id="p")
+    memory.append(
+        "requirement", "Refresh token", "Rotate refresh token on expiry", owner="a", workspace_id="w", project_id="p"
+    )
     return memory
 
 
@@ -105,7 +107,9 @@ class RankingInvariantTests(unittest.TestCase):
         node_id = memory.search("login", **IDENT)[0].node.id
         memory.mark_stale(node_id, "old")
         self.assertNotIn(node_id, [hit.node.id for hit in memory.search("login token", **IDENT)])
-        self.assertIn(node_id, [hit.node.id for hit in memory.search("login token", statuses={MemoryStatus.STALE}, **IDENT)])
+        self.assertIn(
+            node_id, [hit.node.id for hit in memory.search("login token", statuses={MemoryStatus.STALE}, **IDENT)]
+        )
 
     def test_chinese_bigrams_still_match(self) -> None:
         memory = FibMind()
@@ -178,7 +182,11 @@ class VectorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             provider_from_env({"FIBMIND_EMBEDDING": "quantum"})
         openai = provider_from_env(
-            {"FIBMIND_EMBEDDING": "openai", "FIBMIND_EMBEDDING_URL": "http://localhost:11434/v1/", "FIBMIND_EMBEDDING_MODEL": "nomic"}
+            {
+                "FIBMIND_EMBEDDING": "openai",
+                "FIBMIND_EMBEDDING_URL": "http://localhost:11434/v1/",
+                "FIBMIND_EMBEDDING_MODEL": "nomic",
+            }
         )
         self.assertEqual(openai.name, "openai:nomic")
         self.assertEqual(openai.url, "http://localhost:11434/v1")

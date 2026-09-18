@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 from uuid import uuid4
-
 
 # Version of the event-log format. Any implementation — in any language — that
 # can replay a log at this version must rebuild the same nodes, edges, and trees
@@ -17,7 +16,7 @@ LOG_VERSION = 1
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def new_id(prefix: str) -> str:
@@ -98,7 +97,7 @@ class MemoryKind(StrEnum):
     PROCEDURE = "procedure"
 
 
-def infer_memory_kind(category: str, scope: "MemoryScope") -> MemoryKind | None:
+def infer_memory_kind(category: str, scope: MemoryScope) -> MemoryKind | None:
     """Default kind from the category name; ``None`` when nothing fits."""
     if scope == MemoryScope.KNOWLEDGE:
         return MemoryKind.KNOWLEDGE
@@ -173,7 +172,7 @@ class MemoryEvent:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "MemoryEvent":
+    def from_dict(cls, data: dict[str, Any]) -> MemoryEvent:
         return cls(
             id=data["id"],
             seq=int(data.get("seq", 0)),
@@ -257,7 +256,7 @@ class MemoryNode:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "MemoryNode":
+    def from_dict(cls, data: dict[str, Any]) -> MemoryNode:
         # Stores written before familiarity/confidence were split carry a single
         # ``importance`` field. It was access-frequency driven, so it maps onto
         # familiarity; confidence starts at zero because no external check ever
@@ -339,7 +338,7 @@ class Edge:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Edge":
+    def from_dict(cls, data: dict[str, Any]) -> Edge:
         return cls(
             id=data["id"],
             from_node_id=data["from_node_id"],
@@ -372,7 +371,7 @@ class MemoryTree:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "MemoryTree":
+    def from_dict(cls, data: dict[str, Any]) -> MemoryTree:
         return cls(
             id=data["id"],
             category=data["category"],

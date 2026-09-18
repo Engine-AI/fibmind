@@ -177,9 +177,7 @@ class MemoryServiceTests(unittest.TestCase):
         service.record_outcome(node["node_id"], "confirmed", "pytest")
 
         reloaded = MemoryService(self.store_path).search("login token")
-        hit = next(
-            item for item in reloaded["results"] if item["node_id"] == node["node_id"]
-        )
+        hit = next(item for item in reloaded["results"] if item["node_id"] == node["node_id"])
         self.assertGreater(hit["confidence"], 0.0)
 
     def test_revise_needs_something_to_change(self) -> None:
@@ -260,9 +258,7 @@ class MemoryServiceTests(unittest.TestCase):
 
     def test_personal_memories_are_not_visible_to_other_owners(self) -> None:
         service = MemoryService(self.store_path)
-        mine = service.append(
-            "prefs", "Prefers terse answers", "wants short replies", owner="student-a"
-        )
+        mine = service.append("prefs", "Prefers terse answers", "wants short replies", owner="student-a")
 
         visible = service.search("prefers replies", owner="student-b")
 

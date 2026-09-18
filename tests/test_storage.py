@@ -147,9 +147,7 @@ class SqliteStoreTests(unittest.TestCase):
         self.assertEqual(restored.nodes[first].metadata, {"priority": 1})
         self.assertEqual(restored.nodes[second].status, MemoryStatus.STALE)
         self.assertEqual(restored.nodes[second].status_reason, "superseded requirement")
-        related = next(
-            edge for edge in restored.edges.values() if edge.relation_type == RelationType.RELATED_TO
-        )
+        related = next(edge for edge in restored.edges.values() if edge.relation_type == RelationType.RELATED_TO)
         self.assertEqual(related.metadata, {"source": "test"})
 
     def test_transaction_rolls_back_on_error(self) -> None:

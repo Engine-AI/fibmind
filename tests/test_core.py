@@ -56,9 +56,7 @@ class FibMindTests(unittest.TestCase):
         second = memory.append("requirement", "Requirement", "Refresh token")
         memory.link_nodes(first, second, RelationType.RELATED_TO)
 
-        outgoing_hits = memory.search_from(
-            second, depth=1, direction=TraversalDirection.OUT
-        )
+        outgoing_hits = memory.search_from(second, depth=1, direction=TraversalDirection.OUT)
         outgoing_hit_ids = {hit.node.id for hit in outgoing_hits}
 
         self.assertIn(second, outgoing_hit_ids)
@@ -74,9 +72,7 @@ class FibMindTests(unittest.TestCase):
         second = memory.append("requirement", "Requirement", "Refresh token")
         memory.link_nodes(first, second, RelationType.RELATED_TO, direction=EdgeDirection.BIDIRECTIONAL)
 
-        reverse_hits = memory.search_from(
-            second, depth=1, direction=TraversalDirection.OUT
-        )
+        reverse_hits = memory.search_from(second, depth=1, direction=TraversalDirection.OUT)
         reverse_hit_ids = {hit.node.id for hit in reverse_hits}
 
         self.assertIn(first, reverse_hit_ids)
@@ -117,9 +113,7 @@ class FibMindTests(unittest.TestCase):
 
         memory.record_outcome(node_id, Verdict.CONFIRMED, source="pytest tests/test_retry.py")
         self.assertGreater(memory.nodes[node_id].confidence, 0.0)
-        self.assertEqual(
-            memory.nodes[node_id].confidence_source, "pytest tests/test_retry.py"
-        )
+        self.assertEqual(memory.nodes[node_id].confidence_source, "pytest tests/test_retry.py")
 
         memory.record_outcome(node_id, Verdict.REFUTED, source="reverted in a1b2c3d")
         self.assertEqual(memory.nodes[node_id].confidence, 0.0)
@@ -180,16 +174,12 @@ class FibMindTests(unittest.TestCase):
             memory.append("dialogue", f"Message {index}", f"content {index}")
 
         compressed = [
-            node
-            for node in memory.nodes.values()
-            if node.category == "dialogue" and node.layer == "compressed"
+            node for node in memory.nodes.values() if node.category == "dialogue" and node.layer == "compressed"
         ]
         raw = [
             node
             for node in memory.nodes.values()
-            if node.category == "dialogue"
-            and node.layer == "raw"
-            and node.folded_into is None
+            if node.category == "dialogue" and node.layer == "raw" and node.folded_into is None
         ]
 
         self.assertGreaterEqual(len(compressed), 1)
@@ -223,14 +213,10 @@ class FibMindTests(unittest.TestCase):
         raw = [
             node
             for node in memory.nodes.values()
-            if node.category == "dialogue"
-            and node.layer == "raw"
-            and node.folded_into is None
+            if node.category == "dialogue" and node.layer == "raw" and node.folded_into is None
         ]
         compressed = [
-            node
-            for node in memory.nodes.values()
-            if node.category == "dialogue" and node.layer == "compressed"
+            node for node in memory.nodes.values() if node.category == "dialogue" and node.layer == "compressed"
         ]
 
         self.assertEqual(sum(node.memory_weight for node in raw), 13)
@@ -247,9 +233,7 @@ class FibMindTests(unittest.TestCase):
             active_weight = sum(
                 node.memory_weight
                 for node in memory.nodes.values()
-                if node.category == "bulk"
-                and node.layer == layer
-                and node.folded_into is None
+                if node.category == "bulk" and node.layer == layer and node.folded_into is None
             )
             self.assertLessEqual(active_weight, memory.layer_policy.capacity_for(layer))
 

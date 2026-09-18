@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import datetime, timezone
+from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from evals.baselines import BASELINE_TYPES, Baseline, load_datasets
 from evals.metrics import CaseMetrics, aggregate_metrics, evaluate_case
-
 
 DEFAULT_DATASET_DIR = Path(__file__).with_name("datasets")
 
@@ -52,7 +52,7 @@ def run_evaluation(
 
     return {
         "schema_version": 1,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "configuration": {
             "dataset_dir": str(Path(dataset_dir)),
             "dataset_count": len(datasets),
@@ -96,10 +96,7 @@ def render_table(report: dict[str, Any]) -> str:
                 _format(summary["latency_p95_ms"], digits=4),
             )
         )
-    widths = [
-        max(len(headers[index]), *(len(row[index]) for row in rows))
-        for index in range(len(headers))
-    ]
+    widths = [max(len(headers[index]), *(len(row[index]) for row in rows)) for index in range(len(headers))]
     rendered = [_render_row(headers, widths), _render_row(tuple("-" * width for width in widths), widths)]
     rendered.extend(_render_row(row, widths) for row in rows)
     return "\n".join(rendered)

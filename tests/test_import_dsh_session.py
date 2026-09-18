@@ -59,7 +59,11 @@ def _sample_log_lines() -> list[str]:
                 ),
             },
         ),
-        _event(3, "tool/result", _text_result("c1", {"verdict": "write", "node_id": "node_aaa", "title": "Validation drink"})),
+        _event(
+            3,
+            "tool/result",
+            _text_result("c1", {"verdict": "write", "node_id": "node_aaa", "title": "Validation drink"}),
+        ),
         _event(
             4,
             "tool/call",
@@ -69,12 +73,19 @@ def _sample_log_lines() -> list[str]:
                 "callId": "c2",
                 "name": "mcp__fibbrain__fibbrain_remember",
                 "arguments": json.dumps(
-                    {"category": "preference", "title": "Validation drink", "content": "The validation drink is lapsang-42.", **identity}
+                    {
+                        "category": "preference",
+                        "title": "Validation drink",
+                        "content": "The validation drink is lapsang-42.",
+                        **identity,
+                    }
                 ),
             },
         ),
         _event(5, "tool/result", _text_result("c2", {"verdict": "skip", "reason": "duplicate"}, step=2)),
-        _event(6, "tool/call", {"turn": 1, "step": 3, "callId": "c3", "name": "read_file", "arguments": "{\"path\":\"x\"}"}),
+        _event(
+            6, "tool/call", {"turn": 1, "step": 3, "callId": "c3", "name": "read_file", "arguments": '{"path":"x"}'}
+        ),
         _event(7, "tool/result", _text_result("c3", {"ok": True}, step=3)),
         _event(8, "turn/end", {"turn": 1, "reason": {"kind": "completed"}}),
         _event(9, "turn/start", {"turn": 2}),
@@ -94,7 +105,11 @@ def _sample_log_lines() -> list[str]:
             "tool/result",
             _text_result(
                 "c4",
-                {"goal": "What is my validation drink?", "text": "- [preference] Validation drink: ...", "hits": [{"node_id": "node_aaa", "title": "Validation drink"}]},
+                {
+                    "goal": "What is my validation drink?",
+                    "text": "- [preference] Validation drink: ...",
+                    "hits": [{"node_id": "node_aaa", "title": "Validation drink"}],
+                },
                 turn=2,
             ),
         ),

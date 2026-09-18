@@ -36,25 +36,67 @@ SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
             r"\s*[:=]\s*['\"]?(?!\s*(?:<|\$\{|\$[A-Z_]|\*{3,}|xxx|redacted|placeholder|your[_-]))[A-Za-z0-9._~+/=-]{12,}"
         ),
     ),
-    ("connection_string", re.compile(r"(?i)\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp)://[^\s:@/]+:[^\s@/]{6,}@")),
+    (
+        "connection_string",
+        re.compile(r"(?i)\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp)://[^\s:@/]+:[^\s@/]{6,}@"),
+    ),
 )
 
 INJECTION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("ignore_instructions", re.compile(r"(?i)\b(?:ignore|disregard|forget)\s+(?:all\s+|the\s+|your\s+|any\s+)?(?:previous|prior|above|earlier|system)\s+(?:instructions?|prompts?|rules?)")),
-    ("role_override", re.compile(r"(?i)\byou are now\b|\bact as (?:an? )?(?:unrestricted|jailbroken|dan)\b|\bnew system prompt\b")),
-    ("system_tag", re.compile(r"(?i)</?\s*(?:system|assistant)\s*>|\[\s*(?:SYSTEM|INST)\s*\]|<\|(?:im_start|system|endoftext)\|>")),
-    ("tool_coercion", re.compile(r"(?i)\b(?:always|must|you should)\s+(?:call|run|execute|invoke)\s+(?:the\s+)?(?:[\w-]+\s+){0,2}(?:tool|command|function)s?\b.*\b(?:without|before)\s+(?:asking|confirm)")),
-    ("exfiltration", re.compile(r"(?i)\b(?:send|post|upload|exfiltrate)\b.{0,40}\b(?:api[_ -]?keys?|secrets?|credentials?|\.env|passwords?)\b.{0,40}\bto\b")),
-    ("cjk_ignore_instructions", re.compile(r"忽略(?:之前|以上|上面|所有)?(?:的)?(?:指令|指示|提示|规则)|你现在是|忘记(?:之前|上面)的")),
+    (
+        "ignore_instructions",
+        re.compile(
+            r"(?i)\b(?:ignore|disregard|forget)\s+(?:all\s+|the\s+|your\s+|any\s+)?(?:previous|prior|above|earlier|system)\s+(?:instructions?|prompts?|rules?)"
+        ),
+    ),
+    (
+        "role_override",
+        re.compile(r"(?i)\byou are now\b|\bact as (?:an? )?(?:unrestricted|jailbroken|dan)\b|\bnew system prompt\b"),
+    ),
+    (
+        "system_tag",
+        re.compile(r"(?i)</?\s*(?:system|assistant)\s*>|\[\s*(?:SYSTEM|INST)\s*\]|<\|(?:im_start|system|endoftext)\|>"),
+    ),
+    (
+        "tool_coercion",
+        re.compile(
+            r"(?i)\b(?:always|must|you should)\s+(?:call|run|execute|invoke)\s+(?:the\s+)?(?:[\w-]+\s+){0,2}(?:tool|command|function)s?\b.*\b(?:without|before)\s+(?:asking|confirm)"
+        ),
+    ),
+    (
+        "exfiltration",
+        re.compile(
+            r"(?i)\b(?:send|post|upload|exfiltrate)\b.{0,40}\b(?:api[_ -]?keys?|secrets?|credentials?|\.env|passwords?)\b.{0,40}\bto\b"
+        ),
+    ),
+    (
+        "cjk_ignore_instructions",
+        re.compile(r"忽略(?:之前|以上|上面|所有)?(?:的)?(?:指令|指示|提示|规则)|你现在是|忘记(?:之前|上面)的"),
+    ),
 )
 
 # Zero-width and bidi-control code points. Legitimate text almost never needs
 # them; injected text uses them to hide.
 HIDDEN_CODEPOINTS = {
-    0x200B, 0x200C, 0x200D, 0x200E, 0x200F,  # zero width space/joiners, LRM/RLM
-    0x202A, 0x202B, 0x202C, 0x202D, 0x202E,  # bidi embeddings / overrides
-    0x2060, 0x2061, 0x2062, 0x2063, 0x2064,  # word joiner, invisible operators
-    0x2066, 0x2067, 0x2068, 0x2069,  # bidi isolates
+    0x200B,
+    0x200C,
+    0x200D,
+    0x200E,
+    0x200F,  # zero width space/joiners, LRM/RLM
+    0x202A,
+    0x202B,
+    0x202C,
+    0x202D,
+    0x202E,  # bidi embeddings / overrides
+    0x2060,
+    0x2061,
+    0x2062,
+    0x2063,
+    0x2064,  # word joiner, invisible operators
+    0x2066,
+    0x2067,
+    0x2068,
+    0x2069,  # bidi isolates
     0xFEFF,  # BOM used mid-text
 }
 HIDDEN_ALLOWANCE = 0  # any occurrence is a finding
@@ -103,9 +145,17 @@ def scan_text(text: str, field_name: str) -> list[SafetyFinding]:
         match = pattern.search(text)
         if match:
             findings.append(SafetyFinding("injection", kind, field_name, _excerpt(match.group(0))))
-    hidden = sorted({ord(ch) for ch in text if ord(ch) in HIDDEN_CODEPOINTS or unicodedata.category(ch) == "Cf" and ord(ch) not in (0x200D,)})
+    hidden = sorted(
+        {
+            ord(ch)
+            for ch in text
+            if ord(ch) in HIDDEN_CODEPOINTS or unicodedata.category(ch) == "Cf" and ord(ch) not in (0x200D,)
+        }
+    )
     if len(hidden) > HIDDEN_ALLOWANCE:
-        findings.append(SafetyFinding("hidden", "invisible_codepoints", field_name, " ".join(f"U+{cp:04X}" for cp in hidden[:6])))
+        findings.append(
+            SafetyFinding("hidden", "invisible_codepoints", field_name, " ".join(f"U+{cp:04X}" for cp in hidden[:6]))
+        )
     return findings
 
 

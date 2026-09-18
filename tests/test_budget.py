@@ -20,7 +20,7 @@ from fibmind import (
     build_context,
     estimate_tokens,
 )
-from fibmind.context import SOURCE_EXPAND, SOURCE_HOT, SOURCE_SEARCH
+from fibmind.context import SOURCE_HOT, SOURCE_SEARCH
 
 IDENT = dict(owner="a", workspace_id="w", project_id="p")
 
@@ -97,7 +97,9 @@ class BudgetTests(unittest.TestCase):
             service = MemoryService(Path(tmp) / "m.db")
             mine = service.append("preference", "Tabs", "use tabs", owner="a", workspace_id="w", project_id="p")
             theirs = service.append("preference", "Spaces", "use spaces", owner="b", workspace_id="w", project_id="p")
-            pack = service.context("indentation", hot_node_ids=[mine["node_id"], theirs["node_id"]], budget_tokens=200, **IDENT)
+            pack = service.context(
+                "indentation", hot_node_ids=[mine["node_id"], theirs["node_id"]], budget_tokens=200, **IDENT
+            )
             self.assertEqual([hit["node_id"] for hit in pack["hot"]], [mine["node_id"]])
             self.assertNotIn("Spaces", pack["text"])
 
@@ -107,7 +109,9 @@ class HotSnapshotTests(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.brain = FibBrain(MemoryService(Path(self._tmp.name) / "memory.db"))
         self.pref = self.brain.remember("preference", "Editor", "PyCharm for Python work", state=_state())
-        self.rule = self.brain.remember("requirement", "Tests before commit", "run pytest before every commit", state=_state())
+        self.rule = self.brain.remember(
+            "requirement", "Tests before commit", "run pytest before every commit", state=_state()
+        )
         self.brain.remember("error", "Flaky upload", "upload test flaked once on CI", state=_state())
 
     def tearDown(self) -> None:

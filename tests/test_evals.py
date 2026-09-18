@@ -1,7 +1,7 @@
+import json
 from pathlib import Path
 
 import pytest
-
 from evals.baselines import EvaluationCase, RetrievalResult, load_datasets
 from evals.metrics import aggregate_metrics, estimate_tokens, evaluate_case
 from evals.runner import DEFAULT_DATASET_DIR, render_table, run_evaluation
@@ -120,3 +120,24 @@ def test_full_evaluation_compares_all_p0_baselines() -> None:
 def test_baseline_selection_rejects_unknown_name() -> None:
     with pytest.raises(ValueError, match="unknown baselines"):
         run_evaluation(DEFAULT_DATASET_DIR, baseline_names=["does-not-exist"])
+
+
+def test_floor_gate_reports_each_violated_metric() -> None:
+    from evals.gate import check_floor
+
+    floor = {"min": {"recall_at_k": 1.0, "mrr": 0.9}, "max": {"stale_pollution_rate": 0.0}}
+    assert check_floor({"recall_at_k": 1.0, "mrr": 0.95, "stale_pollution_rate": 0.0}, floor) == []
+    failures = check_floor({"recall_at_k": 0.8, "mrr": 0.95, "stale_pollution_rate": 0.1}, floor)
+    assert len(failures) == 2
+    assert any("recall_at_k" in line for line in failures)
+    assert any("stale_pollution_rate" in line for line in failures)
+    # A metric the run did not produce counts as a violation, not a pass.
+    assert check_floor({}, {"min": {"mrr": 0.5}}) == ["mrr: None < floor 0.5"]
+
+
+def test_committed_floor_holds_on_bundled_datasets() -> None:
+    from evals.gate import DEFAULT_FLOOR, check_floor
+
+    floor = json.loads(DEFAULT_FLOOR.read_text(encoding="utf-8"))
+    report = run_evaluation(DEFAULT_DATASET_DIR, baseline_names=[floor["baseline"]])
+    assert check_floor(report["baselines"][floor["baseline"]], floor) == []

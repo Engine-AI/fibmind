@@ -78,9 +78,7 @@ class LogVersionTests(unittest.TestCase):
             path = Path(tmp) / "store.db"
             SqliteStore(path)
             with sqlite3.connect(path) as connection:
-                row = connection.execute(
-                    "SELECT value FROM meta WHERE key = 'log_version'"
-                ).fetchone()
+                row = connection.execute("SELECT value FROM meta WHERE key = 'log_version'").fetchone()
                 self.assertEqual(int(row[0]), LOG_VERSION)
                 connection.execute(
                     "UPDATE meta SET value = ? WHERE key = 'log_version'",

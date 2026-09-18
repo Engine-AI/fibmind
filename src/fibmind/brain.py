@@ -11,6 +11,7 @@ It does not own an agent loop or a plugin manager.
 
 from __future__ import annotations
 
+import json
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -20,8 +21,16 @@ from typing import Any
 from fibmind.admission import AdmitVerdict, MemoryCandidate, decide_admission
 from fibmind.distill import DEFAULT_PLANNER, Planner
 from fibmind.graph import FibMind
-from fibmind.models import MemoryKind, MemoryNode, MemoryScope, MemoryStatus, RelationType, Verdict, optional_id, utc_now
-import json
+from fibmind.models import (
+    MemoryKind,
+    MemoryNode,
+    MemoryScope,
+    MemoryStatus,
+    RelationType,
+    Verdict,
+    optional_id,
+    utc_now,
+)
 from fibmind.planning import (
     CAPABILITIES,
     CAPABILITY_ACTIONS,
@@ -34,7 +43,6 @@ from fibmind.planning import (
     infer_capabilities,
     is_goal_node,
     parse_goal_document,
-    synthesize_plan,
 )
 from fibmind.procedure import (
     PROCEDURE_CATEGORY,
@@ -123,7 +131,7 @@ class ObservedEvent:
         }
 
     @classmethod
-    def from_node(cls, node: MemoryNode) -> "ObservedEvent":
+    def from_node(cls, node: MemoryNode) -> ObservedEvent:
         payload = node.metadata.get("payload")
         return cls(
             kind=str(node.metadata.get("kind") or "unknown"),
@@ -294,7 +302,12 @@ class FibBrain:
                     auto_link=False,
                     compress=False,
                 )
-            return {"node_ids": node_ids, "frozen": session_id is not None, "snapshot_id": snapshot_id, "session_id": session_id}
+            return {
+                "node_ids": node_ids,
+                "frozen": session_id is not None,
+                "snapshot_id": snapshot_id,
+                "session_id": session_id,
+            }
 
         if session_id is None:
             return self.memory.read(run)
@@ -408,9 +421,7 @@ class FibBrain:
             written = self.memory.append(
                 GOAL_CATEGORY,
                 _goal_title(resolved_objective),
-                encode_goal(
-                    self.planner.plan(resolved_objective, memories=evidence)
-                ),
+                encode_goal(self.planner.plan(resolved_objective, memories=evidence)),
                 tags=[GOAL_TAG],
                 metadata={"kind": "fibbrain_goal"},
                 scope=MemoryScope.PERSONAL.value,
@@ -585,9 +596,7 @@ class FibBrain:
                 raise ValueError("reflect found no memory matching the goal")
             target = results[0]["node_id"]
         identity = (state or BrainState()).identity()
-        updated = self.memory.record_outcome(
-            target, parsed.value, source, note=note, session_id=identity["session_id"]
-        )
+        updated = self.memory.record_outcome(target, parsed.value, source, note=note, session_id=identity["session_id"])
         if updated.get("memory_kind") == MemoryKind.PROCEDURE.value:
             updated["evolution"] = self._evolve_procedure(target)
         self.observe(
@@ -714,7 +723,9 @@ class FibBrain:
             # ``render_skill`` / ``render_tool`` read only id, title and
             # content off the node, all of which the row already carries.
             node = _node_from_summary(row)
-            item = render_skill(node, procedure, outcomes) if format == "skill" else render_tool(node, procedure, outcomes)
+            item = (
+                render_skill(node, procedure, outcomes) if format == "skill" else render_tool(node, procedure, outcomes)
+            )
             item.update(
                 {
                     "node_id": row["node_id"],
@@ -749,9 +760,7 @@ class FibBrain:
             if query:
                 candidates = [
                     (hit.node, hit.score)
-                    for hit in memory.search(
-                        query, top_k=top_k, categories={PROCEDURE_CATEGORY}, **kwargs
-                    )
+                    for hit in memory.search(query, top_k=top_k, categories={PROCEDURE_CATEGORY}, **kwargs)
                 ]
             else:
                 candidates = [
@@ -829,7 +838,9 @@ class FibBrain:
         self.memory.run(lambda memory: record_tuning(memory, outcome))
         return outcome
 
-    def revalidation_candidates(self, state: BrainState | None = None, older_than_days: int = 90) -> list[dict[str, Any]]:
+    def revalidation_candidates(
+        self, state: BrainState | None = None, older_than_days: int = 90
+    ) -> list[dict[str, Any]]:
         """Knowledge and procedures with no confirmation for a long time.
 
         Output only: nothing is changed. The list is what a maintenance pass or

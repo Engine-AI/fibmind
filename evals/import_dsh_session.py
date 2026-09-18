@@ -30,9 +30,10 @@ import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Iterator
+from typing import Any
 
 TOOL_PREFIX = re.compile(r"^(?:mcp__[^_].*?__)?(fibbrain_\w+|fibmind_\w+)$")
 IDENTITY_FIELDS = ("owner", "workspace_id", "project_id", "session_id", "task_id")
@@ -216,9 +217,7 @@ def build_report(
         if tool in {"fibbrain_remember", "fibmind_append"}:
             result = exchange.result or {}
             if tool == "fibbrain_remember" and result.get("verdict") != "write":
-                report.skipped.append(
-                    f"{exchange.call_id}: remember skipped ({result.get('reason', 'no result')})"
-                )
+                report.skipped.append(f"{exchange.call_id}: remember skipped ({result.get('reason', 'no result')})")
                 continue
             node_id = str(result.get("node_id") or "")
             if not node_id:

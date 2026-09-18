@@ -8,7 +8,6 @@ candidates, and the observability surface.
 
 from __future__ import annotations
 
-import json
 import tempfile
 import unittest
 from datetime import timedelta
@@ -32,7 +31,6 @@ from fibmind import (
     scan_candidate,
     scan_text,
 )
-from fibmind.distill import ExcerptSummarizer
 from fibmind.models import utc_now
 from fibmind.tuning import admission_pressure, profile_evidence, tuning_history
 
@@ -115,7 +113,12 @@ class KnowledgePropagationTests(unittest.TestCase):
     def _forest(self):
         memory = FibMind()
         supporters = [
-            memory.append("error", f"Upload timeout {i}", f"upload {i} died at the first transient timeout without a retry budget", **IDENT)
+            memory.append(
+                "error",
+                f"Upload timeout {i}",
+                f"upload {i} died at the first transient timeout without a retry budget",
+                **IDENT,
+            )
             for i in range(3)
         ]
         claim = memory.promote_to_knowledge(
@@ -180,7 +183,12 @@ class DistillSeamTests(unittest.TestCase):
         self.assertTrue(folded[0].content.startswith("- note"))
 
     def test_callable_summarizer_is_used_and_records_model(self) -> None:
-        summarizer = CallableSummarizer(fn=lambda nodes: f"{len(nodes)} login observations, all benign", model="fake-llm", prompt_version="p1", name="llm")
+        summarizer = CallableSummarizer(
+            fn=lambda nodes: f"{len(nodes)} login observations, all benign",
+            model="fake-llm",
+            prompt_version="p1",
+            name="llm",
+        )
         memory = FibMind(summarizer=summarizer)
         self._fill(memory)
         folded = [n for n in memory.nodes.values() if n.node_type.value == "compressed"]
@@ -240,7 +248,7 @@ class RankingWeightsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             for suffix in ("m.db", "m.json"):
                 service = MemoryService(Path(tmp) / suffix)
-                a = service.append("code", "Login bug", "401 after token expiry on login", **IDENT)
+                service.append("code", "Login bug", "401 after token expiry on login", **IDENT)
                 b = service.append("code", "Token note", "login 401 token expiry token expiry", **IDENT)
                 service.record_outcome(b["node_id"], "confirmed", "pytest")
                 default_order = [h["node_id"] for h in service.search("login token expiry", **IDENT)["results"]]
@@ -254,7 +262,16 @@ class RankingWeightsTests(unittest.TestCase):
 
 
 def _profile(**over) -> EvidenceProfile:
-    base = dict(confirmed=5, refuted=4, confirmed_conf=0.6, refuted_conf=0.1, confirmed_recent=0.5, refuted_recent=0.5, confirmed_title_match=0.5, refuted_title_match=0.5)
+    base = dict(
+        confirmed=5,
+        refuted=4,
+        confirmed_conf=0.6,
+        refuted_conf=0.1,
+        confirmed_recent=0.5,
+        refuted_recent=0.5,
+        confirmed_title_match=0.5,
+        refuted_title_match=0.5,
+    )
     base.update(over)
     return EvidenceProfile(**base)
 
@@ -271,14 +288,34 @@ class ProposeAndGateTests(unittest.TestCase):
         self.assertIn("more confidence", proposal.rationale[0])
         at_cap = propose(RankingWeights(confidence=1.0), _profile())
         self.assertIsNone(at_cap, "at the bound nothing moves, so nothing is proposed")
-        newer_refuted = propose(RankingWeights(), _profile(confirmed_conf=0.1, refuted_conf=0.1, confirmed_recent=0.1, refuted_recent=0.9))
+        newer_refuted = propose(
+            RankingWeights(), _profile(confirmed_conf=0.1, refuted_conf=0.1, confirmed_recent=0.1, refuted_recent=0.9)
+        )
         self.assertEqual(newer_refuted.changes, {"recency": (0.2, 0.15)})
 
     def test_gate_rejects_recall_or_pollution_regressions_and_tolerates_tiny_mrr_drops(self) -> None:
         scores = {
-            "base": {"recall_at_k": 1.0, "mrr": 1.0, "stale_pollution_rate": 0.0, "forbidden_case_rate": 0.0, "no_relevant_accuracy": 1.0},
-            "worse": {"recall_at_k": 0.9, "mrr": 1.0, "stale_pollution_rate": 0.1, "forbidden_case_rate": 0.0, "no_relevant_accuracy": 1.0},
-            "same": {"recall_at_k": 1.0, "mrr": 0.99, "stale_pollution_rate": 0.0, "forbidden_case_rate": 0.0, "no_relevant_accuracy": 1.0},
+            "base": {
+                "recall_at_k": 1.0,
+                "mrr": 1.0,
+                "stale_pollution_rate": 0.0,
+                "forbidden_case_rate": 0.0,
+                "no_relevant_accuracy": 1.0,
+            },
+            "worse": {
+                "recall_at_k": 0.9,
+                "mrr": 1.0,
+                "stale_pollution_rate": 0.1,
+                "forbidden_case_rate": 0.0,
+                "no_relevant_accuracy": 1.0,
+            },
+            "same": {
+                "recall_at_k": 1.0,
+                "mrr": 0.99,
+                "stale_pollution_rate": 0.0,
+                "forbidden_case_rate": 0.0,
+                "no_relevant_accuracy": 1.0,
+            },
         }
         pick = {"b": "base", "w": "worse", "s": "same"}
 
@@ -304,11 +341,15 @@ class BrainTuneTests(unittest.TestCase):
     def _seed_evidence(self) -> None:
         # Confirmed memories earn confidence; refuted ones never had any.
         for i in range(5):
-            node = self.brain.remember("decision", f"Good decision {i}", f"decision {i} that held up under review", state=_state())
+            node = self.brain.remember(
+                "decision", f"Good decision {i}", f"decision {i} that held up under review", state=_state()
+            )
             for _ in range(2):
                 self.brain.reflect("confirmed", "pytest", node_id=node["node_id"], state=_state())
         for i in range(4):
-            node = self.brain.remember("decision", f"Bad guess {i}", f"guess {i} that turned out wrong in production", state=_state())
+            node = self.brain.remember(
+                "decision", f"Bad guess {i}", f"guess {i} that turned out wrong in production", state=_state()
+            )
             self.brain.reflect("refuted", "incident", node_id=node["node_id"], state=_state())
 
     def test_evidence_profile_reads_the_log(self) -> None:
@@ -319,7 +360,13 @@ class BrainTuneTests(unittest.TestCase):
 
     def test_tune_adopts_only_when_the_gate_passes_and_logs_every_attempt(self) -> None:
         self._seed_evidence()
-        good = {"recall_at_k": 1.0, "mrr": 1.0, "stale_pollution_rate": 0.0, "forbidden_case_rate": 0.0, "no_relevant_accuracy": 1.0}
+        good = {
+            "recall_at_k": 1.0,
+            "mrr": 1.0,
+            "stale_pollution_rate": 0.0,
+            "forbidden_case_rate": 0.0,
+            "no_relevant_accuracy": 1.0,
+        }
 
         first = self.brain.tune(evaluate=lambda w: good)
         self.assertTrue(first["adopted"])

@@ -21,7 +21,12 @@ def _state(**overrides: str) -> BrainState:
 
 def _review_hits(pack: dict) -> list[dict]:
     """Hits written by session review; goals and hand-written memories are ignored."""
-    return [hit for hit in pack["hits"] if hit["category"] in {"summary", "verification", "code", "decision", "error", "correction", "risk", "procedure"}]
+    return [
+        hit
+        for hit in pack["hits"]
+        if hit["category"]
+        in {"summary", "verification", "code", "decision", "error", "correction", "risk", "procedure"}
+    ]
 
 
 class FibBrainTests(unittest.TestCase):
@@ -113,8 +118,12 @@ class FibBrainTests(unittest.TestCase):
     def _observe_a_session(self) -> None:
         state = _state()
         self.brain.plan("Fix flaky upload retry test", state=state)
-        self.brain.observe("decision", "cap retry backoff at 8 seconds so the test finishes under the CI timeout", state=state)
-        self.brain.observe("tool_result", "edited files", {"files": ["src/upload.py", "tests/test_upload.py"]}, state=state)
+        self.brain.observe(
+            "decision", "cap retry backoff at 8 seconds so the test finishes under the CI timeout", state=state
+        )
+        self.brain.observe(
+            "tool_result", "edited files", {"files": ["src/upload.py", "tests/test_upload.py"]}, state=state
+        )
         self.brain.observe("test", "142 passed", {"command": ".venv/bin/pytest -q"}, state=state)
         self.brain.observe("error", "first attempt timed out at 30s", state=state)
 
@@ -438,7 +447,9 @@ class ProcedureTests(unittest.TestCase):
         self.assertFalse(first["evolution"]["promotion_ready"])
         self.brain.reflect("confirmed", "pytest -q", node_id=node_id, state=_state(session_id="s1"))
         same_session = self.brain.reflect("confirmed", "pytest -q", node_id=node_id, state=_state(session_id="s1"))
-        self.assertFalse(same_session["evolution"]["promotion_ready"], "three confirmations from one session are not enough")
+        self.assertFalse(
+            same_session["evolution"]["promotion_ready"], "three confirmations from one session are not enough"
+        )
 
         other = self.brain.reflect("confirmed", "pytest -q", node_id=node_id, state=_state(session_id="s2"))
         self.assertTrue(other["evolution"]["promotion_ready"])
@@ -452,7 +463,9 @@ class ProcedureTests(unittest.TestCase):
         stored = self._regression_procedure()
         node_id = stored["node_id"]
 
-        first = self.brain.reflect("refuted", "pytest failed: fixture missing", node_id=node_id, state=_state(session_id="s1"))
+        first = self.brain.reflect(
+            "refuted", "pytest failed: fixture missing", node_id=node_id, state=_state(session_id="s1")
+        )
         self.assertFalse(first["evolution"]["retired"])
         second = self.brain.reflect("refuted", "pytest failed again", node_id=node_id, state=_state(session_id="s2"))
 
@@ -469,15 +482,29 @@ class ProcedureTests(unittest.TestCase):
             state=_state(),
         )
         self.assertEqual(new["supersedes"], [old["node_id"]])
-        links = self.brain.memory.search_from(new["node_id"], depth=1, relation_types=["version_of"], owner="alice", workspace_id="ws-1", project_id="fibmind")
+        links = self.brain.memory.search_from(
+            new["node_id"],
+            depth=1,
+            relation_types=["version_of"],
+            owner="alice",
+            workspace_id="ws-1",
+            project_id="fibmind",
+        )
         neighbours = [hit["node_id"] for hit in links["hits"] if hit["depth"] > 0]
         self.assertEqual(neighbours, [old["node_id"]])
 
     def test_session_review_extracts_a_procedure_when_steps_were_verified(self) -> None:
         state = _state()
         self.brain.plan("Fix flaky upload retry test", state=state)
-        self.brain.observe("tool_result", "edited upload.py", {"tool": "edit_file", "files": ["src/upload.py"]}, state=state)
-        self.brain.observe("step", "ran the suite", {"command": ".venv/bin/pytest -q tests/test_upload.py", "tool": "shell"}, state=state)
+        self.brain.observe(
+            "tool_result", "edited upload.py", {"tool": "edit_file", "files": ["src/upload.py"]}, state=state
+        )
+        self.brain.observe(
+            "step",
+            "ran the suite",
+            {"command": ".venv/bin/pytest -q tests/test_upload.py", "tool": "shell"},
+            state=state,
+        )
         self.brain.observe("test", "3 passed", {"command": ".venv/bin/pytest -q tests/test_upload.py"}, state=state)
 
         report = self.brain.review_session(state, mode="auto")
@@ -485,7 +512,9 @@ class ProcedureTests(unittest.TestCase):
         self.assertEqual(len(procedures), 1)
         self.assertEqual(procedures[0]["memory_kind"], "procedure")
 
-        rendered = self.brain.render("fix the flaky upload retry test", state=_state(session_id="sess-2"), format="skill")
+        rendered = self.brain.render(
+            "fix the flaky upload retry test", state=_state(session_id="sess-2"), format="skill"
+        )
         self.assertEqual([item["node_id"] for item in rendered["items"]], [procedures[0]["node_id"]])
         self.assertIn("Verify: .venv/bin/pytest -q tests/test_upload.py", rendered["items"][0]["text"])
 

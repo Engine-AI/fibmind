@@ -8,19 +8,17 @@ Every method returns plain JSON-serializable dicts so the MCP layer stays thin.
 from __future__ import annotations
 
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, TypeVar
-
-T = TypeVar("T")
+from typing import Any, TypeVar
 
 from fibmind.admission import AdmitVerdict, MemoryCandidate, decide_admission
-from fibmind.embedding import EmbeddingCache, EmbeddingProvider
 from fibmind.context import build_context
+from fibmind.embedding import EmbeddingCache, EmbeddingProvider
 from fibmind.graph import FibMind, SearchHit
 from fibmind.models import (
-    MemoryKind,
     EdgeDirection,
     MemoryNode,
     MemoryScope,
@@ -32,6 +30,8 @@ from fibmind.models import (
 from fibmind.ranking import ScoredHit
 from fibmind.retrieval import DEFAULT_WEIGHTS, RankingWeights
 from fibmind.storage import MemoryStore, open_store
+
+T = TypeVar("T")
 
 
 def _node_summary(node: MemoryNode) -> dict[str, Any]:
@@ -79,66 +79,51 @@ def _require_text(value: str, field_name: str) -> str:
     return value
 
 
-def _parse_relation_types(relation_types: list[str] | None) -> set[RelationType] | None:
-    if not relation_types:
-        return None
+E = TypeVar("E", bound=Enum)
+
+
+def _parse_enum(enum_type: type[E], value: str, label: str) -> E:
+    """Parse one enum value, naming the valid choices on failure."""
     try:
-        return {RelationType(value) for value in relation_types}
+        return enum_type(value)
     except ValueError as exc:
-        valid = ", ".join(sorted(rt.value for rt in RelationType))
-        raise ValueError(f"Unknown relation type. Valid values: {valid}") from exc
+        valid = ", ".join(sorted(item.value for item in enum_type))
+        raise ValueError(f"Unknown {label}. Valid values: {valid}") from exc
+
+
+def _parse_enum_set(enum_type: type[E], values: list[str] | None, label: str) -> set[E] | None:
+    """Parse an optional list of enum values; an empty list means "no filter"."""
+    if not values:
+        return None
+    return {_parse_enum(enum_type, value, label) for value in values}
+
+
+def _parse_relation_types(relation_types: list[str] | None) -> set[RelationType] | None:
+    return _parse_enum_set(RelationType, relation_types, "relation type")
 
 
 def _parse_traversal_direction(direction: str) -> TraversalDirection:
-    try:
-        return TraversalDirection(direction)
-    except ValueError as exc:
-        valid = ", ".join(item.value for item in TraversalDirection)
-        raise ValueError(f"Unknown traversal direction. Valid values: {valid}") from exc
+    return _parse_enum(TraversalDirection, direction, "traversal direction")
 
 
 def _parse_scopes(scopes: list[str] | None) -> set[MemoryScope] | None:
-    if not scopes:
-        return None
-    try:
-        return {MemoryScope(value) for value in scopes}
-    except ValueError as exc:
-        valid = ", ".join(item.value for item in MemoryScope)
-        raise ValueError(f"Unknown scope. Valid values: {valid}") from exc
+    return _parse_enum_set(MemoryScope, scopes, "scope")
 
 
 def _parse_statuses(statuses: list[str] | None) -> set[MemoryStatus] | None:
-    if not statuses:
-        return None
-    try:
-        return {MemoryStatus(value) for value in statuses}
-    except ValueError as exc:
-        valid = ", ".join(item.value for item in MemoryStatus)
-        raise ValueError(f"Unknown status. Valid values: {valid}") from exc
+    return _parse_enum_set(MemoryStatus, statuses, "status")
 
 
 def _parse_status(status: str) -> MemoryStatus:
-    try:
-        return MemoryStatus(status)
-    except ValueError as exc:
-        valid = ", ".join(item.value for item in MemoryStatus)
-        raise ValueError(f"Unknown status. Valid values: {valid}") from exc
+    return _parse_enum(MemoryStatus, status, "status")
 
 
 def _parse_scope(scope: str) -> MemoryScope:
-    try:
-        return MemoryScope(scope)
-    except ValueError as exc:
-        valid = ", ".join(item.value for item in MemoryScope)
-        raise ValueError(f"Unknown scope. Valid values: {valid}") from exc
+    return _parse_enum(MemoryScope, scope, "scope")
 
 
 def _parse_verdict(verdict: str) -> Verdict:
-    try:
-        return Verdict(verdict)
-    except ValueError as exc:
-        valid = ", ".join(item.value for item in Verdict)
-        raise ValueError(f"Unknown verdict. Valid values: {valid}") from exc
+    return _parse_enum(Verdict, verdict, "verdict")
 
 
 def _require_weight(weight: float) -> float:
@@ -430,9 +415,7 @@ class MemoryService:
         _require_text(source, "source")
         with self._lock, self._transaction() as memory:
             try:
-                node = memory.record_outcome(
-                    node_id, parsed, source=source, note=note, session_id=session_id
-                )
+                node = memory.record_outcome(node_id, parsed, source=source, note=note, session_id=session_id)
             except KeyError as exc:
                 raise ValueError(str(exc)) from exc
             return _node_summary(node)

@@ -24,14 +24,14 @@ tolerance. A candidate that fails is recorded and discarded.
 
 from __future__ import annotations
 
-import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from fibmind.graph import FibMind
-from fibmind.models import EventOp, MemoryEvent, MemoryStatus, Verdict, new_id, utc_now
+from fibmind.models import EventOp, MemoryEvent, MemoryStatus, Verdict, utc_now
 from fibmind.retrieval import RankingWeights
 
 STEP = 0.05
@@ -61,7 +61,10 @@ class EvidenceProfile:
             "refuted": self.refuted,
             "mean_confidence": {"confirmed": round(self.confirmed_conf, 4), "refuted": round(self.refuted_conf, 4)},
             "share_recent": {"confirmed": round(self.confirmed_recent, 4), "refuted": round(self.refuted_recent, 4)},
-            "share_title_match": {"confirmed": round(self.confirmed_title_match, 4), "refuted": round(self.refuted_title_match, 4)},
+            "share_title_match": {
+                "confirmed": round(self.confirmed_title_match, 4),
+                "refuted": round(self.refuted_title_match, 4),
+            },
         }
 
 
@@ -87,7 +90,12 @@ class GateResult:
     reasons: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"passed": self.passed, "reasons": list(self.reasons), "baseline": self.baseline, "candidate": self.candidate}
+        return {
+            "passed": self.passed,
+            "reasons": list(self.reasons),
+            "baseline": self.baseline,
+            "candidate": self.candidate,
+        }
 
 
 # ---------------------------------------------------------------- evidence
@@ -174,9 +182,17 @@ def propose(current: RankingWeights, profile: EvidenceProfile) -> Proposal | Non
 
     gap = profile.confirmed_recent - profile.refuted_recent
     if gap < -0.2:
-        nudge("recency", -1, f"refuted memories were newer ({profile.refuted_recent:.0%} recent vs {profile.confirmed_recent:.0%})")
+        nudge(
+            "recency",
+            -1,
+            f"refuted memories were newer ({profile.refuted_recent:.0%} recent vs {profile.confirmed_recent:.0%})",
+        )
     elif gap > 0.2:
-        nudge("recency", +1, f"confirmed memories were newer ({profile.confirmed_recent:.0%} recent vs {profile.refuted_recent:.0%})")
+        nudge(
+            "recency",
+            +1,
+            f"confirmed memories were newer ({profile.confirmed_recent:.0%} recent vs {profile.refuted_recent:.0%})",
+        )
 
     gap = profile.confirmed_title_match - profile.refuted_title_match
     if gap > 0.2:

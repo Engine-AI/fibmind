@@ -3,19 +3,19 @@
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Iterable
+from typing import Any
 
 from fibmind.distill import DEFAULT_SUMMARIZER, Summarizer
 from fibmind.fibonacci import DEFAULT_LAYER_POLICY, FibonacciLayerPolicy
 from fibmind.models import (
-    MemoryKind,
-    infer_memory_kind,
     Edge,
     EdgeDirection,
     EventOp,
     MemoryEvent,
+    MemoryKind,
     MemoryNode,
     MemoryScope,
     MemoryStatus,
@@ -24,10 +24,11 @@ from fibmind.models import (
     RelationType,
     TraversalDirection,
     Verdict,
+    infer_memory_kind,
     optional_id,
     utc_now,
 )
-from fibmind.ranking import ScoredHit, rank_nodes
+from fibmind.ranking import ScoredHit
 from fibmind.retrieval import DEFAULT_WEIGHTS, LexicalIndex, RankingWeights, retrieve, to_scored_hits
 
 # How much a single confirmation/refutation moves a node's confidence. Evidence
@@ -207,9 +208,7 @@ class FibMind:
             session_id=session_id,
             task_id=task_id,
             status=MemoryStatus(status),
-            memory_kind=(
-                MemoryKind(memory_kind) if memory_kind else infer_memory_kind(category, parsed_scope)
-            ),
+            memory_kind=(MemoryKind(memory_kind) if memory_kind else infer_memory_kind(category, parsed_scope)),
         )
         node.tree_ids.add(tree_id)
         self._add_node(node)
@@ -547,11 +546,7 @@ class FibMind:
         knowledge claim's ``supporting_node_ids`` is deliberately not included:
         its text is written by the caller, not copied from its supporters.
         """
-        return [
-            node
-            for node in self.nodes.values()
-            if source_id in (node.metadata.get("source_node_ids") or ())
-        ]
+        return [node for node in self.nodes.values() if source_id in (node.metadata.get("source_node_ids") or ())]
 
     def _purge_from_summaries(self, node_id: str, reason: str, visited: set[str]) -> None:
         """Rewrite every summary that carries ``node_id``'s text, transitively.
@@ -678,8 +673,7 @@ class FibMind:
         unique_ids = list(dict.fromkeys(supporting_node_ids))
         if len(unique_ids) < threshold:
             raise ValueError(
-                f"promotion needs at least {threshold} distinct supporting memories, "
-                f"got {len(unique_ids)}"
+                f"promotion needs at least {threshold} distinct supporting memories, got {len(unique_ids)}"
             )
         supporters = [self._require_node(node_id) for node_id in unique_ids]
         inactive = [supporter.id for supporter in supporters if supporter.status != MemoryStatus.ACTIVE]
@@ -731,9 +725,7 @@ class FibMind:
         node = self._require_node(node_id)
         node.node_type = target_type
         self._reinforce_node(node, amount=0.05)
-        self._record(
-            EventOp.PROMOTE, {"node_id": node_id, "node_type": target_type.value}
-        )
+        self._record(EventOp.PROMOTE, {"node_id": node_id, "node_type": target_type.value})
         return node_id
 
     def expand_node_to_tree(self, node_id: str, title: str | None = None) -> str:
@@ -811,9 +803,9 @@ class FibMind:
     ) -> list[SearchHit]:
         self._require_node(node_id)
         direction = TraversalDirection(direction)
-        queue: deque[
-            tuple[str, int, RelationType | None, TraversalDirection | None]
-        ] = deque([(node_id, 0, None, None)])
+        queue: deque[tuple[str, int, RelationType | None, TraversalDirection | None]] = deque(
+            [(node_id, 0, None, None)]
+        )
         visited = {node_id}
         hits: list[SearchHit] = []
         visibility = {
@@ -855,9 +847,7 @@ class FibMind:
                     visited.add(neighbor_id)
                     continue
                 visited.add(neighbor_id)
-                queue.append(
-                    (neighbor_id, current_depth + 1, edge.relation_type, step_direction)
-                )
+                queue.append((neighbor_id, current_depth + 1, edge.relation_type, step_direction))
 
         return hits
 
@@ -1023,9 +1013,7 @@ class FibMind:
         workspaces = {supporter.workspace_id for supporter in supporters}
         projects = {supporter.project_id for supporter in supporters}
         if len(workspaces) != 1 or len(projects) != 1:
-            raise ValueError(
-                "promotion supporters must share one workspace_id and one project_id"
-            )
+            raise ValueError("promotion supporters must share one workspace_id and one project_id")
         inferred_workspace = next(iter(workspaces))
         inferred_project = next(iter(projects))
         requested_workspace = optional_id(workspace_id)
@@ -1165,18 +1153,14 @@ class FibMind:
                 edge = self.edges.get(edge_id)
                 if edge is None:
                     continue
-                neighbor_id = (
-                    edge.to_node_id if edge.from_node_id == node_id else edge.from_node_id
-                )
+                neighbor_id = edge.to_node_id if edge.from_node_id == node_id else edge.from_node_id
                 candidates[edge_id] = (edge, neighbor_id, TraversalDirection.OUT)
         if direction in {TraversalDirection.IN, TraversalDirection.BOTH}:
             for edge_id in self.reverse_adjacency.get(node_id, set()):
                 edge = self.edges.get(edge_id)
                 if edge is None or edge_id in candidates:
                     continue
-                neighbor_id = (
-                    edge.from_node_id if edge.to_node_id == node_id else edge.to_node_id
-                )
+                neighbor_id = edge.from_node_id if edge.to_node_id == node_id else edge.to_node_id
                 candidates[edge_id] = (edge, neighbor_id, TraversalDirection.IN)
         return sorted(
             candidates.values(),
@@ -1274,7 +1258,7 @@ class FibMind:
         cls,
         events: Iterable[MemoryEvent],
         layer_policy: FibonacciLayerPolicy = DEFAULT_LAYER_POLICY,
-    ) -> "FibMind":
+    ) -> FibMind:
         """Reconstruct a forest by replaying its event log.
 
         This is what makes the log the source of truth rather than a side
@@ -1301,9 +1285,7 @@ class FibMind:
                 self.nodes[node.id] = node
             tree_id = payload.get("tree_id")
             if tree_id is not None:
-                root_id = payload.get("existing_root_node_id") or (
-                    node_payload["id"] if node_payload else None
-                )
+                root_id = payload.get("existing_root_node_id") or (node_payload["id"] if node_payload else None)
                 if root_id is not None:
                     created_at = payload.get("created_at")
                     self.trees[tree_id] = MemoryTree(
@@ -1311,11 +1293,7 @@ class FibMind:
                         category=payload["category"],
                         title=payload.get("title", payload["category"]),
                         root_node_id=root_id,
-                        created_at=(
-                            datetime.fromisoformat(created_at)
-                            if created_at is not None
-                            else event.created_at
-                        ),
+                        created_at=(datetime.fromisoformat(created_at) if created_at is not None else event.created_at),
                     )
                     self.category_roots[payload["category"]] = tree_id
                     if root_id in self.nodes:

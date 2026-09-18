@@ -14,9 +14,9 @@ trusted here.
 from __future__ import annotations
 
 import unicodedata
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import timedelta
-from typing import Iterable
 
 from fibmind.models import MemoryNode, NodeType, utc_now
 
@@ -73,11 +73,7 @@ STOP_WORDS = {
 
 def _is_cjk(character: str) -> bool:
     codepoint = ord(character)
-    return (
-        0x3400 <= codepoint <= 0x4DBF
-        or 0x4E00 <= codepoint <= 0x9FFF
-        or 0xF900 <= codepoint <= 0xFAFF
-    )
+    return 0x3400 <= codepoint <= 0x4DBF or 0x4E00 <= codepoint <= 0x9FFF or 0xF900 <= codepoint <= 0xFAFF
 
 
 def tokenize(text: str) -> list[str]:

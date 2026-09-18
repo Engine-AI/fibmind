@@ -18,9 +18,10 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import timedelta
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import TYPE_CHECKING, Any
 
 from fibmind.models import MemoryNode, MemoryScope, MemoryStatus, NodeType, utc_now
 from fibmind.ranking import (
@@ -35,6 +36,7 @@ from fibmind.ranking import (
 if TYPE_CHECKING:
     from fibmind.embedding import EmbeddingCache
     from fibmind.graph import FibMind
+
 
 @dataclass(frozen=True, slots=True)
 class RankingWeights:
@@ -57,7 +59,7 @@ class RankingWeights:
         "coverage_part": (0.3, 0.9),
     }
 
-    def validated(self) -> "RankingWeights":
+    def validated(self) -> RankingWeights:
         for name, (low, high) in self.BOUNDS.items():
             value = getattr(self, name)
             if not low <= value <= high:
@@ -77,7 +79,7 @@ class RankingWeights:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any] | None) -> "RankingWeights":
+    def from_dict(cls, data: dict[str, Any] | None) -> RankingWeights:
         if not data:
             return cls()
         coverage = float(data.get("coverage_part", 0.6))
@@ -253,7 +255,7 @@ def _recency_factor(node: MemoryNode) -> float:
 
 
 def retrieve(
-    memory: "FibMind",
+    memory: FibMind,
     query: str,
     *,
     top_k: int = 5,
@@ -268,7 +270,7 @@ def retrieve(
     workspace_id: str | None = None,
     project_id: str | None = None,
     session_id: str | None = None,
-    embeddings: "EmbeddingCache | None" = None,
+    embeddings: EmbeddingCache | None = None,
     explain: bool = False,
     weights: RankingWeights | None = None,
 ) -> tuple[list[Candidate], dict[str, Any]]:
@@ -349,9 +351,7 @@ def retrieve(
         max_bm25 = max(candidate.bm25 for candidate in candidates.values()) or 1.0
         for candidate in candidates.values():
             candidate.bm25_norm = candidate.bm25 / max_bm25
-            candidate.lexical = (
-                candidate.coverage * weights.coverage_part + candidate.bm25_norm * weights.bm25_part
-            )
+            candidate.lexical = candidate.coverage * weights.coverage_part + candidate.bm25_norm * weights.bm25_part
         ordered = sorted(
             candidates.values(),
             key=lambda item: (item.lexical, item.title_coverage, item.node.updated_at),
@@ -377,7 +377,7 @@ def retrieve(
             from fibmind.embedding import cosine
 
             scored: list[tuple[float, MemoryNode]] = []
-            for node, vector in zip(pool, vectors[1:]):
+            for node, vector in zip(pool, vectors[1:], strict=False):
                 if vector is None:
                     continue
                 similarity = cosine(query_vector, vector)

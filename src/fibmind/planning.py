@@ -8,12 +8,12 @@ steps, and names which capabilities the body should involve next.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Iterable
+from typing import Any
 
 from fibmind.models import new_id
-
 
 GOAL_CATEGORY = "goal"
 GOAL_TAG = "fibbrain-goal"
@@ -82,7 +82,7 @@ class PlanStep:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "PlanStep":
+    def from_dict(cls, data: dict[str, Any]) -> PlanStep:
         return cls(
             id=str(data.get("id") or new_id("step")),
             title=str(data["title"]),

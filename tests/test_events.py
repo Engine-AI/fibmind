@@ -76,11 +76,7 @@ class EventLogTests(unittest.TestCase):
         memory = FibMind()
         for index in range(22):
             memory.append("dialogue", f"Message {index}", f"content {index}")
-        folded = {
-            node.id: node.folded_into
-            for node in memory.nodes.values()
-            if node.folded_into is not None
-        }
+        folded = {node.id: node.folded_into for node in memory.nodes.values() if node.folded_into is not None}
         self.assertTrue(folded)
 
         rebuilt = FibMind.rebuild_from_log(memory.events)

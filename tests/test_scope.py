@@ -28,12 +28,8 @@ def _observations(memory: FibMind, owner: str, count: int) -> list[str]:
 class ScopeTests(unittest.TestCase):
     def test_personal_memories_do_not_cross_owners(self) -> None:
         memory = FibMind()
-        mine = memory.append(
-            "prefs", "Prefers terse answers", "wants short replies", owner="student-a"
-        )
-        theirs = memory.append(
-            "prefs", "Prefers worked examples", "wants long replies", owner="student-b"
-        )
+        mine = memory.append("prefs", "Prefers terse answers", "wants short replies", owner="student-a")
+        theirs = memory.append("prefs", "Prefers worked examples", "wants long replies", owner="student-b")
 
         visible = {hit.node.id for hit in memory.search("prefers replies", owner="student-a")}
 
@@ -42,9 +38,7 @@ class ScopeTests(unittest.TestCase):
 
     def test_missing_owner_does_not_expose_named_personal_memory(self) -> None:
         memory = FibMind()
-        named = memory.append(
-            "prefs", "Private preference", "student-a prefers terse replies", owner="student-a"
-        )
+        named = memory.append("prefs", "Private preference", "student-a prefers terse replies", owner="student-a")
 
         visible = {hit.node.id for hit in memory.search("private preference terse")}
 
@@ -83,10 +77,7 @@ class ScopeTests(unittest.TestCase):
         )
 
         knowledge_only = {
-            hit.node.id
-            for hit in memory.search(
-                "discriminant minus sign", scopes={MemoryScope.KNOWLEDGE}, top_k=50
-            )
+            hit.node.id for hit in memory.search("discriminant minus sign", scopes={MemoryScope.KNOWLEDGE}, top_k=50)
         }
 
         self.assertIn(claim, knowledge_only)
@@ -136,9 +127,7 @@ class PromotionGateTests(unittest.TestCase):
             if edge.from_node_id == claim and edge.relation_type == RelationType.DERIVED_FROM
         }
         self.assertEqual(set(supporting), derived_from)
-        self.assertEqual(
-            memory.nodes[claim].metadata["supporting_node_ids"], list(supporting)
-        )
+        self.assertEqual(memory.nodes[claim].metadata["supporting_node_ids"], list(supporting))
 
     def test_promoted_claims_start_unproven(self) -> None:
         memory = FibMind()

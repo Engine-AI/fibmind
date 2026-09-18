@@ -8,10 +8,11 @@ metric implementation.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Iterable
+from typing import Any
 
 from fibmind.context import build_context
 from fibmind.embedding import EmbeddingCache, HashingEmbeddingProvider
@@ -40,7 +41,7 @@ class MemoryFixture:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "MemoryFixture":
+    def from_dict(cls, data: dict[str, Any]) -> MemoryFixture:
         required = ("id", "title", "content")
         missing = [key for key in required if not str(data.get(key, "")).strip()]
         if missing:
@@ -85,7 +86,7 @@ class EvaluationCase:
     top_k: int | None = None
 
     @classmethod
-    def from_dict(cls, dataset_name: str, data: dict[str, Any]) -> "EvaluationCase":
+    def from_dict(cls, dataset_name: str, data: dict[str, Any]) -> EvaluationCase:
         case_id = str(data.get("id", "")).strip()
         query = str(data.get("query", "")).strip()
         if not case_id or not query:
@@ -104,9 +105,7 @@ class EvaluationCase:
             relevant_ids=tuple(str(value) for value in data.get("relevant_ids", [])),
             stale_ids=tuple(str(value) for value in data.get("stale_ids", [])),
             forbidden_ids=tuple(str(value) for value in data.get("forbidden_ids", [])),
-            expected_answer_terms=tuple(
-                str(value) for value in data.get("expected_answer_terms", [])
-            ),
+            expected_answer_terms=tuple(str(value) for value in data.get("expected_answer_terms", [])),
             owner=data.get("owner"),
             workspace_id=data.get("workspace_id"),
             project_id=data.get("project_id"),
@@ -128,7 +127,7 @@ class EvaluationDataset:
     path: Path
 
     @classmethod
-    def from_path(cls, path: Path) -> "EvaluationDataset":
+    def from_path(cls, path: Path) -> EvaluationDataset:
         data = json.loads(path.read_text(encoding="utf-8"))
         name = str(data.get("name", path.stem)).strip()
         memories = tuple(MemoryFixture.from_dict(item) for item in data.get("memories", []))
@@ -146,9 +145,7 @@ class EvaluationDataset:
             referenced = set(case.relevant_ids + case.stale_ids + case.forbidden_ids)
             unknown = referenced - known
             if unknown:
-                raise ValueError(
-                    f"case {case.id!r} references unknown memories: {sorted(unknown)}"
-                )
+                raise ValueError(f"case {case.id!r} references unknown memories: {sorted(unknown)}")
         return cls(
             name=name,
             description=str(data.get("description", "")),
@@ -284,11 +281,7 @@ class FibMindCurrentBaseline(Baseline):
 
     def retrieve(self, case: EvaluationCase, top_k: int) -> RetrievalResult:
         started_at = perf_counter()
-        scopes = (
-            {MemoryScope(scope) for scope in case.scopes}
-            if case.scopes is not None
-            else None
-        )
+        scopes = {MemoryScope(scope) for scope in case.scopes} if case.scopes is not None else None
         pack = build_context(
             self.memory,
             case.query,
@@ -339,11 +332,7 @@ class FibMindBudgetedBaseline(FibMindCurrentBaseline):
 
     def retrieve(self, case: EvaluationCase, top_k: int) -> RetrievalResult:
         started_at = perf_counter()
-        scopes = (
-            {MemoryScope(scope) for scope in case.scopes}
-            if case.scopes is not None
-            else None
-        )
+        scopes = {MemoryScope(scope) for scope in case.scopes} if case.scopes is not None else None
         hot_nodes = [
             self.memory.nodes[node_id]
             for node_id, fixture_id in self.node_to_fixture.items()
@@ -407,9 +396,7 @@ def _is_visible(memory: MemoryFixture, case: EvaluationCase) -> bool:
     return True
 
 
-def _render_memories(
-    memories: Iterable[MemoryFixture], max_chars: int
-) -> tuple[tuple[str, ...], str]:
+def _render_memories(memories: Iterable[MemoryFixture], max_chars: int) -> tuple[tuple[str, ...], str]:
     ids: list[str] = []
     lines: list[str] = []
     used = 0

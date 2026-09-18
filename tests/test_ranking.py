@@ -122,9 +122,7 @@ class RankNodesTests(unittest.TestCase):
         before = ranked[1].score
         runner_up.confidence = 1.0
         after = next(
-            hit.score
-            for hit in rank_nodes(memory.nodes.values(), "login token")
-            if hit.node.id == runner_up.id
+            hit.score for hit in rank_nodes(memory.nodes.values(), "login token") if hit.node.id == runner_up.id
         )
 
         self.assertGreater(after, before)

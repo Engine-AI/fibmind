@@ -219,10 +219,7 @@ def build_context(
     ``reinforce`` is set.
     """
     total_budget = budget_tokens if budget_tokens is not None else max(1, max_chars // CHARS_PER_TOKEN)
-    hot_hits = [
-        ContextHit(node=node, score=node.confidence, source=SOURCE_HOT, depth=0)
-        for node in (hot or [])
-    ]
+    hot_hits = [ContextHit(node=node, score=node.confidence, source=SOURCE_HOT, depth=0) for node in (hot or [])]
     hot_ids = {hit.node.id for hit in hot_hits}
     seeds = memory.search(
         goal,

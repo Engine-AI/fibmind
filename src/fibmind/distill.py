@@ -12,8 +12,9 @@ Nothing here changes the promotion bar: a distilled claim still needs
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Protocol
+from typing import Any, Protocol
 
 from fibmind.models import MemoryNode
 from fibmind.planning import BrainGoal, GoalStatus, synthesize_plan

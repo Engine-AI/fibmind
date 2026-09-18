@@ -61,9 +61,7 @@ class JsonStore:
         self._atomic_write(serialized)
 
     def _atomic_write(self, serialized: str) -> None:
-        fd, tmp_path = tempfile.mkstemp(
-            dir=self.path.parent, prefix=f".{self.path.name}.", suffix=".tmp"
-        )
+        fd, tmp_path = tempfile.mkstemp(dir=self.path.parent, prefix=f".{self.path.name}.", suffix=".tmp")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 handle.write(serialized)
@@ -248,14 +246,10 @@ class SqliteStore:
                 CREATE INDEX IF NOT EXISTS idx_event_log_seq ON event_log(seq);
                 """
             )
-            version = connection.execute(
-                "SELECT value FROM meta WHERE key = 'schema_version'"
-            ).fetchone()
+            version = connection.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
             if version is None or int(version["value"]) != self.SCHEMA_VERSION:
                 raise ValueError("Unsupported FibMind SQLite schema version")
-            log_version = connection.execute(
-                "SELECT value FROM meta WHERE key = 'log_version'"
-            ).fetchone()
+            log_version = connection.execute("SELECT value FROM meta WHERE key = 'log_version'").fetchone()
             _check_log_version(int(log_version["value"]) if log_version else None)
 
     def _upgrade(self, connection: sqlite3.Connection) -> None:
@@ -274,9 +268,7 @@ class SqliteStore:
         if row is None or int(row["value"]) >= self.SCHEMA_VERSION:
             return
 
-        columns = {
-            info["name"] for info in connection.execute("PRAGMA table_info(nodes)")
-        }
+        columns = {info["name"] for info in connection.execute("PRAGMA table_info(nodes)")}
         additions = {
             "scope": "TEXT NOT NULL DEFAULT 'personal'",
             "owner": "TEXT",
@@ -313,9 +305,7 @@ class SqliteStore:
             WHERE layer LIKE 'folded:%'
             """
         )
-        connection.execute(
-            "UPDATE nodes SET layer = REPLACE(layer, 'folded:', '') WHERE layer LIKE 'folded:%'"
-        )
+        connection.execute("UPDATE nodes SET layer = REPLACE(layer, 'folded:', '') WHERE layer LIKE 'folded:%'")
         connection.execute(
             "UPDATE meta SET value = ? WHERE key = 'schema_version'",
             (str(self.SCHEMA_VERSION),),
@@ -323,9 +313,7 @@ class SqliteStore:
 
     def read_setting(self, key: str) -> Any | None:
         with self._connect() as connection:
-            row = connection.execute(
-                "SELECT value FROM meta WHERE key = ?", (f"setting:{key}",)
-            ).fetchone()
+            row = connection.execute("SELECT value FROM meta WHERE key = ?", (f"setting:{key}",)).fetchone()
         return json.loads(row["value"]) if row else None
 
     def write_setting(self, key: str, value: Any) -> None:
@@ -555,11 +543,7 @@ class SqliteStore:
         connection.execute("DELETE FROM node_tree_memberships")
         connection.executemany(
             "INSERT INTO node_tree_memberships(node_id, tree_id) VALUES (?, ?)",
-            [
-                (node.id, tree_id)
-                for node in memory.nodes.values()
-                for tree_id in sorted(node.tree_ids)
-            ],
+            [(node.id, tree_id) for node in memory.nodes.values() for tree_id in sorted(node.tree_ids)],
         )
 
         self._delete_missing(connection, "trees", set(memory.trees))
@@ -585,14 +569,10 @@ class SqliteStore:
                 for event in memory.events
             ],
         )
-        connection.execute(
-            "UPDATE meta SET value = CAST(value AS INTEGER) + 1 WHERE key = 'revision'"
-        )
+        connection.execute("UPDATE meta SET value = CAST(value AS INTEGER) + 1 WHERE key = 'revision'")
 
     @staticmethod
-    def _delete_missing(
-        connection: sqlite3.Connection, table: str, current_ids: set[str]
-    ) -> None:
+    def _delete_missing(connection: sqlite3.Connection, table: str, current_ids: set[str]) -> None:
         existing_ids = {row["id"] for row in connection.execute(f"SELECT id FROM {table}")}
         connection.executemany(
             f"DELETE FROM {table} WHERE id = ?",
@@ -610,9 +590,7 @@ def _check_log_version(found: int | str | None) -> None:
     if found is None:
         return
     if int(found) > LOG_VERSION:
-        raise ValueError(
-            f"Memory log is version {found}; this build reads up to {LOG_VERSION}"
-        )
+        raise ValueError(f"Memory log is version {found}; this build reads up to {LOG_VERSION}")
 
 
 def open_store(path: str | Path) -> MemoryStore:

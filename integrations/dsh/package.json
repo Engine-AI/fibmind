@@ -9,7 +9,7 @@
   },
   "files": ["src", "README.md", "fibbrain.cordis.yml"],
   "scripts": {
-    "test": "node --test test/"
+    "test": "node --test \"test/**/*.test.js\""
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0"

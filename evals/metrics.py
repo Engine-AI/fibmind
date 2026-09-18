@@ -5,9 +5,9 @@ from __future__ import annotations
 import math
 import re
 import unicodedata
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from statistics import mean, median
-from typing import Iterable
 
 from evals.baselines import EvaluationCase, RetrievalResult
 from fibmind.tokens import estimate_tokens as _estimate_tokens
@@ -62,9 +62,7 @@ def evaluate_case(case: EvaluationCase, result: RetrievalResult, top_k: int) -> 
     answerability = None
     if case.expected_answer_terms:
         normalized_text = _normalize(result.text)
-        answerability = float(
-            all(_normalize(term) in normalized_text for term in case.expected_answer_terms)
-        )
+        answerability = float(all(_normalize(term) in normalized_text for term in case.expected_answer_terms))
 
     retrieved_set = set(retrieved)
     denominator = max(1, len(retrieved))
@@ -96,9 +94,7 @@ def aggregate_metrics(metrics: Iterable[CaseMetrics]) -> dict[str, int | float |
         "recall_at_k": _mean_optional(item.recall_at_k for item in items),
         "mrr": _mean_optional(item.reciprocal_rank for item in items),
         "answerability_rate": _mean_optional(item.answerability for item in items),
-        "no_relevant_accuracy": _mean_optional(
-            item.no_relevant_accuracy for item in items
-        ),
+        "no_relevant_accuracy": _mean_optional(item.no_relevant_accuracy for item in items),
         "irrelevant_injection_rate": _round(mean(item.irrelevant_injection_rate for item in items)),
         "stale_pollution_rate": _round(mean(item.stale_pollution_rate for item in items)),
         "forbidden_case_rate": _round(mean(item.forbidden_hit for item in items)),
@@ -112,8 +108,6 @@ def aggregate_metrics(metrics: Iterable[CaseMetrics]) -> dict[str, int | float |
 def _normalize(text: str) -> str:
     normalized = unicodedata.normalize("NFKC", text).casefold()
     return re.sub(r"\s+", " ", normalized).strip()
-
-
 
 
 def _mean_optional(values: Iterable[float | None]) -> float | None:

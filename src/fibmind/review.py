@@ -13,9 +13,10 @@ run skips every candidate as a duplicate and writes nothing.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Iterable
+from typing import Any
 
 from fibmind.models import MemoryKind, MemoryNode, MemoryScope
 from fibmind.procedure import PROCEDURE_CATEGORY, PROCEDURE_TAG, procedure_from_session
@@ -237,16 +238,12 @@ def extract_candidates(digest: EpisodeDigest) -> list[ReviewCandidate]:
     return candidates
 
 
-def _procedure_candidate(
-    digest: EpisodeDigest, label: str, tags: tuple[str, ...]
-) -> ReviewCandidate | None:
+def _procedure_candidate(digest: EpisodeDigest, label: str, tags: tuple[str, ...]) -> ReviewCandidate | None:
     """A session that stated a goal, took steps, and verified them is a
     procedure candidate. Without verification it is just history."""
     if not digest.objective or not digest.steps or not digest.tests:
         return None
-    verify = "; ".join(
-        (_command_of(node) or _first_line(node.content)) for node in digest.tests[:MAX_LIST_ITEMS]
-    )
+    verify = "; ".join((_command_of(node) or _first_line(node.content)) for node in digest.tests[:MAX_LIST_ITEMS])
     procedure = procedure_from_session(
         objective=digest.objective,
         steps=digest.steps[:MAX_LIST_ITEMS],
@@ -269,11 +266,15 @@ def _summary(digest: EpisodeDigest, label: str, tags: tuple[str, ...]) -> Review
     """One paragraph, facts first: the excerpt a recall shows is the head of it."""
     parts = [f"Objective: {label}."]
     if digest.decisions:
-        parts.append("Decisions: " + "; ".join(_first_line(node.content) for node in digest.decisions[:MAX_LIST_ITEMS]) + ".")
+        parts.append(
+            "Decisions: " + "; ".join(_first_line(node.content) for node in digest.decisions[:MAX_LIST_ITEMS]) + "."
+        )
     if digest.errors:
         parts.append("Errors: " + "; ".join(_first_line(node.content) for node in digest.errors[:MAX_LIST_ITEMS]) + ".")
     if digest.risks:
-        parts.append("Unresolved: " + "; ".join(_first_line(node.content) for node in digest.risks[:MAX_LIST_ITEMS]) + ".")
+        parts.append(
+            "Unresolved: " + "; ".join(_first_line(node.content) for node in digest.risks[:MAX_LIST_ITEMS]) + "."
+        )
     counts = []
     if digest.decisions:
         counts.append(f"{len(digest.decisions)} decision(s)")

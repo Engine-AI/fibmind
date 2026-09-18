@@ -38,11 +38,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> None:
     args = _parse_args(argv)
     counts = migrate_json_to_sqlite(args.source, args.target)
-    print(
-        "Migrated "
-        f"{counts['nodes']} nodes, {counts['edges']} edges, and {counts['trees']} trees "
-        f"to {args.target}"
-    )
+    print(f"Migrated {counts['nodes']} nodes, {counts['edges']} edges, and {counts['trees']} trees to {args.target}")
 
 
 if __name__ == "__main__":

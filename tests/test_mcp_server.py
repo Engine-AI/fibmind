@@ -103,9 +103,7 @@ class McpServerTests(unittest.TestCase):
                 self.assertEqual(_result_json(linked)["relation_type"], "related_to")
 
                 found = await server.call_tool("fibmind_search", {"query": "login token"})
-                self.assertTrue(
-                    any(r["node_id"] == node_id for r in _result_json(found)["results"])
-                )
+                self.assertTrue(any(r["node_id"] == node_id for r in _result_json(found)["results"]))
 
                 tree = await server.call_tool("fibmind_search_from", {"node_id": node_id})
                 self.assertEqual(_result_json(tree)["root"], node_id)
