@@ -165,6 +165,12 @@ class MemoryService:
         self._embeddings = EmbeddingCache(embedding_provider)
         # Ranking weights accepted by a past tuning run, else the defaults.
         self._weights = self._load_weights()
+        # Last loaded forest, kept while the store's revision is unchanged.
+        # Loading rebuilds the whole forest and its indices, and a single
+        # brain call (coordinate -> plan -> recall -> search...) used to do
+        # that a dozen times over.
+        self._cached: FibMind | None = None
+        self._cached_revision: str | None = None
 
     @property
     def embeddings(self) -> EmbeddingCache:
@@ -180,6 +186,7 @@ class MemoryService:
         if persist:
             with self._lock:
                 self._store.write_setting(WEIGHTS_SETTING, self._weights.to_dict())
+                self._invalidate()
         return self._weights
 
     def _load_weights(self) -> RankingWeights:
@@ -193,13 +200,38 @@ class MemoryService:
         memory.weights = self._weights
         return memory
 
+    def _invalidate(self) -> None:
+        self._cached = None
+        self._cached_revision = None
+
     def _load(self) -> FibMind:
-        return self._attach(self._store.load())
+        """The current forest, reusing the last load when the store has not moved.
+
+        Callers must treat the result as read-only. ``read`` hands this exact
+        instance to its callback, so a mutation there would not be persisted
+        *and* would linger in the cache for later readers. Anything that
+        writes goes through ``run`` / ``_transaction``, which load their own
+        forest inside the store transaction and drop the cache afterwards.
+        """
+        revision = self._store.revision()
+        if self._cached is not None and revision == self._cached_revision:
+            return self._attach(self._cached)
+        memory = self._attach(self._store.load())
+        self._cached = memory
+        self._cached_revision = revision
+        return memory
 
     @contextmanager
     def _transaction(self) -> Iterator[FibMind]:
-        with self._store.transaction() as memory:
-            yield self._attach(memory)
+        # A transaction gets its own forest and always invalidates: the cached
+        # one is stale the moment this commits, and handing the in-transaction
+        # forest to later readers would publish uncommitted state.
+        self._invalidate()
+        try:
+            with self._store.transaction() as memory:
+                yield self._attach(memory)
+        finally:
+            self._invalidate()
 
     def read(self, fn: Callable[[FibMind], T]) -> T:
         """Run ``fn`` against a loaded forest without persisting anything."""

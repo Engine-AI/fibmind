@@ -525,7 +525,7 @@ class FibBrain:
             procedure = Procedure.parse(row["content"])
             if procedure is None or row.get("score", 0.0) <= 0.0:
                 continue
-            outcomes = self.memory.read(lambda memory, nid=row["node_id"]: memory.outcome_counts(nid))
+            outcomes = row["outcomes"]
             matches.append(
                 {
                     "node_id": row["node_id"],
@@ -707,11 +707,13 @@ class FibBrain:
             procedure = Procedure.parse(row["content"])
             if procedure is None:
                 continue
-            outcomes = self.memory.read(lambda memory, nid=row["node_id"]: memory.outcome_counts(nid))
+            outcomes = row["outcomes"]
             maturity = _maturity(outcomes)
             if _MATURITY_ORDER[maturity] < _MATURITY_ORDER[min_maturity]:
                 continue
-            node = self.memory.read(lambda memory, nid=row["node_id"]: memory.nodes[nid])
+            # ``render_skill`` / ``render_tool`` read only id, title and
+            # content off the node, all of which the row already carries.
+            node = _node_from_summary(row)
             item = render_skill(node, procedure, outcomes) if format == "skill" else render_tool(node, procedure, outcomes)
             item.update(
                 {
@@ -734,27 +736,43 @@ class FibBrain:
         query: str | None,
         top_k: int = 10,
     ) -> list[dict[str, Any]]:
-        """Active procedure nodes visible to this identity, best match first."""
+        """Active procedure nodes visible to this identity, best match first.
+
+        One store read for the whole list. It used to be a search followed by
+        an ``inspect`` per row, and every ``inspect`` reloaded the entire
+        forest; the rows now carry ``content`` and ``outcomes`` so callers do
+        not need a second lookup either.
+        """
         kwargs = _identity_kwargs(identity)
-        if query:
-            found = self.memory.search(query, top_k=top_k, categories=[PROCEDURE_CATEGORY], **kwargs)
-            rows = list(found["results"])
-        else:
-            rows = self.memory.read(
-                lambda memory: [
-                    {**_node_summary(node), "score": 0.0}
+
+        def run(memory: FibMind) -> list[dict[str, Any]]:
+            if query:
+                candidates = [
+                    (hit.node, hit.score)
+                    for hit in memory.search(
+                        query, top_k=top_k, categories={PROCEDURE_CATEGORY}, **kwargs
+                    )
+                ]
+            else:
+                candidates = [
+                    (node, 0.0)
                     for node in memory.nodes.values()
                     if is_procedure_node(node) and memory.is_visible(node, **kwargs)
                 ]
-            )
-        out: list[dict[str, Any]] = []
-        for row in rows:
-            inspected = self.memory.inspect(row["node_id"])
-            if not is_procedure_node(_node_from_summary(inspected)):
-                continue
-            out.append({**row, "content": inspected["content"]})
-        out.sort(key=lambda row: (row.get("score", 0.0), row.get("confidence", 0.0)), reverse=True)
-        return out
+            rows = [
+                {
+                    **_node_summary(node),
+                    "score": score,
+                    "content": node.content,
+                    "outcomes": memory.outcome_counts(node.id),
+                }
+                for node, score in candidates
+                if is_procedure_node(node)
+            ]
+            rows.sort(key=lambda row: (row["score"], row["confidence"]), reverse=True)
+            return rows
+
+        return self.memory.read(run)
 
     # ------------------------------------------------------------------
     # Self-tuning
@@ -1057,8 +1075,15 @@ def _capabilities_from_procedures(procedures: list[dict[str, Any]]) -> list[str]
 
 
 def _node_from_summary(inspected: dict[str, Any]) -> MemoryNode:
-    """A light node view for ``is_procedure_node``; only kind and tags matter."""
+    """A light node view over a summary row.
+
+    Used where only identity and text matter: ``is_procedure_node`` (kind and
+    tags) and the renderers (id, title, content). ``node_id`` is carried over
+    because ``render_skill`` prints it as the reflect target.
+    """
     node = MemoryNode(title=inspected["title"], content=inspected.get("content", ""), category=inspected["category"])
+    if inspected.get("node_id"):
+        node.id = inspected["node_id"]
     node.tags = set(inspected.get("tags") or [])
     kind = inspected.get("memory_kind")
     node.memory_kind = MemoryKind(kind) if kind else None
@@ -1066,13 +1091,7 @@ def _node_from_summary(inspected: dict[str, Any]) -> MemoryNode:
 
 
 def _last_confirmation(memory: FibMind, node_id: str) -> datetime | None:
-    last = None
-    for event in memory.events:
-        if event.op.value != "observe" or event.payload.get("node_id") != node_id:
-            continue
-        if event.payload.get("verdict") == Verdict.CONFIRMED.value:
-            last = event.created_at if last is None or event.created_at > last else last
-    return last
+    return memory.last_confirmation(node_id)
 
 
 def _select_hot(memory: FibMind, identity: dict[str, str | None]) -> list[MemoryNode]:

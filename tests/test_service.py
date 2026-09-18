@@ -269,5 +269,86 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertNotIn(mine["node_id"], {hit["node_id"] for hit in visible["results"]})
 
 
+class LoadCacheTests(unittest.TestCase):
+    """Reads reuse the last loaded forest until the store's revision moves."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.store_path = Path(self._tmp.name) / "memory.db"
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _counting_service(self) -> tuple[MemoryService, list[int]]:
+        """A service whose store counts how often it is fully loaded."""
+        service = MemoryService(self.store_path)
+        loads = [0]
+        store = service._store  # noqa: SLF001 — the counter has to sit under the cache
+        original = store.load
+
+        def counted_load():
+            loads[0] += 1
+            return original()
+
+        store.load = counted_load  # type: ignore[method-assign]
+        return service, loads
+
+    def test_repeated_reads_load_the_store_once(self) -> None:
+        service, loads = self._counting_service()
+        service.append("code", "Login bug", "401 after token expiry")
+
+        before = loads[0]
+        service.search("login token")
+        service.search("login token")
+        service.status()
+
+        self.assertEqual(loads[0] - before, 1, "expected the three reads to share one load")
+
+    def test_a_write_invalidates_the_cache(self) -> None:
+        service, loads = self._counting_service()
+        service.append("code", "First", "the first memory")
+        service.search("first memory")
+        before = loads[0]
+
+        written = service.append("code", "Second", "the second memory")
+        found = service.search("second memory")
+
+        self.assertGreater(loads[0], before, "a write must force the next read to reload")
+        self.assertIn(written["node_id"], {hit["node_id"] for hit in found["results"]})
+
+    def test_an_external_write_is_noticed(self) -> None:
+        """Another process writing the same store must not be served stale."""
+        service, _ = self._counting_service()
+        service.append("code", "First", "the first memory")
+        service.search("first memory")
+
+        other = MemoryService(self.store_path)
+        written = other.append("code", "Outside", "written by another service")
+
+        found = service.search("written another")
+        self.assertIn(written["node_id"], {hit["node_id"] for hit in found["results"]})
+
+    def test_reinforcing_search_still_persists(self) -> None:
+        """``reinforce`` mutates, so it must go through a transaction."""
+        service = MemoryService(self.store_path)
+        node = service.append("code", "Login bug", "401 after token expiry")
+        service.search_from(node["node_id"], reinforce=True)
+
+        reloaded = MemoryService(self.store_path)
+        self.assertGreater(reloaded.inspect(node["node_id"])["familiarity"], 0.0)
+
+    def test_json_store_cache_notices_a_rewrite(self) -> None:
+        json_path = Path(self._tmp.name) / "memory.json"
+        service = MemoryService(json_path)
+        service.append("code", "First", "the first memory")
+        service.search("first memory")
+
+        other = MemoryService(json_path)
+        written = other.append("code", "Outside", "written by another service")
+
+        found = service.search("written another")
+        self.assertIn(written["node_id"], {hit["node_id"] for hit in found["results"]})
+
+
 if __name__ == "__main__":
     unittest.main()

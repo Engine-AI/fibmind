@@ -31,6 +31,8 @@ class MemoryStore(Protocol):
 
     def write_setting(self, key: str, value: Any) -> None: ...
 
+    def revision(self) -> str: ...
+
 
 class JsonStore:
     """Atomic JSON persistence retained for demos and compatibility."""
@@ -99,6 +101,20 @@ class JsonStore:
         memory.events = [MemoryEvent.from_dict(item) for item in payload.get("events", [])]
         memory.rebuild_indices()
         return memory
+
+    def revision(self) -> str:
+        """A token that changes whenever the file does.
+
+        There is no counter to read here, so the file's own mtime and size
+        stand in. Coarser than SQLite's ``meta.revision`` — two writes inside
+        one mtime tick look identical — which is why callers must also drop
+        their cache around their own writes rather than relying on this alone.
+        """
+        try:
+            stat = self.path.stat()
+        except OSError:
+            return "0"
+        return f"{stat.st_mtime_ns}:{stat.st_size}"
 
     @contextmanager
     def transaction(self) -> Iterator[FibMind]:
@@ -322,6 +338,16 @@ class SqliteStore:
     def load(self) -> FibMind:
         with self._connect() as connection:
             return self._load(connection)
+
+    def revision(self) -> str:
+        """The write counter ``_write`` bumps; changes on every commit.
+
+        Read outside a transaction on purpose: the point is to notice writes
+        from *other* connections, including other processes.
+        """
+        with self._connect() as connection:
+            row = connection.execute("SELECT value FROM meta WHERE key = 'revision'").fetchone()
+        return str(row["value"]) if row else "0"
 
     def save(self, memory: FibMind) -> None:
         with self._connect() as connection:

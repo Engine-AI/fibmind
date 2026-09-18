@@ -25,6 +25,7 @@ from fibmind import (
     MemoryService,
     MemoryStatus,
     RankingWeights,
+    SqliteStore,
     Verdict,
     gate,
     propose,
@@ -397,6 +398,86 @@ class MaintenanceTests(unittest.TestCase):
             self.assertEqual(status["outcomes"]["tuning"], 0)
             pressure = brain.memory.read(admission_pressure)
             self.assertEqual(sum(row["rejected"] for row in pressure.values()), 1)
+
+
+class OutcomeIndexTests(unittest.TestCase):
+    """``outcome_counts`` is a cached derivation of the log, not a counter."""
+
+    @staticmethod
+    def _recount(memory: FibMind, node_id: str) -> dict[str, int]:
+        """Recompute the tally by scanning the log, as the old code did."""
+        confirmed = refuted = 0
+        sessions: set[str] = set()
+        for event in memory.events:
+            payload = event.payload
+            if event.op.value != "observe" or payload.get("node_id") != node_id:
+                continue
+            verdict = payload.get("verdict")
+            if verdict == Verdict.CONFIRMED.value:
+                confirmed += 1
+                if payload.get("session_id"):
+                    sessions.add(str(payload["session_id"]))
+            elif verdict == Verdict.REFUTED.value:
+                refuted += 1
+        return {"confirmed": confirmed, "refuted": refuted, "sessions": len(sessions)}
+
+    def _judged_forest(self) -> tuple[FibMind, str]:
+        memory = FibMind()
+        node_id = memory.append("code", "Retry policy", "retry three times", **IDENT)
+        memory.record_outcome(node_id, Verdict.CONFIRMED, source="pytest", session_id="s1")
+        memory.record_outcome(node_id, Verdict.CONFIRMED, source="pytest again", session_id="s1")
+        memory.record_outcome(node_id, Verdict.CONFIRMED, source="ci", session_id="s2")
+        memory.record_outcome(node_id, Verdict.REFUTED, source="load test", session_id="s3")
+        return memory, node_id
+
+    def test_index_matches_a_full_log_scan(self) -> None:
+        memory, node_id = self._judged_forest()
+        self.assertEqual(memory.outcome_counts(node_id), self._recount(memory, node_id))
+        self.assertEqual(memory.outcome_counts(node_id), {"confirmed": 3, "refuted": 1, "sessions": 2})
+
+    def test_index_is_rebuilt_on_replay(self) -> None:
+        memory, node_id = self._judged_forest()
+        replayed = FibMind.rebuild_from_log(memory.events)
+        self.assertEqual(replayed.outcome_counts(node_id), memory.outcome_counts(node_id))
+        self.assertEqual(replayed.outcome_counts(node_id), self._recount(replayed, node_id))
+
+    def test_index_survives_a_store_round_trip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = SqliteStore(Path(tmp) / "m.db")
+            with store.transaction() as memory:
+                node_id = memory.append("code", "Retry", "retry three times", **IDENT)
+                memory.record_outcome(node_id, Verdict.CONFIRMED, source="pytest", session_id="s1")
+            restored = store.load()
+        self.assertEqual(restored.outcome_counts(node_id), {"confirmed": 1, "refuted": 0, "sessions": 1})
+
+    def test_unjudged_node_counts_zero(self) -> None:
+        memory = FibMind()
+        node_id = memory.append("code", "Unjudged", "nothing checked this", **IDENT)
+        self.assertEqual(memory.outcome_counts(node_id), {"confirmed": 0, "refuted": 0, "sessions": 0})
+        self.assertIsNone(memory.last_confirmation(node_id))
+
+    def test_tuning_events_are_not_counted_as_evidence(self) -> None:
+        from fibmind.tuning import record_tuning
+
+        memory = FibMind()
+        node_id = memory.append("code", "Retry", "retry three times", **IDENT)
+        record_tuning(memory, {"adopted": False, "decision": "no_change"})
+        self.assertEqual(memory.outcome_counts(node_id), {"confirmed": 0, "refuted": 0, "sessions": 0})
+        self.assertEqual(FibMind.rebuild_from_log(memory.events).outcome_index, memory.outcome_index)
+
+    def test_last_confirmation_tracks_the_newest_confirmation(self) -> None:
+        memory, node_id = self._judged_forest()
+        confirmations = [
+            event.created_at
+            for event in memory.events
+            if event.op.value == "observe"
+            and event.payload.get("node_id") == node_id
+            and event.payload.get("verdict") == Verdict.CONFIRMED.value
+        ]
+        self.assertEqual(memory.last_confirmation(node_id), max(confirmations))
+        # A later refutation does not move it: it is the last *confirmation*.
+        memory.record_outcome(node_id, Verdict.REFUTED, source="load test")
+        self.assertEqual(memory.last_confirmation(node_id), max(confirmations))
 
 
 if __name__ == "__main__":

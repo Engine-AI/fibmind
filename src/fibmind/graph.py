@@ -77,6 +77,11 @@ class FibMind:
         self.adjacency: dict[str, set[str]] = {}
         self.reverse_adjacency: dict[str, set[str]] = {}
         self.by_cat_layer: dict[tuple[str, str], set[str]] = {}
+        # Evidence tallies per node, derived from OBSERVE events. Kept as an
+        # index because ``outcome_counts`` is called once per node inside
+        # per-node loops (render, coordinate, revalidation), and scanning the
+        # whole log each time made those O(nodes × events).
+        self.outcome_index: dict[str, dict[str, Any]] = {}
         # Inverted index for lexical recall; kept in step by _index_node /
         # _unindex_node and the text mutations in revise / replay.
         self.lexical = LexicalIndex()
@@ -89,7 +94,42 @@ class FibMind:
         """Append one entry to the log. Every semantic mutation goes through here."""
         event = MemoryEvent(op=op, payload=payload, seq=len(self.events) + 1)
         self.events.append(event)
+        if op == EventOp.OBSERVE:
+            self._index_outcome(event)
         return event
+
+    def _index_outcome(self, event: MemoryEvent) -> None:
+        """Fold one OBSERVE event into ``outcome_index``.
+
+        Only first-hand verdicts count. A ``propagated`` entry is a
+        consequence of some *other* node being refuted, not a judgement about
+        this one, and a tuning entry has no node at all.
+        """
+        payload = event.payload
+        node_id = payload.get("node_id")
+        verdict = payload.get("verdict")
+        if node_id is None or verdict not in (Verdict.CONFIRMED.value, Verdict.REFUTED.value):
+            return
+        row = self.outcome_index.setdefault(
+            str(node_id),
+            {"confirmed": 0, "refuted": 0, "sessions": set(), "last_confirmed_at": None},
+        )
+        if verdict == Verdict.CONFIRMED.value:
+            row["confirmed"] += 1
+            session = payload.get("session_id")
+            if session:
+                row["sessions"].add(str(session))
+            last = row["last_confirmed_at"]
+            if last is None or event.created_at > last:
+                row["last_confirmed_at"] = event.created_at
+        else:
+            row["refuted"] += 1
+
+    def _rebuild_outcome_index(self) -> None:
+        self.outcome_index = {}
+        for event in self.events:
+            if event.op == EventOp.OBSERVE:
+                self._index_outcome(event)
 
     def create_tree(self, category: str, title: str | None = None, content: str = "") -> str:
         if category in self.category_roots:
@@ -370,25 +410,25 @@ class FibMind:
     def outcome_counts(self, node_id: str) -> dict[str, int]:
         """Tally the evidence recorded against one node, from the log.
 
-        Derived from ``observe`` events rather than kept as a counter, so it
-        survives replay and cannot drift from the log. ``sessions`` counts the
-        distinct sessions that supplied a confirmation; evidence from one
-        session repeated three times is weaker than from three sessions.
+        Derived from ``observe`` events rather than kept on the node, so it
+        survives replay and cannot drift from the log; ``outcome_index`` is
+        just that derivation cached. ``sessions`` counts the distinct sessions
+        that supplied a confirmation; evidence from one session repeated three
+        times is weaker than from three sessions.
         """
-        confirmed = refuted = 0
-        sessions: set[str] = set()
-        for event in self.events:
-            if event.op != EventOp.OBSERVE or event.payload.get("node_id") != node_id:
-                continue
-            verdict = event.payload.get("verdict")
-            if verdict == Verdict.CONFIRMED.value:
-                confirmed += 1
-                session = event.payload.get("session_id")
-                if session:
-                    sessions.add(str(session))
-            elif verdict == Verdict.REFUTED.value:
-                refuted += 1
-        return {"confirmed": confirmed, "refuted": refuted, "sessions": len(sessions)}
+        row = self.outcome_index.get(node_id)
+        if row is None:
+            return {"confirmed": 0, "refuted": 0, "sessions": 0}
+        return {
+            "confirmed": row["confirmed"],
+            "refuted": row["refuted"],
+            "sessions": len(row["sessions"]),
+        }
+
+    def last_confirmation(self, node_id: str) -> datetime | None:
+        """When this memory was last confirmed, or ``None`` if never."""
+        row = self.outcome_index.get(node_id)
+        return row["last_confirmed_at"] if row else None
 
     def mark_stale(self, node_id: str, reason: str) -> MemoryNode:
         """Retire an outdated memory without deleting its provenance."""
@@ -456,10 +496,21 @@ class FibMind:
         content left in earlier ``create_node``/``revise`` entries would come
         back on the next replay. Those payloads are tombstoned here, which is
         what makes deletion actually hold.
+
+        Folding copies a node's text into the summary that absorbed it, so the
+        summaries built on this node are rewritten from whatever sources
+        survive — otherwise the deleted text stays readable in another node's
+        body, and deletion would only look like it worked.
         """
+        return self._forget(node_id, reason, set())
+
+    def _forget(self, node_id: str, reason: str, visited: set[str]) -> dict:
         node = self._require_node(node_id)
         if not reason or not reason.strip():
             raise ValueError("reason must explain why the memory is being deleted")
+
+        visited.add(node_id)
+        self._purge_from_summaries(node_id, reason, visited)
 
         removed_edges = [
             edge_id
@@ -488,6 +539,104 @@ class FibMind:
             {"node_id": node_id, "reason": reason, "removed_edges": removed_edges},
         )
         return {"node_id": node_id, "reason": reason, "removed_edges": len(removed_edges)}
+
+    def _derived_from(self, source_id: str) -> list[MemoryNode]:
+        """Fold summaries whose body was distilled from ``source_id``.
+
+        Keyed on the ``source_node_ids`` that ``_compress_nodes`` writes. A
+        knowledge claim's ``supporting_node_ids`` is deliberately not included:
+        its text is written by the caller, not copied from its supporters.
+        """
+        return [
+            node
+            for node in self.nodes.values()
+            if source_id in (node.metadata.get("source_node_ids") or ())
+        ]
+
+    def _purge_from_summaries(self, node_id: str, reason: str, visited: set[str]) -> None:
+        """Rewrite every summary that carries ``node_id``'s text, transitively.
+
+        Compression chains (raw → compressed → summary → archive), so a
+        rewritten summary is itself a source whose own summaries have to be
+        recomputed. A summary left with no surviving source has nothing to
+        summarize and is forgotten too.
+        """
+        queue: deque[str] = deque([node_id])
+        seen: set[str] = set()
+        while queue:
+            source_id = queue.popleft()
+            for derived in self._derived_from(source_id):
+                if derived.id in visited or derived.id in seen:
+                    continue
+                seen.add(derived.id)
+                surviving = [
+                    sid
+                    for sid in (derived.metadata.get("source_node_ids") or ())
+                    if sid not in visited and sid in self.nodes
+                ]
+                if not surviving:
+                    self._forget(
+                        derived.id,
+                        f"every memory this summary covered was forgotten ({reason})",
+                        visited,
+                    )
+                    continue
+                self._rewrite_summary(derived, surviving)
+                queue.append(derived.id)
+
+    def _rewrite_summary(self, node: MemoryNode, surviving_ids: list[str]) -> None:
+        """Re-distil ``node`` from its surviving sources, leaving no old text behind.
+
+        ``revise`` is not reused here: it records the previous body in the
+        event's ``before``, which would put the forgotten text straight back
+        into the log. The effects are otherwise identical to a revise —
+        including the confidence reset, which is what replay applies, so live
+        state and a rebuild stay in step.
+
+        ``metadata["source_node_ids"]`` is left as written. It is provenance
+        ("this was distilled from these"), the ids carry no content, and
+        rewriting it would diverge from the unredacted ``create_node`` payload
+        that a replay reads it back from.
+        """
+        distilled = self.summarizer.summarize([self.nodes[sid] for sid in surviving_ids])
+        self._redact_body_in_log(node.id)
+        node.content = distilled.text
+        node.confidence = 0.0
+        node.confidence_source = None
+        node.status_reason = None
+        node.updated_at = utc_now()
+        self.lexical.add(node)
+        self._record(
+            EventOp.REVISE,
+            {
+                "node_id": node.id,
+                "before": {"redacted": True},
+                "after": {
+                    "title": node.title,
+                    "content": node.content,
+                    "tags": sorted(node.tags),
+                    "status": node.status.value,
+                },
+                "redistilled_from": list(surviving_ids),
+            },
+        )
+
+    def _redact_body_in_log(self, node_id: str) -> None:
+        """Scrub a node's body from the log, keeping its title.
+
+        Used for summaries that are being re-distilled rather than deleted:
+        the title is generated boilerplate and has to survive replay, only the
+        copied-in body must go.
+        """
+        for event in self.events:
+            payload = event.payload
+            node_payload = payload.get("node")
+            if isinstance(node_payload, dict) and node_payload.get("id") == node_id:
+                node_payload["content"] = TOMBSTONE
+            if payload.get("node_id") == node_id:
+                for section in ("before", "after"):
+                    if isinstance(payload.get(section), dict):
+                        payload[section] = {"redacted": True}
 
     def _redact_log(self, node_id: str) -> None:
         """Overwrite a forgotten node's text everywhere it appears in the log."""
@@ -610,41 +759,19 @@ class FibMind:
                 "title": tree.title,
                 "created_at": tree.created_at.isoformat(),
                 "existing_root_node_id": node.id,
+                # Without this the CONCEPT promotion above is lost on replay:
+                # the node was created as RAW and no other event records the
+                # change.
+                "node_type": node.node_type.value,
             },
         )
         return tree.id
 
-    def merge_trees(self, source_tree_id: str, target_tree_id: str) -> None:
-        source = self._require_tree(source_tree_id)
-        target = self._require_tree(target_tree_id)
-
-        for node in self.nodes.values():
-            if source.id in node.tree_ids:
-                node.tree_ids.add(target.id)
-                node.tree_ids.discard(source.id)
-
-        self.link_nodes(target.root_node_id, source.root_node_id, RelationType.CONTAINS, weight=0.9)
-        self.trees.pop(source.id)
-        self.category_roots.pop(source.category, None)
-
-    def split_tree(self, root_node_id: str, category: str, title: str | None = None) -> str:
-        self._require_node(root_node_id)
-        if category in self.category_roots:
-            raise ValueError(f"Category already exists: {category}")
-
-        tree = MemoryTree(category=category, title=title or category, root_node_id=root_node_id)
-        self.trees[tree.id] = tree
-        self.category_roots[category] = tree.id
-        self.nodes[root_node_id].tree_ids.add(tree.id)
-
-        for hit in self.search_from(
-            root_node_id,
-            depth=10,
-            relation_types={RelationType.TREE_CHILD},
-            direction=TraversalDirection.OUT,
-        ):
-            hit.node.tree_ids.add(tree.id)
-        return tree.id
+    # ``merge_trees`` and ``split_tree`` were removed: both rewrote tree
+    # membership without recording an event, so a replay could not reproduce
+    # the result — and the log being the source of truth is the property the
+    # whole store is built on. Reintroducing either means designing its event
+    # first (see docs/contract.md).
 
     def compress_overflow(self, category: str) -> None:
         for layer in self.layer_policy.order:
@@ -982,10 +1109,25 @@ class FibMind:
         return compressed.id
 
     def _archive_nodes(self, nodes: list[MemoryNode]) -> None:
+        """Retire nodes that overflowed the last layer, recording each move.
+
+        This is reached from ``compress_overflow`` whenever the final layer is
+        full, so it is live on the append path. Both the type and the layer
+        change have to be logged: replay reads ``layer`` only when a node is
+        created, so an unlogged move here would silently come back as ``raw``.
+        """
         for node in nodes:
             node.node_type = NodeType.ARCHIVE
             self._set_node_layer(node, "archive")
             node.touch()
+            self._record(
+                EventOp.PROMOTE,
+                {
+                    "node_id": node.id,
+                    "node_type": node.node_type.value,
+                    "layer": node.layer,
+                },
+            )
 
     def _summarize(self, nodes: list[MemoryNode]) -> str:
         """Kept for callers; folds now go through ``self.summarizer``."""
@@ -1114,6 +1256,10 @@ class FibMind:
         self.reverse_adjacency = {}
         self.by_cat_layer = {}
         self.lexical = LexicalIndex()
+        # Every load path (JsonStore.load, SqliteStore._load, rebuild_from_log)
+        # fills ``events`` before calling this, so the evidence index is
+        # rebuilt from the same log the rest of the cache comes from.
+        self._rebuild_outcome_index()
         for node in self.nodes.values():
             self._index_node(node)
         for edge in self.edges.values():
@@ -1174,6 +1320,11 @@ class FibMind:
                     self.category_roots[payload["category"]] = tree_id
                     if root_id in self.nodes:
                         self.nodes[root_id].tree_ids.add(tree_id)
+                        # ``expand_node_to_tree`` promotes an existing node to
+                        # CONCEPT as it hands it a tree; replay it here.
+                        node_type = payload.get("node_type")
+                        if node_type is not None:
+                            self.nodes[root_id].node_type = NodeType(node_type)
         elif event.op == EventOp.LINK:
             edge = Edge.from_dict(payload["edge"])
             self.edges[edge.id] = edge
@@ -1215,6 +1366,11 @@ class FibMind:
             node_type = payload.get("node_type")
             if node is not None and node_type is not None:
                 node.node_type = NodeType(node_type)
+            # Archiving also moves the node between layers. Go through
+            # ``_set_node_layer`` so the category/layer index stays in step.
+            layer = payload.get("layer")
+            if node is not None and layer is not None:
+                self._set_node_layer(node, layer)
         elif event.op == EventOp.FORGET:
             node_id = payload["node_id"]
             self.nodes.pop(node_id, None)
