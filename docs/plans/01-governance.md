@@ -1,6 +1,6 @@
 # FibMind 判据化改造 Plan
 
-下一刀（身份模型）见 [`PLAN-identity.md`](PLAN-identity.md)。本文是已经落地的判据化改造记录。
+下一刀（身份模型）见 [`PLAN-identity.md`](02-identity.md)。本文是已经落地的判据化改造记录。
 
 
 ## 背景诊断

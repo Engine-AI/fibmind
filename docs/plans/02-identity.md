@@ -1,6 +1,6 @@
 # FibMind 身份模型 Plan
 
-上一轮判据化改造见 [`PLAN.md`](PLAN.md)，已落地。整阶段愿景见 [`ROADMAP.md`](ROADMAP.md) 的 P1。
+上一轮判据化改造见 [`PLAN.md`](01-governance.md)，已落地。整阶段愿景见 [`ROADMAP.md`](../../ROADMAP.md) 的 P1。
 
 本文是 P1 的**第一刀**：只补工作上下文身份，并让所有召回入口走同一套可见性。做完之后，`context(goal)` 才能变成后续 Brain Protocol 里 `recall(goal, state)` 的数据基础。
 
@@ -157,7 +157,7 @@ MCP：`fibmind_append`、`fibmind_search`、`fibmind_search_from`、`fibmind_con
 ```text
 本刀身份模型
     ↓
-Brain v0（见 PLAN-brain.md）：recall / remember / observe / advise / reflect
+Brain v0（见 03-brain.md）：recall / remember / observe / advise / reflect
     ↓
 DSH 插件：pre-step 调 recall，turn/end 调 remember / reflect
     ↓

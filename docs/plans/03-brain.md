@@ -1,6 +1,6 @@
 # FibBrain Plan
 
-身份模型见 [`PLAN-identity.md`](PLAN-identity.md)，已落地。本文是 Brain 协议：在 FibMind 存储上长出 Cognitive Runtime。
+身份模型见 [`PLAN-identity.md`](02-identity.md)，已落地。本文是 Brain 协议：在 FibMind 存储上长出 Cognitive Runtime。
 
 不重写 Agent Loop，不做 Plugin Manager，不接 DeepSeek-Harness Cordis。
 

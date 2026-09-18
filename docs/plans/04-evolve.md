@@ -1,6 +1,6 @@
 # FibBrain 进化 Plan
 
-上一刀 Brain v1 见 [`PLAN-brain.md`](PLAN-brain.md)，代码已落地但**尚未提交**。整阶段愿景见 [`ROADMAP.md`](ROADMAP.md)。
+上一刀 Brain v1 见 [`PLAN-brain.md`](03-brain.md)，已落地（S0 已提交）。整阶段愿景见 [`ROADMAP.md`](../../ROADMAP.md)。
 
 本文回答一个问题：目标是"有记忆、有知识、能按任务渲染 tools / skills、可自动进化、可挂在 DeepSeek-Harness（DSH）上"的 fib-brain，接下来按什么顺序做。
 
@@ -53,7 +53,7 @@ S4 可与 S2 / S3 并行，它不改 Brain 接口。
 
 **做**
 
-- 提交当前工作树（Brain v1 的 `brain.py` / `planning.py` / `admission.py` / 测试 / 文档）。1200 行未提交改动不能再拖。
+- 提交当前工作树（Brain v1 的 `brain.py` / `planning.py` / `admission.py` / 测试 / 文档）。
 - 给事件日志格式加 `log_version`，写进 `MemoryEvent.to_dict()` 与 SQLite `meta`。
 - 给 MCP 工具 schema 写一份 `docs/contract.md`：七个 `fibbrain_*` 的参数、返回字段、稳定性承诺。
 - 把 `data/demo-brain.json` 固化为一致性夹具：任何实现从它 `rebuild_from_log` 后，对固定查询集的检索结果必须逐条相同。这是将来任何语言移植的验收标准。
