@@ -1,0 +1,54 @@
+{
+  "name": "stale_memory",
+  "description": "Measures whether obsolete implementation details pollute current answers.",
+  "memories": [
+    {
+      "id": "old_fastmcp_import",
+      "category": "implementation",
+      "title": "Legacy FastMCP server import",
+      "content": "Start the server with from mcp.server.fastmcp import FastMCP and construct FastMCP('fibmind').",
+      "tags": ["mcp", "server", "legacy"],
+      "scope": "personal",
+      "owner": "fibmind-team",
+      "stale": true
+    },
+    {
+      "id": "current_mcpserver_import",
+      "category": "implementation",
+      "title": "Current MCPServer import",
+      "content": "The current MCP 2.x implementation imports MCPServer from mcp.server and constructs MCPServer('fibmind').",
+      "tags": ["mcp", "server", "current"],
+      "scope": "personal",
+      "owner": "fibmind-team",
+      "hot": true
+    },
+    {
+      "id": "mcp_stdio_transport",
+      "category": "implementation",
+      "title": "MCP stdio transport",
+      "content": "The MCP host launches FibMind as a stdio child process; the server does not expose an HTTP URL.",
+      "tags": ["mcp", "stdio"],
+      "scope": "knowledge"
+    }
+  ],
+  "cases": [
+    {
+      "id": "current_server_class",
+      "query": "What is the current MCP server class and import path?",
+      "relevant_ids": ["current_mcpserver_import"],
+      "stale_ids": ["old_fastmcp_import"],
+      "forbidden_ids": ["old_fastmcp_import"],
+      "expected_answer_terms": ["MCPServer", "mcp.server"],
+      "owner": "fibmind-team"
+    },
+    {
+      "id": "fastmcp_status",
+      "query": "Should this project still import FastMCP from mcp.server.fastmcp?",
+      "relevant_ids": ["current_mcpserver_import"],
+      "stale_ids": ["old_fastmcp_import"],
+      "forbidden_ids": ["old_fastmcp_import"],
+      "expected_answer_terms": ["MCPServer", "MCP 2.x"],
+      "owner": "fibmind-team"
+    }
+  ]
+}

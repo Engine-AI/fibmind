@@ -1,0 +1,49 @@
+# FibBrain as a NATIVE DeepSeek-Harness plugin.
+#
+# Compared with the zero-code MCP row (examples/dsh/fibbrain.cordis.yml), this
+# plugin acts on the agent loop itself: recall before every fresh prompt,
+# advise before every tool call (refuted evidence denies), observe every tool
+# result, review the session when a turn stops, and publish verified
+# procedures as skills.
+#
+# Enable for one run from the repository root:
+#
+#   npx @deepseek-ai/dsh web --patch "$PWD/integrations/dsh/fibbrain.cordis.yml"
+#
+# Replace /path/to/fibmind with your checkout. The plugin `name` and `cwd` must
+# be absolute: dsh resolves plugin names against the profile directory and may
+# start from any directory. `command` and the store path are resolved against
+# `cwd`.
+#
+# Both rows point at the same store. The mcp-client row is optional: keep it if
+# the model should also be able to call fibbrain_* tools itself.
+- insert:
+    - id: fibbrain
+      name: /path/to/fibmind/integrations/dsh/src/index.js
+      config:
+        command: .venv/bin/python
+        args:
+          - -m
+          - fibmind.mcp_server
+          - --store
+          - .fibmind/memory.db
+        cwd: /path/to/fibmind
+        # owner: alice         # defaults to $USER
+        # projectId: fibmind    # defaults to the git root's basename
+        advise: deny            # deny | ask | off
+        reviewMode: approve     # approve (pending until approved) | auto | off
+        recallBudgetTokens: 500
+        skillsMinMaturity: verified
+    - id: memory-fibbrain
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: fibbrain
+        transport: stdio
+        command: .venv/bin/python
+        args:
+          - -m
+          - fibmind.mcp_server
+          - --store
+          - .fibmind/memory.db
+        env: {}
+        cwd: /path/to/fibmind

@@ -1,0 +1,27 @@
+# FibBrain as a DeepSeek-Harness (dsh) memory server — zero-code path.
+#
+# Enable for one run:
+#   npx @deepseek-ai/dsh web --patch "$PWD/examples/dsh/fibbrain.cordis.yml"
+#
+# dsh launches the stdio process itself and exposes every FibBrain tool as
+# `mcp__fibbrain__<tool>` (e.g. mcp__fibbrain__fibbrain_recall). Only MCP
+# *tools* are bridged; resources and prompts are not.
+#
+# `cwd` must be absolute because dsh may start from any directory; `command`
+# and the store path are resolved against it. Replace /path/to/fibmind with
+# your checkout, or generate this file with
+# `python -m evals.import_dsh_session --print-overlay`.
+- insert:
+    - id: memory-fibbrain
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: fibbrain
+        transport: stdio
+        command: .venv/bin/python
+        args:
+          - -m
+          - fibmind.mcp_server
+          - --store
+          - .fibmind/memory.db
+        env: {}
+        cwd: /path/to/fibmind

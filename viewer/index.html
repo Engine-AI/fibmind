@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FibMind 3D Memory Forest</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="scene-shell" aria-label="FibMind 3D visualization">
+        <canvas id="fibmind-scene"></canvas>
+        <div class="hud hud-top">
+          <div>
+            <h1>FibMind 3D</h1>
+            <p>斐波那契分层记忆森林图</p>
+          </div>
+          <div class="stats" id="stats"></div>
+        </div>
+        <div class="hud hud-bottom">
+          <button id="toggle-motion" type="button" aria-label="Pause animation" title="暂停/继续旋转">⏯</button>
+          <button id="reset-view" type="button" aria-label="Reset view" title="重置视角">⌂</button>
+          <div class="legend" aria-label="Layer legend">
+            <span><i class="raw"></i>原始</span>
+            <span><i class="compressed"></i>压缩</span>
+            <span><i class="summary"></i>摘要</span>
+            <span><i class="long-term"></i>长期</span>
+            <span><i class="cross"></i>跨树连接</span>
+          </div>
+        </div>
+        <aside class="node-panel" id="node-panel" aria-live="polite">
+          <span class="eyebrow">Anchor Node</span>
+          <h2>任意节点可作为搜索根</h2>
+          <p>拖动旋转，滚轮缩放，点击节点查看它在记忆森林中的位置与关系。</p>
+        </aside>
+      </section>
+    </main>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

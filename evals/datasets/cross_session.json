@@ -1,0 +1,78 @@
+{
+  "name": "cross_session",
+  "description": "Owner isolation, shared knowledge, and cross-session task recall.",
+  "memories": [
+    {
+      "id": "alice_editor",
+      "category": "preference",
+      "title": "Alice editor preference",
+      "content": "Alice prefers PyCharm for Python projects.",
+      "tags": ["editor", "python"],
+      "scope": "personal",
+      "owner": "alice",
+      "hot": true
+    },
+    {
+      "id": "bob_editor",
+      "category": "preference",
+      "title": "Bob editor preference",
+      "content": "Bob prefers Neovim for Python projects.",
+      "tags": ["editor", "python"],
+      "scope": "personal",
+      "owner": "bob",
+      "hot": true
+    },
+    {
+      "id": "shared_confidence_rule",
+      "category": "knowledge",
+      "title": "Confidence requires external evidence",
+      "content": "A successful test, user correction, or other named external source must confirm or refute a stored memory before confidence changes.",
+      "tags": ["confidence", "evidence"],
+      "scope": "knowledge",
+      "hot": true,
+      "agents_md": true
+    },
+    {
+      "id": "alice_migration_failure",
+      "category": "error",
+      "title": "Alice SQLite migration failure",
+      "content": "The migration failed because the target SQLite file already existed; the migration intentionally refuses to overwrite it.",
+      "tags": ["migration", "sqlite", "error"],
+      "scope": "personal",
+      "owner": "alice"
+    }
+  ],
+  "cases": [
+    {
+      "id": "alice_editor",
+      "query": "Which editor does Alice prefer for Python projects?",
+      "relevant_ids": ["alice_editor"],
+      "forbidden_ids": ["bob_editor"],
+      "expected_answer_terms": ["Alice", "PyCharm"],
+      "owner": "alice"
+    },
+    {
+      "id": "bob_editor",
+      "query": "Which editor does Bob prefer for Python projects?",
+      "relevant_ids": ["bob_editor"],
+      "forbidden_ids": ["alice_editor"],
+      "expected_answer_terms": ["Bob", "Neovim"],
+      "owner": "bob"
+    },
+    {
+      "id": "shared_evidence",
+      "query": "What kind of evidence can change memory confidence?",
+      "relevant_ids": ["shared_confidence_rule"],
+      "expected_answer_terms": ["external", "confirm", "refute"],
+      "owner": "alice"
+    },
+    {
+      "id": "alice_migration",
+      "query": "Why did Alice's SQLite migration fail in the earlier session?",
+      "relevant_ids": ["alice_migration_failure"],
+      "forbidden_ids": ["bob_editor"],
+      "expected_answer_terms": ["already existed", "refuses to overwrite"],
+      "owner": "alice"
+    }
+  ]
+}

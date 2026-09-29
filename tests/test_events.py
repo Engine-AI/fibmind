@@ -1,0 +1,415 @@
+"""Tests for the event log: the store's source of truth.
+
+The materialized node/edge tables are a cache. These tests pin the property that
+makes that true — a forest can be thrown away and rebuilt from its log — plus the
+one place the log is deliberately mutated: redaction on forget.
+"""
+
+import tempfile
+import unittest
+from pathlib import Path
+
+from fibmind import (
+    EventOp,
+    FibMind,
+    JsonStore,
+    MemoryStatus,
+    NodeType,
+    SqliteStore,
+    Verdict,
+)
+from fibmind.fibonacci import FibonacciLayerPolicy
+from fibmind.graph import TOMBSTONE
+
+
+def _sample_forest() -> FibMind:
+    memory = FibMind()
+    first = memory.append("code", "Login 401", "token expiry causes 401 on login")
+    second = memory.append("code", "Token refresh", "refresh rotates the token on 401")
+    memory.record_outcome(first, Verdict.CONFIRMED, source="pytest tests/test_auth.py")
+    memory.revise(second, content="refresh rotates the token before it expires")
+    return memory
+
+
+class EventLogTests(unittest.TestCase):
+    def test_replay_matches_full_semantic_state_after_mixed_changes(self) -> None:
+        memory = FibMind()
+        ids = [
+            memory.append("decision", f"Decision {index}", f"retry policy {index}", auto_link=False)
+            for index in range(25)
+        ]
+        memory.record_outcome(ids[-1], Verdict.CONFIRMED, source="replay test")
+        memory.revise(ids[-2], content="revised retry policy")
+        memory.promote_node(ids[-3])
+        memory.mark_stale(ids[-4], "superseded")
+        summary = next(node for node in memory.nodes.values() if node.metadata.get("source_node_ids"))
+        memory.forget(summary.id, "replace summary")
+
+        rebuilt = FibMind.rebuild_from_log(memory.events)
+        self.assertEqual(set(memory.nodes), set(rebuilt.nodes))
+        self.assertEqual(memory.edges, rebuilt.edges)
+        self.assertEqual(memory.trees, rebuilt.trees)
+        for node_id, node in memory.nodes.items():
+            live = node.to_dict()
+            replayed = rebuilt.nodes[node_id].to_dict()
+            for field in ("familiarity", "access_count"):
+                live.pop(field)
+                replayed.pop(field)
+            self.assertEqual(live, replayed)
+
+    def test_forgetting_a_summary_restores_its_sources_after_replay(self) -> None:
+        memory = FibMind()
+        for index in range(22):
+            memory.append("decision", f"Decision {index}", f"content {index}", auto_link=False)
+        summary = next(node for node in memory.nodes.values() if node.metadata.get("source_node_ids"))
+        source_ids = summary.metadata["source_node_ids"]
+        memory.forget(summary.id, reason="replace the summary")
+
+        rebuilt = FibMind.rebuild_from_log(memory.events)
+        for node_id in source_ids:
+            self.assertIsNone(memory.nodes[node_id].folded_into)
+            self.assertIsNone(rebuilt.nodes[node_id].folded_into)
+            self.assertEqual(memory.is_visible(memory.nodes[node_id]), rebuilt.is_visible(rebuilt.nodes[node_id]))
+
+    def test_replay_preserves_semantic_update_times(self) -> None:
+        memory = FibMind()
+        node_id = memory.append("decision", "Retry", "retry once", auto_link=False)
+        memory.revise(node_id, content="retry three times")
+        memory.record_outcome(node_id, Verdict.CONFIRMED, source="pytest")
+        rebuilt = FibMind.rebuild_from_log(memory.events)
+        self.assertEqual(memory.nodes[node_id].updated_at, rebuilt.nodes[node_id].updated_at)
+
+    def test_every_mutation_is_logged(self) -> None:
+        memory = _sample_forest()
+        ops = [event.op for event in memory.events]
+
+        self.assertIn(EventOp.CREATE_TREE, ops)
+        self.assertIn(EventOp.CREATE_NODE, ops)
+        self.assertIn(EventOp.LINK, ops)
+        self.assertIn(EventOp.OBSERVE, ops)
+        self.assertIn(EventOp.REVISE, ops)
+        self.assertEqual([event.seq for event in memory.events], list(range(1, len(ops) + 1)))
+
+    def test_replay_reconstructs_the_forest(self) -> None:
+        memory = _sample_forest()
+
+        rebuilt = FibMind.rebuild_from_log(memory.events)
+
+        self.assertEqual(set(memory.nodes), set(rebuilt.nodes))
+        self.assertEqual(set(memory.edges), set(rebuilt.edges))
+        self.assertEqual(memory.trees, rebuilt.trees)
+        self.assertEqual(memory.category_roots, rebuilt.category_roots)
+        for node_id, node in memory.nodes.items():
+            replayed = rebuilt.nodes[node_id]
+            self.assertEqual(node.title, replayed.title)
+            self.assertEqual(node.content, replayed.content)
+            self.assertEqual(node.confidence, replayed.confidence)
+            self.assertEqual(node.scope, replayed.scope)
+
+    def test_replay_drops_recall_counters(self) -> None:
+        """Familiarity describes usage, not knowledge, and is not replayed."""
+        memory = FibMind()
+        node_id = memory.append("code", "Bug", "a login bug")
+        for _ in range(5):
+            memory.search_from(node_id, depth=0, reinforce=True)
+        self.assertGreater(memory.nodes[node_id].familiarity, 0.0)
+
+        rebuilt = FibMind.rebuild_from_log(memory.events)
+
+        self.assertEqual(rebuilt.nodes[node_id].familiarity, 0.0)
+        self.assertEqual(rebuilt.nodes[node_id].access_count, 0)
+
+    def test_folded_nodes_survive_replay(self) -> None:
+        memory = FibMind()
+        for index in range(22):
+            memory.append("dialogue", f"Message {index}", f"content {index}")
+        folded = {node.id: node.folded_into for node in memory.nodes.values() if node.folded_into is not None}
+        self.assertTrue(folded)
+
+        rebuilt = FibMind.rebuild_from_log(memory.events)
+
+        for node_id, into in folded.items():
+            self.assertEqual(rebuilt.nodes[node_id].folded_into, into)
+
+    def test_promotion_survives_replay(self) -> None:
+        memory = FibMind()
+        node_id = memory.append("code", "Login problem", "auth issue")
+        memory.promote_node(node_id)
+
+        rebuilt = FibMind.rebuild_from_log(memory.events)
+
+        self.assertEqual(rebuilt.nodes[node_id].node_type, NodeType.CONCEPT)
+        self.assertIn(node_id, {hit.node.id for hit in rebuilt.search("login auth")})
+
+    def test_replay_drops_trees_whose_root_was_forgotten(self) -> None:
+        memory = FibMind()
+        node_id = memory.append("code", "Concept", "worth its own tree")
+        tree_id = memory.expand_node_to_tree(node_id)
+        category = memory.trees[tree_id].category
+        memory.forget(node_id, reason="no longer relevant")
+
+        rebuilt = FibMind.rebuild_from_log(memory.events)
+
+        self.assertNotIn(tree_id, rebuilt.trees)
+        self.assertNotIn(category, rebuilt.category_roots)
+        self.assertEqual(rebuilt.trees, memory.trees)
+        self.assertEqual(rebuilt.category_roots, memory.category_roots)
+
+    def test_json_store_round_trips_the_log(self) -> None:
+        memory = _sample_forest()
+        with tempfile.TemporaryDirectory() as tmp:
+            store = JsonStore(Path(tmp) / "memory.json")
+            store.save(memory)
+            restored = store.load()
+
+        self.assertEqual(
+            [event.to_dict() for event in memory.events],
+            [event.to_dict() for event in restored.events],
+        )
+
+    def test_sqlite_store_round_trips_the_log(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = SqliteStore(Path(tmp) / "memory.db")
+            with store.transaction() as memory:
+                node_id = memory.append("code", "Login 401", "token expiry causes 401")
+                memory.record_outcome(node_id, Verdict.CONFIRMED, source="pytest")
+
+            restored = store.load()
+            rebuilt = FibMind.rebuild_from_log(restored.events)
+
+        self.assertEqual(set(restored.nodes), set(rebuilt.nodes))
+        self.assertEqual(restored.nodes[node_id].confidence, rebuilt.nodes[node_id].confidence)
+
+
+class ForgetTests(unittest.TestCase):
+    def test_forget_removes_the_node_and_its_edges(self) -> None:
+        memory = FibMind()
+        first = memory.append("code", "Login 401", "token expiry causes 401 on login")
+        second = memory.append("code", "Token refresh", "refresh rotates the token on 401")
+
+        result = memory.forget(first, reason="stored by mistake")
+
+        self.assertNotIn(first, memory.nodes)
+        self.assertIn(second, memory.nodes)
+        self.assertGreater(result["removed_edges"], 0)
+        for edge in memory.edges.values():
+            self.assertNotIn(first, {edge.from_node_id, edge.to_node_id})
+
+    def test_forget_redacts_content_so_replay_cannot_resurrect_it(self) -> None:
+        """Deletion has to reach the log, or the next rebuild undoes it."""
+        memory = FibMind()
+        node_id = memory.append("code", "Secret", "hunter2 is the production password")
+        memory.revise(node_id, content="hunter2 is still the production password")
+
+        memory.forget(node_id, reason="user asked for removal")
+
+        serialized = repr([event.to_dict() for event in memory.events])
+        self.assertNotIn("hunter2", serialized)
+        self.assertIn(TOMBSTONE, serialized)
+
+        rebuilt = FibMind.rebuild_from_log(memory.events)
+        self.assertNotIn(node_id, rebuilt.nodes)
+
+    def test_forget_survives_a_store_round_trip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = SqliteStore(Path(tmp) / "memory.db")
+            with store.transaction() as memory:
+                node_id = memory.append("code", "Secret", "hunter2 is the password")
+            with store.transaction() as memory:
+                memory.forget(node_id, reason="user asked for removal")
+
+            restored = store.load()
+
+        serialized = repr([event.to_dict() for event in restored.events])
+        self.assertNotIn("hunter2", serialized)
+        self.assertNotIn(node_id, restored.nodes)
+        self.assertNotIn(node_id, FibMind.rebuild_from_log(restored.events).nodes)
+
+    def test_forget_requires_a_reason(self) -> None:
+        memory = FibMind()
+        node_id = memory.append("code", "Bug", "a login bug")
+        with self.assertRaises(ValueError):
+            memory.forget(node_id, reason="   ")
+
+
+class ForgetFoldedContentTests(unittest.TestCase):
+    """Folding copies text into a summary, so forget has to reach that too."""
+
+    MARKER = "hunter2-xyzzy-marker"
+
+    def _forest_with_a_fold(self) -> tuple[FibMind, str]:
+        """Overflow the raw layer so one marked node gets folded into a summary."""
+        memory = FibMind()
+        marked = memory.append("code", "Secret note", f"{self.MARKER} is the production password")
+        for index in range(25):
+            memory.append("code", f"Filler {index}", f"routine note number {index}")
+        folded = [node for node in memory.nodes.values() if node.folded_into is not None]
+        self.assertTrue(folded, "expected the raw layer to overflow and fold")
+        self.assertIsNotNone(memory.nodes[marked].folded_into, "expected the marked node to fold")
+        return memory, marked
+
+    def _assert_marker_is_gone(self, memory: FibMind) -> None:
+        for node in memory.nodes.values():
+            self.assertNotIn(self.MARKER, node.content, f"marker survived in node {node.id}")
+            self.assertNotIn(self.MARKER, node.title, f"marker survived in title of {node.id}")
+        serialized = repr([event.to_dict() for event in memory.events])
+        self.assertNotIn(self.MARKER, serialized, "marker survived in the event log")
+
+    def test_forget_scrubs_content_copied_into_a_fold_summary(self) -> None:
+        memory, marked = self._forest_with_a_fold()
+        summary_id = memory.nodes[marked].folded_into
+        assert summary_id is not None
+        self.assertIn(self.MARKER, memory.nodes[summary_id].content)
+
+        memory.forget(marked, reason="user asked for removal")
+
+        self._assert_marker_is_gone(memory)
+        self.assertIn(summary_id, memory.nodes, "the summary still covers its other sources")
+        self._assert_marker_is_gone(FibMind.rebuild_from_log(memory.events))
+
+    def test_rewritten_summary_still_matches_after_replay(self) -> None:
+        memory, marked = self._forest_with_a_fold()
+        summary_id = memory.nodes[marked].folded_into
+        assert summary_id is not None
+
+        memory.forget(marked, reason="user asked for removal")
+
+        replayed = FibMind.rebuild_from_log(memory.events)
+        self.assertEqual(replayed.nodes[summary_id].content, memory.nodes[summary_id].content)
+        self.assertEqual(replayed.nodes[summary_id].title, memory.nodes[summary_id].title)
+        self.assertEqual(replayed.nodes[summary_id].layer, memory.nodes[summary_id].layer)
+
+    def test_summary_is_forgotten_when_every_source_is(self) -> None:
+        memory, marked = self._forest_with_a_fold()
+        summary_id = memory.nodes[marked].folded_into
+        assert summary_id is not None
+        sources = list(memory.nodes[summary_id].metadata["source_node_ids"])
+
+        for node_id in sources:
+            memory.forget(node_id, reason="user asked for removal")
+
+        self.assertNotIn(summary_id, memory.nodes)
+        self.assertNotIn(summary_id, FibMind.rebuild_from_log(memory.events).nodes)
+
+    def test_forgotten_content_does_not_survive_a_store_round_trip(self) -> None:
+        memory, marked = self._forest_with_a_fold()
+        memory.forget(marked, reason="user asked for removal")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = SqliteStore(Path(tmp) / "memory.db")
+            store.save(memory)
+            restored = store.load()
+
+        self._assert_marker_is_gone(restored)
+        self._assert_marker_is_gone(FibMind.rebuild_from_log(restored.events))
+
+
+class ArchiveReplayTests(unittest.TestCase):
+    def _single_layer_memory(self) -> FibMind:
+        """A one-layer policy, so overflow archives instead of compressing."""
+        policy = FibonacciLayerPolicy(order=("raw",), capacities={"raw": 2}, low_watermarks={"raw": 1})
+        return FibMind(layer_policy=policy)
+
+    def test_archiving_is_logged_and_survives_replay(self) -> None:
+        memory = self._single_layer_memory()
+        for index in range(3):
+            memory.append("code", f"Note {index}", f"routine note number {index}")
+
+        archived = [node for node in memory.nodes.values() if node.node_type == NodeType.ARCHIVE]
+        self.assertTrue(archived, "expected overflow to archive a node")
+
+        rebuilt = FibMind.rebuild_from_log(memory.events)
+
+        for node in archived:
+            self.assertEqual(rebuilt.nodes[node.id].node_type, NodeType.ARCHIVE)
+            self.assertEqual(rebuilt.nodes[node.id].layer, "archive")
+
+    def test_archived_nodes_leave_the_original_layer_index(self) -> None:
+        memory = self._single_layer_memory()
+        for index in range(3):
+            memory.append("code", f"Note {index}", f"routine note number {index}")
+
+        rebuilt = FibMind.rebuild_from_log(memory.events)
+
+        for (category, layer), node_ids in rebuilt.by_cat_layer.items():
+            for node_id in node_ids:
+                self.assertEqual(rebuilt.nodes[node_id].layer, layer)
+                self.assertEqual(rebuilt.nodes[node_id].category, category)
+
+
+class ExpandToTreeReplayTests(unittest.TestCase):
+    def test_concept_promotion_survives_replay(self) -> None:
+        memory = FibMind()
+        node_id = memory.append("code", "Concept", "worth its own tree")
+        tree_id = memory.expand_node_to_tree(node_id)
+
+        rebuilt = FibMind.rebuild_from_log(memory.events)
+
+        self.assertEqual(rebuilt.nodes[node_id].node_type, NodeType.CONCEPT)
+        self.assertIn(tree_id, rebuilt.nodes[node_id].tree_ids)
+        self.assertEqual(rebuilt.trees[tree_id].root_node_id, node_id)
+
+
+class ReviseTests(unittest.TestCase):
+    def test_revise_resets_confidence(self) -> None:
+        """Evidence backs specific content, so it does not carry over."""
+        memory = FibMind()
+        node_id = memory.append("code", "Retry policy", "retry three times")
+        memory.record_outcome(node_id, Verdict.CONFIRMED, source="pytest tests/test_retry.py")
+        self.assertGreater(memory.nodes[node_id].confidence, 0.0)
+
+        memory.revise(node_id, content="retry with exponential backoff")
+
+        self.assertEqual(memory.nodes[node_id].content, "retry with exponential backoff")
+        self.assertEqual(memory.nodes[node_id].confidence, 0.0)
+        self.assertIsNone(memory.nodes[node_id].confidence_source)
+
+    def test_revise_reactivates_a_refuted_memory(self) -> None:
+        memory = FibMind()
+        node_id = memory.append("code", "Retry policy", "retry forever")
+        memory.record_outcome(node_id, Verdict.REFUTED, source="failing load test")
+
+        self.assertEqual(memory.nodes[node_id].status, MemoryStatus.REFUTED)
+        self.assertEqual(memory.search("retry forever"), [])
+
+        memory.revise(node_id, content="retry three times")
+
+        self.assertEqual(memory.nodes[node_id].status, MemoryStatus.ACTIVE)
+        self.assertIn(node_id, {hit.node.id for hit in memory.search("retry three times")})
+
+
+class StatusTests(unittest.TestCase):
+    def test_stale_and_refuted_memories_are_hidden_but_maintainable(self) -> None:
+        memory = FibMind()
+        stale = memory.append("code", "Legacy import", "use FastMCP")
+        refuted = memory.append("code", "Retry claim", "retry forever")
+        memory.mark_stale(stale, "replaced by MCPServer")
+        memory.record_outcome(refuted, Verdict.REFUTED, source="load test")
+
+        self.assertEqual(memory.search("FastMCP retry forever", top_k=10), [])
+        inactive = {
+            hit.node.id
+            for hit in memory.search(
+                "FastMCP retry forever",
+                top_k=10,
+                statuses={MemoryStatus.STALE, MemoryStatus.REFUTED},
+            )
+        }
+        self.assertEqual(inactive, {stale, refuted})
+
+    def test_status_changes_survive_event_replay(self) -> None:
+        memory = FibMind()
+        stale = memory.append("code", "Legacy import", "use FastMCP")
+        refuted = memory.append("code", "Retry claim", "retry forever")
+        memory.mark_stale(stale, "replaced")
+        memory.record_outcome(refuted, Verdict.REFUTED, source="pytest")
+
+        rebuilt = FibMind.rebuild_from_log(memory.events)
+
+        self.assertEqual(rebuilt.nodes[stale].status, MemoryStatus.STALE)
+        self.assertEqual(rebuilt.nodes[refuted].status, MemoryStatus.REFUTED)
+        self.assertIn(EventOp.SET_STATUS, {event.op for event in memory.events})
+
+
+if __name__ == "__main__":
+    unittest.main()

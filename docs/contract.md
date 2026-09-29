@@ -1,0 +1,202 @@
+# FibBrain Contract
+
+This document names what is stable and what is an implementation detail. The
+Python package in `src/fibmind/` is *one* implementation. Anything that keeps
+the promises below — in any language — is a conforming FibBrain.
+
+The contract has three parts: the **event log** (how memory is persisted), the
+**Brain protocol** (the seven `fibbrain_*` actions), and the **conformance
+fixture** that checks both.
+
+## 1. Event log
+
+**Version:** `log_version = 1` (`fibmind.models.LOG_VERSION`).
+
+The log is the source of truth. Nodes, edges, and trees are a cache that
+`rebuild_from_log(events)` must reproduce exactly. Two things are deliberately
+*not* replayed: `familiarity` and `access_count` describe how a store was used,
+not what it knows, and reset to zero on rebuild.
+
+Every event is:
+
+```json
+{
+  "id": "event_<hex>",
+  "seq": 12,
+  "op": "create_node",
+  "payload": { ... },
+  "created_at": "2026-09-03T06:28:37.119077+00:00",
+  "log_version": 1
+}
+```
+
+`seq` is a dense, monotonically increasing integer per store. Replay order is
+by `seq`. `op` is one of:
+
+| op | payload | effect on replay |
+| --- | --- | --- |
+| `create_tree` | `tree_id`, `category`, `title`, `root` (node dict) or `existing_root_node_id` | create tree and its root node |
+| `create_node` | `node` (full node dict), `tree_id` | insert node, attach to tree |
+| `link` | `edge` (full edge dict) | insert edge |
+| `fold` | `into_node_id`, `source_node_ids` | set `folded_into` on each source |
+| `revise` | `node_id`, `before`, `after` (title / content / tags / status), optional `updated_at` | replace text, reset confidence to 0 |
+| `observe` | `node_id`, `verdict`, `source`, `confidence`, optional `status` / `status_reason` / `note` / `updated_at` | set confidence; a `refuted` verdict sets status `refuted` |
+| `set_status` | `node_id`, `status`, `reason`, optional `updated_at` | set status |
+| `promote` | `node_id`, `node_type`, optional `updated_at` | change node type |
+| `forget` | `node_id`, `removed_edges` | delete node and edges, unfold direct sources, and **redact earlier payloads for that node** |
+
+Redaction on `forget` is the one time an existing log entry is mutated. A replay
+that resurrects forgotten content is non-conforming.
+New mutation events record `updated_at` so a replay preserves recency. Older
+version-1 events without this optional field retain their original timestamp;
+their historical mutation time cannot be reconstructed from those payloads.
+
+**Stores.** A JSON store carries `log_version` at the top level. A SQLite store
+carries it in `meta.log_version` and `schema_version` (currently 5) for its
+own table layout. A missing `log_version` is read as version 1. A reader must
+refuse a log whose version is greater than what it implements.
+
+**Bumping the version.** Bump only when an existing payload changes meaning.
+Adding an optional field to a node or payload does not bump; readers must ignore
+unknown fields and default missing ones.
+
+### Node fields that carry meaning
+
+| field | contract |
+| --- | --- |
+| `scope` | `session` / `personal` / `knowledge`. `knowledge` is only written by `promote_to_knowledge`. |
+| `status` | `active` / `pending` / `stale` / `refuted` / `forgotten`. Normal recall sees only `active`. `pending` is a review-written memory awaiting approval. |
+| `owner`, `workspace_id`, `project_id`, `session_id`, `task_id` | Identity. Visibility is exact-match per [`02-identity.md`](plans/02-identity.md); `task_id` is recorded but never filters. |
+| `confidence`, `confidence_source` | Moves only through `observe` events with a named source. The only trust signal ranking may use. |
+| `familiarity`, `access_count` | Usage counters. Never enter ranking. Not replayed. |
+| `folded_into` | Set by `fold`. Folded nodes are excluded from normal recall but keep their text. |
+| `memory_kind` | `preference` / `decision` / `error` / `requirement` / `summary` / `knowledge` / `procedure`, or absent. Inferred from the category when not given. `procedure` nodes carry a JSON body with `kind: fibbrain_procedure` and are the only kind `render` emits. |
+
+## 2. Brain protocol
+
+The MCP server registers exactly the tools listed under `tools` in
+[`tests/fixtures/demo-brain.expected.json`](../tests/fixtures/demo-brain.expected.json).
+Tool names and the meaning of their parameters are stable. New optional
+parameters may be added; existing ones are not renamed or removed.
+
+Every `fibbrain_*` tool accepts the identity quintet `owner`, `workspace_id`,
+`project_id`, `session_id`, `task_id` as optional strings. Omitting a field means
+"unlabelled", which sees only unlabelled memories — never "all".
+
+| tool | question | persists |
+| --- | --- | --- |
+| `fibbrain_plan(objective \| goal_id, identity)` | What am I doing, in what order? | yes: a `goal` node tagged `fibbrain-goal`, JSON document with `kind: fibbrain_goal` |
+| `fibbrain_recall(goal, identity, top_k, depth, budget_tokens, include_hot)` | What do I already know, inside this many tokens? | first call in a session persists the hot snapshot |
+| `fibbrain_hot(identity, refresh)` | What is this session's standing preamble? | yes: a `scope=session` node in category `hot` |
+| `fibbrain_tune(apply)` | Should my ranking weights move, and does the gate allow it? | yes: a `tuning` observation; weights only when adopted |
+| `fibbrain_revalidation_candidates(older_than_days, identity)` | What has gone unconfirmed too long? | no |
+| `fibbrain_coordinate(objective \| goal_id, identity)` | Which capabilities next, and are they safe? | may mark the goal `blocked` |
+| `fibbrain_remember(category, title, content, tags, scope, identity)` | Is this worth keeping? | only on `verdict: write` |
+| `fibbrain_observe(kind, summary, payload, identity)` | What just happened? | with a `session_id`: yes, as `scope=session` scratch in category `episode`; recall never returns it as a hit |
+| `fibbrain_review_session(session_id, mode, close, identity)` | What from this session is worth keeping? | `approve`: as `pending`; `auto`: as `active`; `candidates`: nothing |
+| `fibbrain_pending_reviews(identity)` / `fibbrain_approve_memory` / `fibbrain_reject_memory` | Which review memories wait, and do they get in? | status changes only |
+| `fibbrain_remember_procedure(title, trigger, steps, when, tools, verify, inputs, identity)` | How do I do this class of task? | yes: a `procedure` node; same-trigger predecessors get a `version_of` edge |
+| `fibbrain_render(goal, format, top_k, min_maturity, identity)` | Which procedures fit, as skills or tools? | no |
+| `fibbrain_advise(action, kind, identity)` | Should this action run? | no |
+| `fibbrain_reflect(verdict, source, node_id \| goal, identity)` | Did a memory hold up? | yes: an `observe` event |
+| `fibbrain_complete_goal(goal_id \| objective, identity)` | Done. | yes: goal status `complete` |
+
+Return shapes are plain JSON objects. Fields present today are stable; new
+fields may appear.
+
+**Guarantees a conforming brain must keep:**
+
+- `remember` returns `verdict` ∈ `write` / `skip` and a `reason`. Skipped
+  candidates are not persisted. Exact duplicates within the same owner /
+  workspace / project are skipped.
+- `recall` never returns a node the caller's identity cannot see, including
+  through graph expansion.
+- Agent-facing node-ID mutations (`reflect`, goal completion, review approval,
+  and direct `fibmind_*` upkeep tools) check the same owner/workspace/project/
+  session visibility boundary, including for pending and stale nodes. Callers
+  must pass their identity to modify labelled personal or session memories.
+- `advise` returns `reject` when a `refuted` memory matches the action in the
+  caller's identity, otherwise `allow`.
+- `plan` with the same objective and identity reuses the existing non-complete
+  goal (idempotent).
+- Reading a memory back never changes its ranking.
+- `review_session` is deterministic and idempotent: the same episode yields
+  the same candidates, and a second run writes nothing.
+- Episode scratch (`category=episode`) never appears as a `recall` hit, only
+  in the pack's `episode` list, and only to its own session.
+- `render` only ever emits `procedure` nodes visible to the caller. Maturity
+  is derived from `observe` events in the log: `verified` after one
+  confirmation, `established` after three confirmations from at least two
+  distinct sessions. A procedure refuted twice with no confirmation is
+  retired to `stale` by `reflect` itself.
+- `coordinate` reports `capability_source: procedure` when a matching
+  procedure drove the capability list, else `heuristic`.
+- `recall` never renders more than `budget_tokens` (default 500) as counted by
+  the configured counter, and reports `budget.used_tokens`,
+  `budget.sections[hot|search|expand]`, and `budget.truncated[]` with a reason
+  per cut. The hot snapshot is frozen for a session: the same `session_id` sees
+  the same preamble until `fibbrain_hot(refresh=true)` or a review runs.
+
+### Evolution guarantees
+
+- `remember` / `review_session` never write a candidate the safety scan
+  blocks; the decision carries `findings[]` with `family` (`secret` /
+  `injection` / `hidden`) and `kind`.
+- Refuting a memory that supports knowledge scales that knowledge's
+  confidence by the share of active supporters and retires it to `stale`
+  when none remain. This is recorded as an `observe` event with
+  `verdict: propagated`, which `outcome_counts` does not count as a refutation
+  of the claim.
+- Ranking weights are bounded (`RankingWeights.BOUNDS`), persisted in the
+  store (`settings.ranking_weights` / `meta.setting:ranking_weights`), and may
+  change only through `fibbrain_tune`, whose attempt — evidence, proposal,
+  gate scores, decision — is appended to the log as `verdict: tuning`.
+  Familiarity has no weight and cannot acquire one.
+- A fold's summary carries `metadata.distillation` naming the summarizer
+  (and model / prompt version for an LLM one); folded sources keep their text
+  and `folded_into`, so a summary can be regenerated.
+
+## 3. Conformance fixture
+
+`data/demo-brain.json` is regenerated by `examples/demo.py --fixture` (a plain
+run writes to `.fibmind/demo/` and leaves the fixture alone). It is small on
+purpose: one identity, three trees (`decision`, `goal`, `episode`), and the
+handful of events one plan → coordinate → recall → complete run produces.
+
+`tests/fixtures/demo-brain.expected.json` records what a conforming
+implementation must produce from it:
+
+- `shape`: node / edge / tree counts and category names after replay;
+- `queries`: fixed search queries with identity and the exact ordered titles
+  they must return, evaluated the way `recall` evaluates them (active,
+  visible, `episode` excluded) — including three that must return nothing
+  (wrong project, no identity, unrelated terms);
+- `tools`: the exact MCP tool surface.
+
+`tests/test_contract.py` runs the check for the Python implementation. A port
+should load the same two files and assert the same things. If the fixture
+changes, regenerate the expected file deliberately and explain the change in
+the commit; a silent diff there is a contract break.
+
+## Out of contract
+
+Deliberately *not* promised, so they can change without notice:
+
+- the retrieval engine and its weights (`retrieval.py`, `ranking.py`): BM25
+  constants, fusion, the vector floor, and which embedding provider is used;
+- the shape of `fibmind_explain_recall` beyond `results[].node_id` and
+  `excluded[].reason`;
+- Fibonacci layer capacities and the fold / summarize strategy;
+- the deterministic plan template and capability hints (`planning.py`);
+- the exact SKILL.md / tool-schema layout `render` produces, and the
+  promotion / retirement thresholds (`procedure.py`);
+- the token estimator, the budget split between sections, and which kinds
+  qualify as hot (`tokens.py`, `context.py`, `brain.py`);
+- the safety patterns (`safety.py`), the tuning step size, evidence threshold
+  and MRR tolerance (`tuning.py`), and the default summarizer / planner
+  (`distill.py`);
+- the admission heuristics (`admission.py`);
+- SQLite table layout beyond `meta.log_version`.
+
+These are exactly the parts [`04-evolve.md`](plans/04-evolve.md) expects to
+replace or tune.

@@ -1,0 +1,12 @@
+{
+  "baseline": "fibmind_current",
+  "min": {
+    "recall_at_k": 1.0,
+    "mrr": 0.98,
+    "no_relevant_accuracy": 1.0
+  },
+  "max": {
+    "stale_pollution_rate": 0.0,
+    "forbidden_case_rate": 0.0
+  }
+}

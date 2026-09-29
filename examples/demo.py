@@ -1,0 +1,182 @@
+"""Walk through FibBrain and the FibMind store end to end.
+
+By default the two JSON stores land in ``.fibmind/demo/`` (gitignored), so
+running the demo never dirties the tree. ``data/demo-brain.json`` is also the
+conformance fixture read by ``tests/test_contract.py``; pass ``--fixture`` to
+regenerate it deliberately (ids and timestamps change on every run, so commit
+the result together with an updated ``tests/fixtures/demo-brain.expected.json``
+only when the fixture itself is meant to change).
+"""
+
+import argparse
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT = PROJECT_ROOT / "src"
+sys.path.insert(0, str(SRC_ROOT))
+
+from fibmind import (
+    BrainState,
+    EdgeDirection,
+    FibBrain,
+    FibMind,
+    JsonStore,
+    MemoryService,
+    RelationType,
+    Verdict,
+)
+
+
+def demo_brain(output_dir: Path) -> None:
+    output_path = output_dir / "demo-brain.json"
+    output_path.unlink(missing_ok=True)
+    brain = FibBrain(MemoryService(output_path))
+    state = BrainState(
+        owner="dev-a",
+        workspace_id="demo",
+        project_id="fibmind",
+        session_id="demo-session",
+    )
+
+    brain.remember(
+        "decision",
+        "Refresh tokens before retrying login",
+        "A 401 after token expiry is fixed by refreshing before the next request.",
+        state=state,
+    )
+    planned = brain.plan("Fix login 401 after token expiry", state=state)
+    coordinated = brain.coordinate(goal_id=planned["goal_id"], state=state)
+    recalled = brain.recall(planned["objective"], state=state)
+    brain.complete_goal(goal_id=planned["goal_id"], state=state)
+
+    print("FibBrain plan:")
+    for step in planned["steps"]:
+        print(f"- {step['title']} [{', '.join(step['capabilities'])}]")
+    print("\nFibBrain coordinate:")
+    for item in coordinated["capabilities"]:
+        print(f"- {item['capability']}: {item['advise']['verdict']} ({item['action']})")
+    print(f"\nFibBrain recall hits: {len(recalled['hits'])}")
+    print(f"Saved demo brain store to {output_path}")
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=PROJECT_ROOT / ".fibmind" / "demo",
+        help="where to write demo-brain.json and demo-memory.json (default: .fibmind/demo/)",
+    )
+    parser.add_argument(
+        "--fixture",
+        action="store_true",
+        help="write to data/ instead, regenerating the tracked conformance fixture",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = _parse_args(argv)
+    output_dir = PROJECT_ROOT / "data" if args.fixture else args.output_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    demo_brain(output_dir)
+    print("\n--- FibMind store ---\n")
+
+    memory = FibMind()
+
+    code_bug = memory.append(
+        "code",
+        title="Login API returns 401",
+        content="The login endpoint returns 401 after token expiry.",
+        tags={"login", "auth", "bug"},
+        owner="dev-a",
+    )
+    requirement = memory.append(
+        "requirement",
+        title="Refresh token automatically",
+        content="The product requires silent token refresh before API calls fail.",
+        tags={"login", "auth", "token"},
+        owner="dev-a",
+    )
+    fix = memory.append(
+        "code",
+        title="Add request interceptor",
+        content="Generate a request interceptor that refreshes tokens before retrying requests.",
+        tags={"login", "auth", "fix"},
+        owner="dev-a",
+    )
+
+    memory.link_nodes(code_bug, requirement, RelationType.CAUSED_BY, weight=0.85)
+    memory.link_nodes(fix, code_bug, RelationType.ANSWER_TO, weight=0.95)
+    memory.link_nodes(fix, requirement, RelationType.DERIVED_FROM, weight=0.9)
+    memory.link_nodes(code_bug, fix, RelationType.RELATED_TO, weight=0.7, direction=EdgeDirection.BIDIRECTIONAL)
+
+    # Recall does not make a memory more trusted; only an outside check does.
+    # Skip this step and the fix ranks no better than an unverified guess, however
+    # often it gets read back.
+    memory.record_outcome(
+        fix,
+        Verdict.CONFIRMED,
+        source="pytest tests/test_auth.py::test_silent_refresh",
+        note="interceptor removed the 401 retry loop",
+    )
+    memory.promote_node(code_bug)
+
+    print("Search from fix node:")
+    for hit in memory.search_from(fix, depth=2, owner="dev-a"):
+        relation = hit.via_relation.value if hit.via_relation else "self"
+        print(f"- depth={hit.depth} via={relation}: {hit.node.title} [{hit.node.node_type}]")
+
+    print("\nRanked recall for 'login token expiry':")
+    for hit in memory.search("login token expiry", owner="dev-a"):
+        node = hit.node
+        print(f"- {hit.score:.2f} confidence={node.confidence:.2f} {node.title}")
+
+    # Three independent observations of one failure mode are what license a shared
+    # claim. With fewer than three, promotion is refused.
+    timeout_reports = [
+        memory.append(
+            "code",
+            title=f"Upload times out ({owner})",
+            content="Large uploads time out because the client has no retry budget.",
+            tags={"upload", "timeout"},
+            owner=owner,
+        )
+        for owner in ("dev-a", "dev-b", "dev-c")
+    ]
+    claim = memory.promote_to_knowledge(
+        title="Uploads need an explicit retry budget",
+        content=(
+            "Clients uploading large files must set a retry budget; without one the "
+            "request dies at the first transient timeout."
+        ),
+        supporting_node_ids=timeout_reports,
+        tags={"upload", "timeout"},
+    )
+    claim_node = memory.nodes[claim]
+    print(f"\nPromoted to shared knowledge: {claim_node.title}")
+    print(f"  scope={claim_node.scope.value} confidence={claim_node.confidence}")
+    print("  provenance:")
+    for edge in memory.edges.values():
+        if edge.from_node_id == claim and edge.relation_type == RelationType.DERIVED_FROM:
+            print(f"    <- {memory.nodes[edge.to_node_id].title}")
+
+    # dev-b sees the shared claim but none of dev-a's personal memories.
+    print("\nWhat dev-b can recall:")
+    for hit in memory.search("login upload timeout", top_k=10, owner="dev-b"):
+        print(f"- [{hit.node.scope.value}] {hit.node.title}")
+
+    # The log is the source of truth; nodes and edges are a cache built from it.
+    replayed = FibMind.rebuild_from_log(memory.events)
+    print(f"\nEvents logged: {len(memory.events)}")
+    print(f"Replayed from log: {len(replayed.nodes)} nodes, {len(replayed.edges)} edges, {len(replayed.trees)} trees")
+
+    output_path = output_dir / "demo-memory.json"
+    JsonStore(output_path).save(memory)
+    print(f"\nSaved demo memory to {output_path}")
+
+
+if __name__ == "__main__":
+    main()
