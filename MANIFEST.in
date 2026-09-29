@@ -1,0 +1,3 @@
+# The sdist carries the package, not the development tree. Tests need data/
+# and evals/, so they run from a checkout rather than from an sdist.
+prune tests

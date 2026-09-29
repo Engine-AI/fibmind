@@ -6,14 +6,33 @@ readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
 authors = [
-  { name = "FibMind Prototype" }
+  { name = "jiemoxiaolong" }
+]
+keywords = ["agent", "memory", "mcp", "llm", "long-term-memory", "event-sourcing"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Typing :: Typed",
 ]
 dependencies = [
     "mcp>=2,<3",
 ]
 
+[project.urls]
+Homepage = "https://github.com/Engine-AI/fibmind"
+Repository = "https://github.com/Engine-AI/fibmind"
+Issues = "https://github.com/Engine-AI/fibmind/issues"
+Documentation = "https://github.com/Engine-AI/fibmind#readme"
+
 [project.optional-dependencies]
-mcp = ["mcp>=2,<3"]
 dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.6"]
 
 [project.scripts]
@@ -27,6 +46,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+fibmind = ["py.typed"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "."]

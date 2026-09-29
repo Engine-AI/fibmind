@@ -315,19 +315,15 @@ dev = [
     { name = "pytest-cov" },
     { name = "ruff" },
 ]
-mcp = [
-    { name = "mcp" },
-]
 
 [package.metadata]
 requires-dist = [
     { name = "mcp", specifier = ">=2,<3" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=2,<3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
 ]
-provides-extras = ["mcp", "dev"]
+provides-extras = ["dev"]
 
 [[package]]
 name = "h11"

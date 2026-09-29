@@ -1,0 +1,54 @@
+name: release
+
+# Publishing a GitHub Release uploads that version to PyPI.
+#
+# One-time setup on pypi.org (Trusted Publishing, no API token stored here):
+#   Account settings -> Publishing -> Add a new pending publisher
+#     PyPI project name: fibmind
+#     Owner:             Engine-AI
+#     Repository name:   fibmind
+#     Workflow name:     release.yml
+#     Environment name:  pypi
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - name: Tag must match the package version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)
+          test "v${version}" = "${GITHUB_REF_NAME}" || {
+            echo "release tag ${GITHUB_REF_NAME} does not match pyproject version ${version}"
+            exit 1
+          }
+      - run: uv build
+      - name: Smoke-test the wheel
+        run: |
+          uv venv /tmp/smoke
+          uv pip install --python /tmp/smoke/bin/python dist/*.whl
+          cd /tmp && /tmp/smoke/bin/python -c "import fibmind" && /tmp/smoke/bin/fibmind-mcp --help
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/fibmind
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

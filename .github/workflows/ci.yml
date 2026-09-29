@@ -27,6 +27,19 @@ jobs:
       # below evals/floor.json.
       - run: uv run python -m evals.gate
 
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv build
+      # Install the wheel outside the checkout so a missing module or entry
+      # point fails here rather than on the first user's machine.
+      - run: |
+          uv venv --python 3.11 /tmp/smoke
+          uv pip install --python /tmp/smoke/bin/python dist/*.whl
+          cd /tmp && /tmp/smoke/bin/python -c "import fibmind" && /tmp/smoke/bin/fibmind-mcp --help
+
   dsh-plugin:
     runs-on: ubuntu-latest
     defaults:
