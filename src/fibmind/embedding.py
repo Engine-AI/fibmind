@@ -50,8 +50,9 @@ def content_hash(text: str) -> str:
 def cosine(a: Sequence[float], b: Sequence[float]) -> float:
     if not a or not b or len(a) != len(b):
         return 0.0
-    dot = math.sumprod(a, b)
-    norm = math.sqrt(math.sumprod(a, a)) * math.sqrt(math.sumprod(b, b))
+    # math.sumprod would be faster but needs Python 3.12; we support 3.11.
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
+    norm = math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))
     return dot / norm if norm else 0.0
 
 
