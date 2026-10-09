@@ -819,6 +819,40 @@ def build_server(
         )
 
     @tool()
+    def fibbrain_verify(
+        command: str,
+        node_id: str | None = None,
+        goal: str | None = None,
+        source: str | None = None,
+        owner: str | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Execute a verification command and automatically reflect its outcome.
+
+        Runs the command in the workspace (e.g. 'pytest -q', 'cargo check', 'npm test').
+        If the command exits with 0, automatically records verdict='confirmed'.
+        If the command exits non-zero, automatically records verdict='refuted'.
+        Pass node_id or goal to select the target memory.
+        """
+        from fibmind.verify import run_command_and_reflect
+
+        return run_command_and_reflect(
+            command,
+            node_id=node_id,
+            goal=goal,
+            source=source,
+            store_path=service._store.path,
+            owner=owner,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            session_id=session_id,
+            task_id=task_id,
+        )
+
+    @tool()
     def fibbrain_plan(
         objective: str | None = None,
         goal_id: str | None = None,
@@ -895,7 +929,71 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--workspace-id", help="Default workspace_id (FIBMIND_WORKSPACE_ID)")
     parser.add_argument("--project-id", help="Default project_id (FIBMIND_PROJECT_ID)")
     parser.add_argument("--task-id", help="Default task_id (FIBMIND_TASK_ID)")
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "sse", "streamable-http"],
+        default=os.environ.get("FIBMIND_TRANSPORT") or "stdio",
+        help="Transport protocol: 'stdio' (default), 'sse', or 'streamable-http' (env FIBMIND_TRANSPORT)",
+    )
+    parser.add_argument(
+        "--host",
+        default=os.environ.get("FIBMIND_HOST") or "127.0.0.1",
+        help="Host address to bind HTTP/SSE server (env FIBMIND_HOST, default: 127.0.0.1)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("FIBMIND_PORT") or "8765"),
+        help="Port to bind HTTP/SSE server (env FIBMIND_PORT, default: 8765)",
+    )
     return parser.parse_args(argv)
+
+
+def run_server(
+    server: MCPServer,
+    transport: str = "stdio",
+    host: str = "127.0.0.1",
+    port: int = 8765,
+) -> None:
+    """Run the MCP server over stdio or as a daemon over SSE / streamable-http."""
+    if transport == "stdio":
+        server.run(transport="stdio")
+    elif transport == "sse":
+        import anyio
+        import uvicorn
+        from starlette.responses import JSONResponse
+        from starlette.routing import Route
+
+        app = server.sse_app(host=host)
+
+        async def health_endpoint(request: Any) -> JSONResponse:
+            return JSONResponse({"status": "ok", "service": "fibmind", "transport": "sse"})
+
+        app.routes.append(Route("/health", health_endpoint))
+        app.routes.append(Route("/", health_endpoint))
+
+        config = uvicorn.Config(app, host=host, port=port, log_level="info")
+        uvicorn_server = uvicorn.Server(config)
+        anyio.run(uvicorn_server.serve)
+    elif transport == "streamable-http":
+        import anyio
+        import uvicorn
+        from starlette.responses import JSONResponse
+        from starlette.routing import Route
+
+        app = server.streamable_http_app(host=host)
+
+        async def health_endpoint(request: Any) -> JSONResponse:
+            return JSONResponse({"status": "ok", "service": "fibmind", "transport": "streamable-http"})
+
+        app.routes.append(Route("/health", health_endpoint))
+        app.routes.append(Route("/", health_endpoint))
+
+        config = uvicorn.Config(app, host=host, port=port, log_level="info")
+        uvicorn_server = uvicorn.Server(config)
+        anyio.run(uvicorn_server.serve)
+    else:
+        raise ValueError(f"Unknown transport: {transport}. Choose 'stdio', 'sse', or 'streamable-http'")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -912,14 +1010,23 @@ def main(argv: list[str] | None = None) -> None:
     # (each host launching from a different cwd) visible at a glance.
     print(
         f"fibmind: store={store} owner={defaults.owner or '-'} "
-        f"workspace={defaults.workspace_id or '-'} project={defaults.project_id or '-'}",
+        f"workspace={defaults.workspace_id or '-'} project={defaults.project_id or '-'} "
+        f"transport={args.transport}",
         file=sys.stderr,
     )
     # Semantic recall is opt-in through FIBMIND_EMBEDDING=hashing|openai (plus
     # FIBMIND_EMBEDDING_URL / _MODEL / _API_KEY for openai). Unset = lexical.
     service = MemoryService(store, embedding_provider=provider_from_env())
     server = build_server(service, defaults=defaults)
-    server.run(transport="stdio")
+    run_server(server, transport=args.transport, host=args.host, port=args.port)
+
+
+def daemon_main(argv: list[str] | None = None) -> None:
+    """Entry point for running FibMind as a shared background daemon over SSE."""
+    args = sys.argv[1:] if argv is None else list(argv)
+    if "--transport" not in args:
+        args = ["--transport", "sse"] + args
+    main(args)
 
 
 if __name__ == "__main__":

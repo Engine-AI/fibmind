@@ -252,6 +252,17 @@ class MemoryService:
         with self._lock, self._transaction() as memory:
             return fn(memory)
 
+    def search_fts(self, query: str, limit: int = 50) -> list[str]:
+        """Fast full-text candidate lookup using persistent SQLite FTS5.
+
+        Returns matching node IDs ordered by relevance without full graph deserialization.
+        """
+        if hasattr(self._store, "search_fts"):
+            return self._store.search_fts(query, limit=limit)
+        with self._lock:
+            forest = self._load()
+            return [hit["node_id"] for hit in forest.search(query, top_k=limit).get("results", [])]
+
     def status(self) -> dict[str, Any]:
         """Store size, index state, pending reviews, and embedding health."""
         with self._lock:

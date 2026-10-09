@@ -36,3 +36,12 @@ Upkeep:
 - `fibmind_promote_knowledge` once the same pattern has appeared in three or more
   memories and the general form is worth reusing. Keep it concrete enough to
   change what you would do next.
+
+Shared Daemon Mode:
+
+- Run `fibmind-daemon` (or `python -m fibmind.mcp_server --transport sse --port 8765`)
+  to start the shared memory daemon.
+- When running as a daemon, Codex, AGY, and Claude Code connect to
+  `http://127.0.0.1:8765/sse` (type: `sse`). All AI tools share a single in-memory
+  cache and process, completely eliminating SQLite WAL file lock contention.
+

@@ -30,6 +30,7 @@ EXPECTED_TOOLS = {
     "fibbrain_observe",
     "fibbrain_advise",
     "fibbrain_reflect",
+    "fibbrain_verify",
     "fibbrain_plan",
     "fibbrain_coordinate",
     "fibbrain_complete_goal",

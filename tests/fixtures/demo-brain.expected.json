@@ -72,6 +72,7 @@
     "fibbrain_revalidation_candidates",
     "fibbrain_review_session",
     "fibbrain_tune",
+    "fibbrain_verify",
     "fibmind_append",
     "fibmind_context",
     "fibmind_explain_recall",

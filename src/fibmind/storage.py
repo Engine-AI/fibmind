@@ -15,6 +15,7 @@ from typing import Any, Protocol
 
 from fibmind.graph import FibMind
 from fibmind.models import LOG_VERSION, Edge, EventOp, MemoryEvent, MemoryNode, MemoryTree
+from fibmind.ranking import tokenize
 
 
 class MemoryStore(Protocol):
@@ -149,7 +150,7 @@ class JsonStore:
 class SqliteStore:
     """Transactional SQLite persistence for the complete memory graph."""
 
-    SCHEMA_VERSION = 5
+    SCHEMA_VERSION = 6
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
@@ -197,6 +198,13 @@ class SqliteStore:
                     confidence_source TEXT,
                     folded_into TEXT,
                     memory_weight INTEGER NOT NULL
+                );
+                CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
+                    id UNINDEXED,
+                    title,
+                    content,
+                    tags,
+                    category
                 );
                 CREATE TABLE IF NOT EXISTS trees (
                     id TEXT PRIMARY KEY,
@@ -331,6 +339,41 @@ class SqliteStore:
             """
         )
         connection.execute("UPDATE nodes SET layer = REPLACE(layer, 'folded:', '') WHERE layer LIKE 'folded:%'")
+
+        # v6 adds nodes_fts FTS5 virtual table for incremental full-text search
+        if int(row["value"]) < 6:
+            connection.execute(
+                """
+                CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
+                    id UNINDEXED,
+                    title,
+                    content,
+                    tags,
+                    category
+                );
+                """
+            )
+            count = connection.execute("SELECT COUNT(*) FROM nodes_fts").fetchone()[0]
+            if count == 0:
+                tag_map: dict[str, list[str]] = {}
+                for tag_row in connection.execute("SELECT node_id, tag FROM node_tags"):
+                    tag_map.setdefault(tag_row[0], []).append(tag_row[1])
+                nodes_data = connection.execute("SELECT id, title, content, category FROM nodes").fetchall()
+                fts_rows = [
+                    (
+                        node_row[0],
+                        " ".join(tokenize(node_row[1])),
+                        " ".join(tokenize(node_row[2])),
+                        " ".join(tokenize(" ".join(sorted(tag_map.get(node_row[0], []))))),
+                        " ".join(tokenize(node_row[3])),
+                    )
+                    for node_row in nodes_data
+                ]
+                connection.executemany(
+                    "INSERT INTO nodes_fts(id, title, content, tags, category) VALUES (?, ?, ?, ?, ?)",
+                    fts_rows,
+                )
+
         connection.execute(
             "UPDATE meta SET value = ? WHERE key = 'schema_version'",
             (str(self.SCHEMA_VERSION),),
@@ -613,7 +656,28 @@ class SqliteStore:
         )
 
         self._delete_missing(connection, "trees", set(memory.trees), set(before.trees) if before else None)
-        self._delete_missing(connection, "nodes", set(memory.nodes), set(before.nodes) if before else None)
+        missing_node_ids = self._delete_missing(
+            connection, "nodes", set(memory.nodes), set(before.nodes) if before else None
+        )
+
+        # Maintain nodes_fts incrementally
+        all_affected = {node.id for node in changed_nodes} | deleted_nodes | missing_node_ids
+        if all_affected:
+            connection.executemany("DELETE FROM nodes_fts WHERE id = ?", [(nid,) for nid in all_affected])
+            if changed_nodes:
+                connection.executemany(
+                    "INSERT INTO nodes_fts(id, title, content, tags, category) VALUES (?, ?, ?, ?, ?)",
+                    [
+                        (
+                            node.id,
+                            " ".join(tokenize(node.title)),
+                            " ".join(tokenize(node.content)),
+                            " ".join(tokenize(" ".join(sorted(node.tags)))),
+                            " ".join(tokenize(node.category)),
+                        )
+                        for node in changed_nodes
+                    ],
+                )
 
         # Append-only in normal operation. The upsert exists for one case:
         # ``forget`` redacts content out of earlier entries, and that redaction
@@ -637,16 +701,38 @@ class SqliteStore:
         )
         connection.execute("UPDATE meta SET value = CAST(value AS INTEGER) + 1 WHERE key = 'revision'")
 
+    def search_fts(self, query: str, limit: int = 50) -> list[str]:
+        """Perform fast full-text search directly via SQLite FTS5 BM25 ranking.
+
+        Returns matching node IDs ordered by relevance without full graph deserialization.
+        """
+        terms = tokenize(query)
+        if not terms:
+            return []
+        escaped_terms = [t.replace('"', '""') for t in terms]
+        match_expr = " OR ".join(f'"{t}"' for t in escaped_terms)
+        with self._connect() as connection:
+            try:
+                rows = connection.execute(
+                    "SELECT id, rank FROM nodes_fts WHERE nodes_fts MATCH ? ORDER BY rank LIMIT ?",
+                    (match_expr, limit),
+                ).fetchall()
+                return [row[0] for row in rows]
+            except sqlite3.OperationalError:
+                return []
+
     @staticmethod
     def _delete_missing(
         connection: sqlite3.Connection, table: str, current_ids: set[str], existing_ids: set[str] | None = None
-    ) -> None:
+    ) -> set[str]:
         if existing_ids is None:
             existing_ids = {row["id"] for row in connection.execute(f"SELECT id FROM {table}")}
+        missing = existing_ids - current_ids
         connection.executemany(
             f"DELETE FROM {table} WHERE id = ?",
-            [(item_id,) for item_id in sorted(existing_ids - current_ids)],
+            [(item_id,) for item_id in sorted(missing)],
         )
+        return missing
 
 
 def _check_log_version(found: int | str | None) -> None:

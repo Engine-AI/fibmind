@@ -87,3 +87,10 @@ command that anyone can rerun over a summary of your own judgement.
 `fibbrain_recall` is the default. `fibmind_search` / `fibmind_search_from` remain
 available for raw store inspection. `fibbrain_observe` notes an episode event
 that is not yet long-term memory; `fibbrain_review_session` decides what is.
+
+## Shared Daemon Mode
+
+To share a single in-memory cache and avoid SQLite file locks across Codex, AGY, and Claude Code:
+- Start the daemon: `fibmind-daemon` (or `python -m fibmind.mcp_server --transport sse --port 8765`)
+- Configure MCP client with SSE transport: `http://127.0.0.1:8765/sse`
+

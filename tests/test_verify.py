@@ -1,0 +1,201 @@
+"""Unit tests for fibmind.verify automated verification loop."""
+
+import asyncio
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+import pytest
+
+from fibmind import FibMind, MemoryNode, NodeType
+from fibmind.mcp_server import build_server
+from fibmind.service import MemoryService
+from fibmind.verify import main, run_command_and_reflect
+
+
+def _result_json(result: object) -> dict:
+    structured = getattr(result, "structured_content", None)
+    if not isinstance(structured, dict):
+        raise AssertionError("tool call did not return structured content")
+    return structured
+
+
+class VerifyLoopTests(unittest.TestCase):
+    def test_verify_command_success_confirms_memory(self) -> None:
+        with tempfile.NamedTemporaryFile(suffix=".db") as f:
+            store_path = Path(f.name)
+            service = MemoryService(store_path)
+            node = MemoryNode(
+                id="mem_fix_1",
+                title="Fix Concurrency Deadlock",
+                content="Applied WAL mode and 5s timeout to resolve contention",
+                category="decision",
+                node_type=NodeType.CONCEPT,
+            )
+
+            def _init(m: FibMind) -> None:
+                m.nodes[node.id] = node
+
+            service.run(_init)
+
+            # Run a successful python command
+            res = run_command_and_reflect(
+                [sys.executable, "-c", "import sys; print('All tests passed'); sys.exit(0)"],
+                node_id="mem_fix_1",
+                source="pytest",
+                store_path=store_path,
+            )
+
+            self.assertEqual(res["exit_code"], 0)
+            self.assertEqual(res["verdict"], "confirmed")
+            self.assertEqual(res["source"], "pytest")
+            self.assertIn("All tests passed", res["stdout"])
+            self.assertGreater(res["reflection"]["confidence"], 0.0)
+
+    def test_verify_command_failure_refutes_memory(self) -> None:
+        with tempfile.NamedTemporaryFile(suffix=".db") as f:
+            store_path = Path(f.name)
+            service = MemoryService(store_path)
+            node = MemoryNode(
+                id="mem_fix_2",
+                title="Cache Invalidation Strategy",
+                content="Invalidate on every read",
+                category="decision",
+                node_type=NodeType.CONCEPT,
+            )
+
+            def _init(m: FibMind) -> None:
+                m.nodes[node.id] = node
+
+            service.run(_init)
+
+            # Run a failing command with stderr
+            res = run_command_and_reflect(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; sys.stderr.write('AssertionError: benchmark failed\\n'); sys.exit(1)",
+                ],
+                node_id="mem_fix_2",
+                store_path=store_path,
+            )
+
+            self.assertEqual(res["exit_code"], 1)
+            self.assertEqual(res["verdict"], "refuted")
+            self.assertIn("python", res["source"].lower())
+            self.assertIn("AssertionError: benchmark failed", res["stderr"])
+            self.assertIn("AssertionError: benchmark failed", res["note"])
+
+    def test_verify_command_resolves_goal(self) -> None:
+        with tempfile.NamedTemporaryFile(suffix=".db") as f:
+            store_path = Path(f.name)
+            service = MemoryService(store_path)
+            node = MemoryNode(
+                id="mem_search_target",
+                title="Token Expiration Handling",
+                content="Refresh expired auth tokens automatically",
+                category="solution",
+                node_type=NodeType.CONCEPT,
+            )
+
+            def _init(m: FibMind) -> None:
+                m.nodes[node.id] = node
+
+            service.run(_init)
+
+            res = run_command_and_reflect(
+                [sys.executable, "-c", "import sys; sys.exit(0)"],
+                goal="Token Expiration Handling",
+                store_path=store_path,
+            )
+
+            self.assertEqual(res["exit_code"], 0)
+            self.assertEqual(res["reflection"]["node_id"], "mem_search_target")
+
+    def test_verify_cli_main(self) -> None:
+        with tempfile.NamedTemporaryFile(suffix=".db") as f:
+            store_path = Path(f.name)
+            service = MemoryService(store_path)
+            node = MemoryNode(
+                id="mem_cli_test",
+                title="CLI Test Execution",
+                content="Verify CLI wrapper propagates exit code and records outcome",
+                category="test",
+                node_type=NodeType.CONCEPT,
+            )
+
+            def _init(m: FibMind) -> None:
+                m.nodes[node.id] = node
+
+            service.run(_init)
+
+            # Test exit code 0
+            rc = main(
+                [
+                    "--node-id",
+                    "mem_cli_test",
+                    "--store",
+                    str(store_path),
+                    "--",
+                    sys.executable,
+                    "-c",
+                    "import sys; sys.exit(0)",
+                ]
+            )
+            self.assertEqual(rc, 0)
+
+            # Test exit code 2
+            rc_err = main(
+                [
+                    "--node-id",
+                    "mem_cli_test",
+                    "--store",
+                    str(store_path),
+                    "--",
+                    sys.executable,
+                    "-c",
+                    "import sys; sys.exit(2)",
+                ]
+            )
+            self.assertEqual(rc_err, 2)
+
+    def test_mcp_fibbrain_verify_tool(self) -> None:
+        pytest.importorskip("mcp")
+
+        with tempfile.NamedTemporaryFile(suffix=".db") as f:
+            store_path = Path(f.name)
+            service = MemoryService(store_path)
+            node = MemoryNode(
+                id="mem_mcp_test",
+                title="MCP Verification Integration",
+                content="MCP tool fibbrain_verify executes command and updates confidence",
+                category="decision",
+                node_type=NodeType.CONCEPT,
+            )
+
+            def _init(m: FibMind) -> None:
+                m.nodes[node.id] = node
+
+            service.run(_init)
+            server = build_server(service)
+
+            async def scenario():
+                tool_res = await server.call_tool(
+                    "fibbrain_verify",
+                    {
+                        "command": f'{sys.executable} -c "import sys; sys.exit(0)"',
+                        "node_id": "mem_mcp_test",
+                        "source": "ci_check",
+                    },
+                )
+                payload = _result_json(tool_res)
+                self.assertEqual(payload["exit_code"], 0)
+                self.assertEqual(payload["verdict"], "confirmed")
+                self.assertEqual(payload["source"], "ci_check")
+
+            asyncio.run(scenario())
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -38,7 +38,9 @@ dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.6"]
 [project.scripts]
 fibmind-mcp = "fibmind.mcp_server:main"
 fibbrain-mcp = "fibmind.mcp_server:main"
+fibmind-daemon = "fibmind.mcp_server:daemon_main"
 fibmind-migrate = "fibmind.migrate:main"
+fibmind-verify = "fibmind.verify:main"
 
 [build-system]
 requires = ["setuptools>=68"]
