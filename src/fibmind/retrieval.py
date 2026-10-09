@@ -21,6 +21,7 @@ from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from fibmind.models import MemoryNode, MemoryScope, MemoryStatus, NodeType, utc_now
@@ -216,6 +217,7 @@ class Candidate:
     vector_rank: int | None = None
     rrf: float = 0.0
     relevance: float = 0.0  # fused relevance in [0, 1]
+    symbol_boost: float = 0.0
     confidence: float = 0.0
     recency: float = 0.0
     score: float = 0.0
@@ -238,6 +240,7 @@ class Candidate:
             "vector_rank": self.vector_rank,
             "rrf": round(self.rrf, 6),
             "relevance": round(self.relevance, 4),
+            "symbol_boost": round(self.symbol_boost, 4),
             "confidence": round(self.confidence, 4),
             "confidence_source": self.node.confidence_source,
             "recency": round(self.recency, 4),
@@ -252,6 +255,51 @@ def _recency_factor(node: MemoryNode) -> float:
     if age >= RECENCY_HORIZON:
         return 0.0
     return 1.0 - (age / RECENCY_HORIZON)
+
+
+def extract_node_anchors(node: MemoryNode) -> set[str]:
+    """Extract code anchors (filenames, paths, symbols) from node metadata."""
+    anchors: set[str] = set()
+    if not node.metadata:
+        return anchors
+    for key in ("files", "changed_files", "paths", "path", "file", "target_files"):
+        val = node.metadata.get(key)
+        if isinstance(val, (list, tuple, set)):
+            for item in val:
+                s = str(item).strip()
+                if s:
+                    anchors.add(s.lower())
+                    anchors.add(Path(s).name.lower())
+        elif isinstance(val, str) and val.strip():
+            s = val.strip()
+            anchors.add(s.lower())
+            anchors.add(Path(s).name.lower())
+    for key in ("symbols", "symbol", "functions", "classes"):
+        val = node.metadata.get(key)
+        if isinstance(val, (list, tuple, set)):
+            for item in val:
+                s = str(item).strip()
+                if s:
+                    anchors.add(s.lower())
+        elif isinstance(val, str) and val.strip():
+            anchors.add(val.strip().lower())
+    return anchors
+
+
+def symbol_match_boost(query: str, node: MemoryNode) -> float:
+    """Compute ranking bonus when query explicitly references code symbols or paths in node metadata."""
+    anchors = extract_node_anchors(node)
+    if not anchors:
+        return 0.0
+    query_lower = query.lower()
+    query_tokens = set(tokenize(query_lower))
+    matched = 0
+    for anchor in anchors:
+        if anchor in query_lower or anchor in query_tokens:
+            matched += 1
+    if matched > 0:
+        return min(0.15, 0.05 * matched)
+    return 0.0
 
 
 def is_lexical_shortcut_query(query: str) -> bool:
@@ -449,11 +497,15 @@ def retrieve(
             continue
         candidate.confidence = max(0.0, min(1.0, candidate.node.confidence))
         candidate.recency = _recency_factor(candidate.node)
+        candidate.symbol_boost = symbol_match_boost(query, candidate.node)
+        if candidate.symbol_boost > 0 and "symbol" not in candidate.sources:
+            candidate.sources.append("symbol")
         candidate.score = (
             candidate.relevance
             + candidate.title_coverage * weights.title
             + candidate.confidence * weights.confidence
             + candidate.recency * weights.recency
+            + candidate.symbol_boost
         )
         if candidate.score <= min_score:
             continue

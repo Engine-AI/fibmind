@@ -12,10 +12,10 @@ class Fts5StorageTests(unittest.TestCase):
     def test_schema_version_is_six(self) -> None:
         with tempfile.NamedTemporaryFile(suffix=".db") as f:
             store = SqliteStore(f.name)
-            self.assertEqual(store.SCHEMA_VERSION, 6)
+            self.assertGreaterEqual(store.SCHEMA_VERSION, 6)
             with store._connect() as conn:
                 version = conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
-                self.assertEqual(version[0], "6")
+                self.assertEqual(version[0], str(store.SCHEMA_VERSION))
                 tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
                 self.assertIn("nodes_fts", tables)
 
@@ -134,7 +134,7 @@ class Fts5StorageTests(unittest.TestCase):
 
             # Now open with SqliteStore - triggers _upgrade
             store = SqliteStore(f.name)
-            self.assertEqual(store.SCHEMA_VERSION, 6)
+            self.assertGreaterEqual(store.SCHEMA_VERSION, 6)
 
             # nodes_fts must be populated with legacy_1
             hits = store.search_fts("microservices")

@@ -228,6 +228,7 @@ def build_server(
         title: str | None = None,
         content: str | None = None,
         tags: list[str] | None = None,
+        expected_version: int | None = None,
         owner: str | None = None,
         workspace_id: str | None = None,
         project_id: str | None = None,
@@ -238,12 +239,36 @@ def build_server(
 
         Prefer this over appending a contradicting memory. Confidence resets to
         zero, since evidence backing the old text says nothing about the new.
+        Pass ``expected_version`` for optimistic concurrency control (OCC).
         """
         return service.revise(
             node_id,
             title=title,
             content=content,
             tags=tags,
+            expected_version=expected_version,
+            identity=_state(owner, workspace_id, project_id, session_id, task_id).identity(),
+        )
+
+    @tool()
+    def fibmind_mark_conflict(
+        node_id_a: str,
+        node_id_b: str,
+        reason: str | None = None,
+        owner: str | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Mark two memories as in dialectical contradiction with bidirectional CONTRADICTS edges.
+
+        Use when two agents or observations assert conflicting claims about the codebase or behavior.
+        """
+        return service.mark_conflict(
+            node_id_a,
+            node_id_b,
+            reason=reason,
             identity=_state(owner, workspace_id, project_id, session_id, task_id).identity(),
         )
 
@@ -298,6 +323,7 @@ def build_server(
         session_id: str | None = None,
         task_id: str | None = None,
         owner: str | None = None,
+        require_cross_provenance: bool = False,
     ) -> dict[str, Any]:
         """Turn several observations into one shared, reusable claim.
 
@@ -321,6 +347,7 @@ def build_server(
             project_id=project_id,
             session_id=session_id,
             task_id=task_id,
+            require_cross_provenance=require_cross_provenance,
             identity=_state(owner, workspace_id, project_id, session_id, task_id).identity(),
         )
 
@@ -850,6 +877,31 @@ def build_server(
             project_id=project_id,
             session_id=session_id,
             task_id=task_id,
+        )
+
+    @tool()
+    def fibbrain_resolve_conflict(
+        winning_node_id: str,
+        losing_node_id: str,
+        reason: str,
+        source: str,
+        owner: str | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Arbitrate a conflict: refute losing node with evidence and clear conflict on winner.
+
+        Requires an objective evidence source (e.g. 'pytest', 'compiler', 'user_feedback')
+        to refute the losing memory.
+        """
+        return brain.resolve_conflict(
+            winning_node_id,
+            losing_node_id,
+            reason=reason,
+            source=source,
+            state=_state(owner, workspace_id, project_id, session_id, task_id),
         )
 
     @tool()

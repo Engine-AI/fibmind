@@ -150,7 +150,7 @@ class JsonStore:
 class SqliteStore:
     """Transactional SQLite persistence for the complete memory graph."""
 
-    SCHEMA_VERSION = 6
+    SCHEMA_VERSION = 7
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
@@ -192,6 +192,7 @@ class SqliteStore:
                     status TEXT NOT NULL DEFAULT 'active',
                     status_reason TEXT,
                     memory_kind TEXT,
+                    revision INTEGER NOT NULL DEFAULT 1,
                     familiarity REAL NOT NULL DEFAULT 0.0,
                     access_count INTEGER NOT NULL,
                     confidence REAL NOT NULL DEFAULT 0.0,
@@ -316,6 +317,7 @@ class SqliteStore:
             "session_id": "TEXT",
             "task_id": "TEXT",
             "memory_kind": "TEXT",
+            "revision": "INTEGER NOT NULL DEFAULT 1",
         }
         for name, definition in additions.items():
             if name not in columns:
@@ -520,9 +522,9 @@ class SqliteStore:
             INSERT INTO nodes(
                 id, title, content, category, node_type, layer, created_at, updated_at,
                 metadata_json, scope, owner, workspace_id, project_id, session_id,
-                task_id, status, status_reason, memory_kind, familiarity,
+                task_id, status, status_reason, memory_kind, revision, familiarity,
                 access_count, confidence, confidence_source, folded_into, memory_weight
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 title=excluded.title,
                 content=excluded.content,
@@ -541,6 +543,7 @@ class SqliteStore:
                 status=excluded.status,
                 status_reason=excluded.status_reason,
                 memory_kind=excluded.memory_kind,
+                revision=excluded.revision,
                 familiarity=excluded.familiarity,
                 access_count=excluded.access_count,
                 confidence=excluded.confidence,
@@ -568,6 +571,7 @@ class SqliteStore:
                     node.status.value,
                     node.status_reason,
                     node.memory_kind.value if node.memory_kind else None,
+                    node.revision,
                     node.familiarity,
                     node.access_count,
                     node.confidence,

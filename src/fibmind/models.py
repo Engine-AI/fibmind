@@ -52,6 +52,7 @@ class RelationType(StrEnum):
     DERIVED_FROM = "derived_from"
     ANSWER_TO = "answer_to"
     DEPENDS_ON = "depends_on"
+    CONTRADICTS = "contradicts"
 
 
 class EdgeDirection(StrEnum):
@@ -184,6 +185,10 @@ class MemoryEvent:
         )
 
 
+class ConflictError(ValueError):
+    """Raised when an operation encounters an optimistic concurrency or factual conflict."""
+
+
 @dataclass(slots=True)
 class MemoryNode:
     title: str
@@ -206,6 +211,8 @@ class MemoryNode:
     status: MemoryStatus = MemoryStatus.ACTIVE
     status_reason: str | None = None
     memory_kind: MemoryKind | None = None
+    # Optimistic concurrency control revision counter. Increments on revise.
+    revision: int = 1
     # How often this node has been recalled. A cache derived from access
     # patterns, deliberately kept OUT of relevance scoring: rewarding recall
     # frequency creates a recalled -> ranked-higher -> recalled-more loop that
@@ -249,6 +256,7 @@ class MemoryNode:
             "status": self.status.value,
             "status_reason": self.status_reason,
             "memory_kind": self.memory_kind.value if self.memory_kind else None,
+            "revision": self.revision,
             "familiarity": self.familiarity,
             "access_count": self.access_count,
             "confidence": self.confidence,
@@ -285,6 +293,7 @@ class MemoryNode:
             status=MemoryStatus(data.get("status", MemoryStatus.ACTIVE.value)),
             status_reason=data.get("status_reason"),
             memory_kind=_parse_kind(data.get("memory_kind")),
+            revision=int(data.get("revision", 1)),
             familiarity=float(familiarity),
             access_count=int(data.get("access_count", 0)),
             confidence=float(data.get("confidence", 0.0)),

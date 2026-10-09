@@ -11,6 +11,7 @@ from typing import Any
 from fibmind.distill import DEFAULT_SUMMARIZER, Summarizer
 from fibmind.fibonacci import DEFAULT_LAYER_POLICY, FibonacciLayerPolicy
 from fibmind.models import (
+    ConflictError,
     Edge,
     EdgeDirection,
     EventOp,
@@ -504,14 +505,25 @@ class FibMind:
         title: str | None = None,
         content: str | None = None,
         tags: Iterable[str] | None = None,
+        expected_version: int | None = None,
     ) -> MemoryNode:
         """Correct a memory in place, resetting the evidence that backed it.
 
         Confidence is earned by the old content, so it does not transfer: a
-        revised claim starts unproven again.
+        revised claim starts unproven again. If ``expected_version`` is specified
+        and does not match the node's current revision, raises ``ConflictError``.
         """
         node = self._require_node(node_id)
-        before = {"title": node.title, "content": node.content, "tags": sorted(node.tags)}
+        if expected_version is not None and node.revision != expected_version:
+            raise ConflictError(
+                f"Conflict: memory node '{node_id}' is at revision {node.revision}, expected {expected_version}"
+            )
+        before = {
+            "title": node.title,
+            "content": node.content,
+            "tags": sorted(node.tags),
+            "revision": node.revision,
+        }
         if title is not None:
             node.title = title
         if content is not None:
@@ -519,6 +531,7 @@ class FibMind:
         if tags is not None:
             node.tags = set(tags)
         self.lexical.add(node)
+        node.revision += 1
         node.confidence = 0.0
         node.confidence_source = None
         node.status = MemoryStatus.ACTIVE
@@ -534,11 +547,58 @@ class FibMind:
                     "content": node.content,
                     "tags": sorted(node.tags),
                     "status": node.status.value,
+                    "revision": node.revision,
                 },
                 "updated_at": node.updated_at.isoformat(),
             },
         )
         return node
+
+    def mark_conflict(
+        self,
+        node_id_a: str,
+        node_id_b: str,
+        reason: str | None = None,
+    ) -> tuple[MemoryNode, MemoryNode]:
+        """Mark two memories as in dialectical contradiction with CONTRADICTS edges."""
+        node_a = self._require_node(node_id_a)
+        node_b = self._require_node(node_id_b)
+        self.link_nodes(node_id_a, node_id_b, RelationType.CONTRADICTS, weight=1.0)
+        self.link_nodes(node_id_b, node_id_a, RelationType.CONTRADICTS, weight=1.0)
+        node_a.metadata["conflicted"] = True
+        node_b.metadata["conflicted"] = True
+        if reason:
+            node_a.metadata["conflict_reason"] = reason
+            node_b.metadata["conflict_reason"] = reason
+        node_a.updated_at = utc_now()
+        node_b.updated_at = utc_now()
+        return node_a, node_b
+
+    def resolve_conflict(
+        self,
+        winning_node_id: str,
+        losing_node_id: str,
+        reason: str,
+        source: str,
+    ) -> dict[str, Any]:
+        """Arbitrate a conflict: refute losing node with evidence and clear conflict on winner."""
+        winner = self._require_node(winning_node_id)
+        self._require_node(losing_node_id)
+        self.record_outcome(
+            losing_node_id,
+            Verdict.REFUTED,
+            source=source,
+            note=f"Refuted in favor of {winning_node_id}: {reason}",
+        )
+        winner.metadata.pop("conflicted", None)
+        winner.metadata.pop("conflict_reason", None)
+        winner.updated_at = utc_now()
+        return {
+            "winner_id": winning_node_id,
+            "loser_id": losing_node_id,
+            "reason": reason,
+            "source": source,
+        }
 
     def forget(self, node_id: str, reason: str) -> dict:
         """Delete a memory and redact it from the log.
@@ -711,6 +771,7 @@ class FibMind:
         project_id: str | None = None,
         session_id: str | None = None,
         task_id: str | None = None,
+        require_cross_provenance: bool = False,
     ) -> str:
         """Distil several personal observations into one shareable claim.
 
@@ -732,6 +793,16 @@ class FibMind:
         inactive = [supporter.id for supporter in supporters if supporter.status != MemoryStatus.ACTIVE]
         if inactive:
             raise ValueError(f"promotion supporters must be active memories: {inactive}")
+
+        if require_cross_provenance:
+            distinct_sessions = {s.session_id for s in supporters if s.session_id}
+            distinct_hosts = {s.metadata.get("host") for s in supporters if s.metadata.get("host")}
+            has_verified = any(s.confidence > 0.0 or s.confidence_source for s in supporters)
+            if len(distinct_sessions) < 2 and len(distinct_hosts) < 2 and not has_verified:
+                raise ConflictError(
+                    f"promotion requires independent provenance from at least 2 distinct sessions/hosts or physical verification evidence, got sessions={distinct_sessions}, hosts={distinct_hosts}"
+                )
+
         workspace_id, project_id = promotion_identity(supporters, workspace_id=workspace_id, project_id=project_id)
 
         node_id = self.append(

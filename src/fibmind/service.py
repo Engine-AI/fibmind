@@ -51,6 +51,7 @@ def _node_summary(node: MemoryNode) -> dict[str, Any]:
         "status": node.status.value,
         "status_reason": node.status_reason,
         "memory_kind": node.memory_kind.value if node.memory_kind else None,
+        "revision": node.revision,
         "confidence": round(node.confidence, 4),
         "confidence_source": node.confidence_source,
         "familiarity": round(node.familiarity, 4),
@@ -464,6 +465,7 @@ class MemoryService:
         title: str | None = None,
         content: str | None = None,
         tags: list[str] | None = None,
+        expected_version: int | None = None,
         *,
         identity: dict[str, str | None] | None = None,
     ) -> dict[str, Any]:
@@ -473,10 +475,58 @@ class MemoryService:
         with self._lock, self._transaction() as memory:
             _require_visible(memory, node_id, identity)
             try:
-                node = memory.revise(node_id, title=title, content=content, tags=tags)
+                node = memory.revise(
+                    node_id,
+                    title=title,
+                    content=content,
+                    tags=tags,
+                    expected_version=expected_version,
+                )
             except KeyError as exc:
                 raise ValueError(str(exc)) from exc
             return _node_summary(node)
+
+    def mark_conflict(
+        self,
+        node_id_a: str,
+        node_id_b: str,
+        reason: str | None = None,
+        *,
+        identity: dict[str, str | None] | None = None,
+    ) -> dict[str, Any]:
+        """Mark two memories as in dialectical contradiction with CONTRADICTS edges."""
+        with self._lock, self._transaction() as memory:
+            _require_visible(memory, node_id_a, identity)
+            _require_visible(memory, node_id_b, identity)
+            try:
+                node_a, node_b = memory.mark_conflict(node_id_a, node_id_b, reason=reason)
+            except KeyError as exc:
+                raise ValueError(str(exc)) from exc
+            return {
+                "node_a": _node_summary(node_a),
+                "node_b": _node_summary(node_b),
+                "reason": reason,
+            }
+
+    def resolve_conflict(
+        self,
+        winning_node_id: str,
+        losing_node_id: str,
+        reason: str,
+        source: str,
+        *,
+        identity: dict[str, str | None] | None = None,
+    ) -> dict[str, Any]:
+        """Arbitrate a conflict: refute losing node with evidence and clear conflict on winner."""
+        _require_text(reason, "reason")
+        _require_text(source, "source")
+        with self._lock, self._transaction() as memory:
+            _require_visible(memory, winning_node_id, identity)
+            _require_visible(memory, losing_node_id, identity)
+            try:
+                return memory.resolve_conflict(winning_node_id, losing_node_id, reason=reason, source=source)
+            except KeyError as exc:
+                raise ValueError(str(exc)) from exc
 
     def set_status(
         self, node_id: str, status: str, reason: str, *, identity: dict[str, str | None] | None = None
@@ -522,6 +572,7 @@ class MemoryService:
         project_id: str | None = None,
         session_id: str | None = None,
         task_id: str | None = None,
+        require_cross_provenance: bool = False,
         identity: dict[str, str | None] | None = None,
     ) -> dict[str, Any]:
         """Distil several observations into one shareable claim."""
@@ -543,6 +594,7 @@ class MemoryService:
                     project_id=project_id,
                     session_id=session_id,
                     task_id=task_id,
+                    require_cross_provenance=require_cross_provenance,
                 )
             except KeyError as exc:
                 raise ValueError(str(exc)) from exc

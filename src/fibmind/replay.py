@@ -90,6 +90,10 @@ def _apply_revise(memory: FibMind, event: MemoryEvent, payload: dict[str, Any]) 
     node.confidence_source = None
     node.status = MemoryStatus(after.get("status", MemoryStatus.ACTIVE.value))
     node.status_reason = None
+    if "revision" in after:
+        node.revision = int(after["revision"])
+    else:
+        node.revision += 1
     if payload.get("updated_at"):
         node.updated_at = datetime.fromisoformat(payload["updated_at"])
 

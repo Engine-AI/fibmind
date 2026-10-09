@@ -15,6 +15,7 @@ from fibmind.fibonacci import DEFAULT_LAYER_POLICY, FibonacciLayerPolicy, fib_ca
 from fibmind.graph import FibMind, SearchHit
 from fibmind.models import (
     LOG_VERSION,
+    ConflictError,
     Edge,
     EdgeDirection,
     EventOp,
@@ -51,6 +52,7 @@ __all__ = [
     "BrainState",
     "BudgetReport",
     "CallableSummarizer",
+    "ConflictError",
     "DeterministicPlanner",
     "ExcerptSummarizer",
     "CallableCounter",

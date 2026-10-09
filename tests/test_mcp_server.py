@@ -15,6 +15,7 @@ from fibmind.service import MemoryService  # noqa: E402
 EXPECTED_TOOLS = {
     "fibmind_append",
     "fibmind_link",
+    "fibmind_mark_conflict",
     "fibmind_search",
     "fibmind_search_from",
     "fibmind_context",
@@ -30,6 +31,7 @@ EXPECTED_TOOLS = {
     "fibbrain_observe",
     "fibbrain_advise",
     "fibbrain_reflect",
+    "fibbrain_resolve_conflict",
     "fibbrain_verify",
     "fibbrain_plan",
     "fibbrain_coordinate",

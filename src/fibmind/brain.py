@@ -630,6 +630,31 @@ class FibBrain:
         )
         return updated
 
+    def resolve_conflict(
+        self,
+        winning_node_id: str,
+        losing_node_id: str,
+        reason: str,
+        source: str,
+        state: BrainState | None = None,
+    ) -> dict[str, Any]:
+        """Arbitrate a conflict: refute losing node with evidence and clear conflict on winner."""
+        identity = (state or BrainState()).identity()
+        result = self.memory.resolve_conflict(
+            winning_node_id,
+            losing_node_id,
+            reason=reason,
+            source=source,
+            identity=identity,
+        )
+        self.observe(
+            "resolve_conflict",
+            f"arbitrated conflict: {winning_node_id} over {losing_node_id} via {source}",
+            {"winner_id": winning_node_id, "loser_id": losing_node_id, "reason": reason, "source": source},
+            state=state,
+        )
+        return result
+
     def _evolve_procedure(self, node_id: str, identity: dict[str, str | None]) -> dict[str, Any]:
         """Apply the deterministic evolution rules to one procedure.
 
