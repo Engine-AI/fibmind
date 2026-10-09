@@ -391,11 +391,11 @@ class SqliteStore:
     def _load(self, connection: sqlite3.Connection) -> FibMind:
         tag_map: dict[str, set[str]] = {}
         for row in connection.execute("SELECT node_id, tag FROM node_tags"):
-            tag_map.setdefault(row["node_id"], set()).add(row["tag"])
+            tag_map.setdefault(row[0], set()).add(row[1])
 
         tree_map: dict[str, set[str]] = {}
         for row in connection.execute("SELECT node_id, tree_id FROM node_tree_memberships"):
-            tree_map.setdefault(row["node_id"], set()).add(row["tree_id"])
+            tree_map.setdefault(row[0], set()).add(row[1])
 
         memory = FibMind()
         memory.nodes = {}
@@ -419,18 +419,17 @@ class SqliteStore:
             memory.edges[data["id"]] = Edge.from_dict(data)
 
         memory.category_roots = {
-            row["category"]: row["tree_id"]
-            for row in connection.execute("SELECT category, tree_id FROM category_roots")
+            row[0]: row[1] for row in connection.execute("SELECT category, tree_id FROM category_roots")
         }
         memory.events = [
             MemoryEvent(
-                id=row["id"],
-                seq=row["seq"],
-                op=EventOp(row["op"]),
-                payload=json.loads(row["payload_json"]),
-                created_at=datetime.fromisoformat(row["created_at"]),
+                id=row[0],
+                seq=row[1],
+                op=EventOp(row[2]),
+                payload=json.loads(row[3]),
+                created_at=datetime.fromisoformat(row[4]),
             )
-            for row in connection.execute("SELECT * FROM event_log ORDER BY seq")
+            for row in connection.execute("SELECT id, seq, op, payload_json, created_at FROM event_log ORDER BY seq")
         ]
         memory.rebuild_indices()
         return memory

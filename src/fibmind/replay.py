@@ -150,6 +150,18 @@ def _apply_forget(memory: FibMind, event: MemoryEvent, payload: dict[str, Any]) 
             memory.category_roots.pop(tree.category, None)
 
 
+def _apply_reassign_owner(memory: FibMind, event: MemoryEvent, payload: dict[str, Any]) -> None:
+    node = memory.nodes.get(payload["node_id"])
+    if node is None:
+        return
+    node.owner = payload.get("owner")
+    host = payload.get("host")
+    if host and not node.metadata.get("host"):
+        node.metadata["host"] = host
+    if payload.get("updated_at"):
+        node.updated_at = datetime.fromisoformat(payload["updated_at"])
+
+
 _HANDLERS: dict[EventOp, Handler] = {
     EventOp.CREATE_NODE: _apply_create,
     EventOp.CREATE_TREE: _apply_create,
@@ -160,4 +172,5 @@ _HANDLERS: dict[EventOp, Handler] = {
     EventOp.SET_STATUS: _apply_set_status,
     EventOp.PROMOTE: _apply_promote,
     EventOp.FORGET: _apply_forget,
+    EventOp.REASSIGN_OWNER: _apply_reassign_owner,
 }

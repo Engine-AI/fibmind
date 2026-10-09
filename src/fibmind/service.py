@@ -74,6 +74,7 @@ def _require_visible(memory: FibMind, node_id: str, identity: dict[str, str | No
         workspace_id=identity.get("workspace_id"),
         project_id=identity.get("project_id"),
         session_id=identity.get("session_id"),
+        task_id=identity.get("task_id"),
         statuses=set(MemoryStatus),
         include_folded=True,
     ):
@@ -314,6 +315,7 @@ class MemoryService:
         workspace_id: str | None = None,
         project_id: str | None = None,
         session_id: str | None = None,
+        task_id: str | None = None,
         exclude_categories: list[str] | None = None,
     ) -> dict[str, Any]:
         """Account for a recall: every signal per result, and why others were left out."""
@@ -329,6 +331,7 @@ class MemoryService:
                 workspace_id=workspace_id,
                 project_id=project_id,
                 session_id=session_id,
+                task_id=task_id,
                 exclude_categories=set(exclude_categories) if exclude_categories else None,
             )
 
@@ -586,6 +589,7 @@ class MemoryService:
         workspace_id: str | None = None,
         project_id: str | None = None,
         session_id: str | None = None,
+        task_id: str | None = None,
     ) -> dict[str, Any]:
         """Read-only keyword search over the whole forest."""
         _require_text(query, "query")
@@ -605,6 +609,7 @@ class MemoryService:
                 workspace_id=workspace_id,
                 project_id=project_id,
                 session_id=session_id,
+                task_id=task_id,
             )
             return {"query": query, "results": [_scored_hit_dict(hit) for hit in hits]}
 
@@ -621,6 +626,7 @@ class MemoryService:
         workspace_id: str | None = None,
         project_id: str | None = None,
         session_id: str | None = None,
+        task_id: str | None = None,
     ) -> dict[str, Any]:
         """Expand the association graph rooted at ``node_id``."""
         relations = _parse_relation_types(relation_types)
@@ -642,6 +648,7 @@ class MemoryService:
                     workspace_id=workspace_id,
                     project_id=project_id,
                     session_id=session_id,
+                    task_id=task_id,
                 )
             except KeyError as exc:
                 raise ValueError(str(exc)) from exc
@@ -670,6 +677,7 @@ class MemoryService:
         workspace_id: str | None = None,
         project_id: str | None = None,
         session_id: str | None = None,
+        task_id: str | None = None,
         exclude_categories: list[str] | None = None,
         budget_tokens: int | None = None,
         hot_node_ids: list[str] | None = None,
@@ -701,6 +709,7 @@ class MemoryService:
                     workspace_id=workspace_id,
                     project_id=project_id,
                     session_id=session_id,
+                    task_id=task_id,
                 ):
                     hot_nodes.append(node)
             return build_context(
@@ -716,6 +725,7 @@ class MemoryService:
                 workspace_id=workspace_id,
                 project_id=project_id,
                 session_id=session_id,
+                task_id=task_id,
                 exclude_categories=excluded,
                 budget_tokens=budget_tokens,
                 hot=hot_nodes,

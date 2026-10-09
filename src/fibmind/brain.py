@@ -174,9 +174,10 @@ class FibBrain:
     ) -> dict[str, Any]:
         """Record an episode event.
 
-        With a ``session_id`` in ``state`` the event is written as a
-        ``scope=session`` node in the ``episode`` category, so it survives a
-        process restart and only that session can recall it. Without one it
+        With a ``session_id`` or ``task_id`` in ``state`` the event is written
+        as a ``scope=session`` node in the ``episode`` category, so it survives
+        a process restart and only that session (or another session sharing
+        the task, e.g. a different AI tool) can recall it. Without either it
         lives in the process-local buffer only. Either way it is not long-term
         memory: ``review_session`` decides what, if anything, gets promoted.
         """
@@ -185,7 +186,7 @@ class FibBrain:
         payload = dict(payload or {})
         identity = (state or BrainState()).identity()
         node_id: str | None = None
-        if identity["session_id"] is not None:
+        if identity["session_id"] is not None or identity["task_id"] is not None:
             node_id = self.memory.run(
                 lambda memory: memory.append(
                     category=EPISODE_CATEGORY,
@@ -331,9 +332,10 @@ class FibBrain:
         return self.memory.run(run)
 
     def _episode_for(self, identity: dict[str, str | None]) -> list[ObservedEvent]:
-        """The persisted episode of this session, else the in-process buffer."""
+        """The persisted episode of this session or task, else the in-process buffer."""
         session_id = identity["session_id"]
-        if session_id is None:
+        task_id = identity["task_id"]
+        if session_id is None and task_id is None:
             return list(self._episode)
         nodes = self.memory.read(lambda memory: _episode_nodes(memory, identity))
         return [ObservedEvent.from_node(node) for node in nodes][-EPISODE_LIMIT:]
@@ -1070,6 +1072,15 @@ class FibBrain:
                 return None
             raise ValueError("no active goal matches the objective")
 
+        identity = (state or BrainState()).identity()
+        if identity.get("session_id") or identity.get("task_id"):
+            goals = self.memory.read(lambda memory: _goal_nodes(memory, identity))
+            for node in reversed(goals):
+                if node.status == MemoryStatus.ACTIVE:
+                    parsed = parse_goal_document(node.id, node.content, node.title)
+                    if parsed.status != GoalStatus.COMPLETE:
+                        return parsed
+
         if allow_missing:
             return None
         raise ValueError("plan needs an objective or a goal_id")
@@ -1175,11 +1186,16 @@ def _episode_nodes(memory: FibMind, identity: dict[str, str | None]) -> list[Mem
 
 
 def _goal_nodes(memory: FibMind, identity: dict[str, str | None]) -> list[MemoryNode]:
+    session_id = identity["session_id"]
+    task_id = identity["task_id"]
     nodes = [
         node
         for node in memory.nodes.values()
         if is_goal_node({"category": node.category, "tags": node.tags})
-        and node.session_id == identity["session_id"]
+        and (
+            (session_id is not None and node.session_id == session_id)
+            or (task_id is not None and node.task_id == task_id)
+        )
         and memory.is_visible(node, **_identity_kwargs(identity))
     ]
     nodes.sort(key=lambda node: (node.created_at, node.id))
@@ -1240,7 +1256,7 @@ def _flatten_arguments(arguments: dict[str, Any] | None) -> str:
 
 
 def _identity_kwargs(identity: dict[str, str | None]) -> dict[str, str | None]:
-    return {key: value for key, value in identity.items() if key != "task_id"}
+    return dict(identity)
 
 
 def _goal_title(objective: str) -> str:

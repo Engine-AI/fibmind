@@ -24,12 +24,14 @@ def is_visible(
     workspace_id: str | None = None,
     project_id: str | None = None,
     session_id: str | None = None,
+    task_id: str | None = None,
 ) -> bool:
     """Return whether ``node`` may be recalled by this caller.
 
     Knowledge is shared by definition, so it stays visible regardless of
     ``owner``; personal memories are only visible to their own owner, and
-    session scratch only inside the session that wrote it.
+    session scratch inside the session that wrote it or across sessions
+    sharing the same task_id.
     """
     allowed_statuses = statuses if statuses is not None else ACTIVE_ONLY
     if node.status not in allowed_statuses:
@@ -42,7 +44,10 @@ def is_visible(
         return False
     if node.scope == MemoryScope.SESSION:
         caller_session = optional_id(session_id)
-        if not node.session_id or not caller_session or node.session_id != caller_session:
+        caller_task = optional_id(task_id)
+        session_match = bool(node.session_id and caller_session and node.session_id == caller_session)
+        task_match = bool(node.task_id and caller_task and node.task_id == caller_task)
+        if not (session_match or task_match):
             return False
     if node.scope == MemoryScope.KNOWLEDGE:
         # Knowledge written without a workspace / project is global; knowledge
@@ -68,6 +73,7 @@ def identity_key(node: MemoryNode) -> tuple:
         node.workspace_id,
         node.project_id,
         node.session_id if node.scope == MemoryScope.SESSION else None,
+        node.task_id if node.scope == MemoryScope.SESSION else None,
     )
 
 

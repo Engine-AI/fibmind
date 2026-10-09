@@ -79,8 +79,12 @@ def decide_admission(memory: FibMind, candidate: MemoryCandidate) -> AdmitDecisi
             AdmitVerdict.SKIP,
             "knowledge is created through promote_to_knowledge, not remember",
         )
-    if candidate.scope == MemoryScope.SESSION and optional_id(candidate.session_id) is None:
-        return AdmitDecision(AdmitVerdict.SKIP, "session-scoped memories require session_id")
+    if (
+        candidate.scope == MemoryScope.SESSION
+        and optional_id(candidate.session_id) is None
+        and optional_id(candidate.task_id) is None
+    ):
+        return AdmitDecision(AdmitVerdict.SKIP, "session-scoped memories require session_id or task_id")
 
     dump_reason = _dump_reason(candidate.content)
     if dump_reason is not None:

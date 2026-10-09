@@ -189,8 +189,8 @@ class FibMind:
         project_id = optional_id(project_id)
         session_id = optional_id(session_id)
         task_id = optional_id(task_id)
-        if parsed_scope == MemoryScope.SESSION and session_id is None:
-            raise ValueError("session-scoped memories require session_id")
+        if parsed_scope == MemoryScope.SESSION and session_id is None and task_id is None:
+            raise ValueError("session-scoped memories require session_id or task_id")
 
         tree_id = self.create_tree(category)
         tree = self.trees[tree_id]
@@ -451,6 +451,36 @@ class FibMind:
             {
                 "node_id": node_id,
                 "status": node.status.value,
+                "reason": reason,
+                "updated_at": node.updated_at.isoformat(),
+            },
+        )
+        return node
+
+    def reassign_owner(self, node_id: str, owner: str | None, reason: str) -> MemoryNode:
+        """Move a memory to another owner, keeping the old one as ``metadata.host``.
+
+        Used to merge memories that different AI tools wrote under their own
+        host name (``codex``, ``claude-code``) into the human user's identity,
+        so every tool can recall them. Content and evidence are untouched.
+        """
+        node = self._require_node(node_id)
+        if not reason or not reason.strip():
+            raise ValueError("reason must explain the owner change")
+        previous = node.owner
+        if previous == owner:
+            return node
+        node.owner = owner
+        if previous and not node.metadata.get("host"):
+            node.metadata["host"] = previous
+        node.updated_at = utc_now()
+        self._record(
+            EventOp.REASSIGN_OWNER,
+            {
+                "node_id": node_id,
+                "owner": owner,
+                "previous_owner": previous,
+                "host": previous,
                 "reason": reason,
                 "updated_at": node.updated_at.isoformat(),
             },
@@ -814,6 +844,7 @@ class FibMind:
         workspace_id: str | None = None,
         project_id: str | None = None,
         session_id: str | None = None,
+        task_id: str | None = None,
     ) -> list[SearchHit]:
         root = self._require_node(node_id)
         if not self.is_visible(
@@ -825,6 +856,7 @@ class FibMind:
             workspace_id=workspace_id,
             project_id=project_id,
             session_id=session_id,
+            task_id=task_id,
         ):
             raise ValueError("node is not visible in this working context")
         direction = TraversalDirection(direction)
@@ -841,6 +873,7 @@ class FibMind:
             "workspace_id": workspace_id,
             "project_id": project_id,
             "session_id": session_id,
+            "task_id": task_id,
         }
 
         while queue:
@@ -890,6 +923,7 @@ class FibMind:
         workspace_id: str | None = None,
         project_id: str | None = None,
         session_id: str | None = None,
+        task_id: str | None = None,
         exclude_categories: set[str] | None = None,
     ) -> list[ScoredHit]:
         """Rank all memory nodes by relevance to ``query``.
@@ -915,6 +949,7 @@ class FibMind:
             workspace_id=workspace_id,
             project_id=project_id,
             session_id=session_id,
+            task_id=task_id,
             embeddings=self.embeddings,
         )
         return to_scored_hits(ranked)
@@ -930,6 +965,7 @@ class FibMind:
         workspace_id: str | None = None,
         project_id: str | None = None,
         session_id: str | None = None,
+        task_id: str | None = None,
         exclude_categories: set[str] | None = None,
     ) -> dict:
         """Why did recall return what it returned?
@@ -951,6 +987,7 @@ class FibMind:
             workspace_id=workspace_id,
             project_id=project_id,
             session_id=session_id,
+            task_id=task_id,
             embeddings=self.embeddings,
             explain=True,
         )
@@ -966,6 +1003,7 @@ class FibMind:
         workspace_id: str | None = None,
         project_id: str | None = None,
         session_id: str | None = None,
+        task_id: str | None = None,
     ) -> list[MemoryNode]:
         """Nodes a given caller is allowed to recall.
 
@@ -984,6 +1022,7 @@ class FibMind:
                 workspace_id=workspace_id,
                 project_id=project_id,
                 session_id=session_id,
+                task_id=task_id,
             ):
                 visible.append(node)
         return visible
@@ -999,6 +1038,7 @@ class FibMind:
         workspace_id: str | None = None,
         project_id: str | None = None,
         session_id: str | None = None,
+        task_id: str | None = None,
     ) -> bool:
         """Return whether ``node`` may be recalled by this caller.
 
@@ -1014,6 +1054,7 @@ class FibMind:
             workspace_id=workspace_id,
             project_id=project_id,
             session_id=session_id,
+            task_id=task_id,
         )
 
     def nodes_by_tree(self, tree_id: str) -> list[MemoryNode]:

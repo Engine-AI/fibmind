@@ -17,6 +17,12 @@ Or register it with Claude Code::
 from __future__ import annotations
 
 import argparse
+import functools
+import inspect
+import os
+import sys
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -24,9 +30,70 @@ from mcp.server import MCPServer
 
 from fibmind.brain import BrainState, FibBrain
 from fibmind.embedding import provider_from_env
+from fibmind.migrate import DEFAULT_HOST_OWNERS
 from fibmind.service import MemoryService
 
 DEFAULT_STORE = ".fibmind/memory.db"
+
+
+@dataclass(frozen=True, slots=True)
+class IdentityDefaults:
+    """Identity the server fills in when a tool call leaves it out.
+
+    Cross-tool sharing depends on Codex, Claude Code, and Antigravity all
+    writing under the *same* owner. Models routinely omit ``owner`` or pass
+    their own host name, so the server, which is configured once per
+    machine, is the reliable place to pin it. With ``owner`` set, any caller
+    owner listed in ``owner_aliases`` (the known AI host names by default) is
+    mapped onto it too.
+    """
+
+    owner: str | None = None
+    workspace_id: str | None = None
+    project_id: str | None = None
+    task_id: str | None = None
+    owner_aliases: frozenset[str] = field(default_factory=lambda: frozenset(DEFAULT_HOST_OWNERS))
+
+    @classmethod
+    def from_env(cls, environ: dict[str, str] | None = None, **overrides: str | None) -> IdentityDefaults:
+        env = os.environ if environ is None else environ
+
+        def pick(name: str) -> str | None:
+            value = overrides.get(name)
+            if value is None:
+                value = env.get(f"FIBMIND_{name.upper()}")
+            value = value.strip() if value else None
+            return value or None
+
+        extra = {alias.strip() for alias in env.get("FIBMIND_OWNER_ALIASES", "").split(",") if alias.strip()}
+        return cls(
+            owner=pick("owner"),
+            workspace_id=pick("workspace_id"),
+            project_id=pick("project_id"),
+            task_id=pick("task_id"),
+            owner_aliases=frozenset(DEFAULT_HOST_OWNERS) | frozenset(extra),
+        )
+
+    @property
+    def active(self) -> bool:
+        return any((self.owner, self.workspace_id, self.project_id, self.task_id))
+
+    def apply(self, arguments: dict[str, Any], accepted: set[str]) -> dict[str, Any]:
+        resolved = dict(arguments)
+        if "owner" in accepted and self.owner is not None:
+            owner = resolved.get("owner")
+            owner = str(owner).strip() if owner is not None else ""
+            if not owner or (owner in self.owner_aliases and owner != self.owner):
+                resolved["owner"] = self.owner
+                if owner and "metadata" in accepted:
+                    metadata = dict(resolved.get("metadata") or {})
+                    metadata.setdefault("host", owner)
+                    resolved["metadata"] = metadata
+        for name in ("workspace_id", "project_id", "task_id"):
+            default = getattr(self, name)
+            if name in accepted and default is not None and not resolved.get(name):
+                resolved[name] = default
+        return resolved
 
 
 def _state(
@@ -45,12 +112,41 @@ def _state(
     )
 
 
-def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPServer:
+def _tool_registrar(mcp: MCPServer, defaults: IdentityDefaults) -> Callable[[], Callable[[Callable], Callable]]:
+    """``mcp.tool()`` that first fills identity arguments from ``defaults``.
+
+    ``functools.wraps`` keeps the original signature and docstring, which is
+    what MCP introspects to build each tool's schema.
+    """
+
+    def tool() -> Callable[[Callable], Callable]:
+        def decorate(fn: Callable) -> Callable:
+            if not defaults.active:
+                return mcp.tool()(fn)
+            accepted = set(inspect.signature(fn).parameters)
+
+            @functools.wraps(fn)
+            def wrapper(**kwargs: Any) -> Any:
+                return fn(**defaults.apply(kwargs, accepted))
+
+            return mcp.tool()(wrapper)
+
+        return decorate
+
+    return tool
+
+
+def build_server(
+    service: MemoryService,
+    brain: FibBrain | None = None,
+    defaults: IdentityDefaults | None = None,
+) -> MCPServer:
     """Create an MCP server whose tools delegate to ``service`` and ``brain``."""
     brain = brain or FibBrain(service)
     mcp = MCPServer("fibmind")
+    tool = _tool_registrar(mcp, defaults or IdentityDefaults())
 
-    @mcp.tool()
+    @tool()
     def fibmind_append(
         category: str,
         title: str,
@@ -74,7 +170,8 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
 
         Pass the current ``workspace_id``, ``project_id``, and ``session_id`` so
         later recall can keep one working context out of another. Session-scoped
-        scratch requires ``session_id``.
+        scratch requires ``session_id`` or ``task_id``; the same ``task_id``
+        lets another AI tool's session recall it.
 
         A stored memory starts with zero confidence. When you later learn whether
         it was right, call fibmind_record_outcome — memories that are never
@@ -94,7 +191,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
             task_id=task_id,
         )
 
-    @mcp.tool()
+    @tool()
     def fibmind_record_outcome(
         node_id: str,
         verdict: str,
@@ -125,7 +222,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
             identity=_state(owner, workspace_id, project_id, session_id, task_id).identity(),
         )
 
-    @mcp.tool()
+    @tool()
     def fibmind_revise(
         node_id: str,
         title: str | None = None,
@@ -150,7 +247,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
             identity=_state(owner, workspace_id, project_id, session_id, task_id).identity(),
         )
 
-    @mcp.tool()
+    @tool()
     def fibmind_mark_stale(
         node_id: str,
         reason: str,
@@ -169,7 +266,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
             node_id, reason, identity=_state(owner, workspace_id, project_id, session_id, task_id).identity()
         )
 
-    @mcp.tool()
+    @tool()
     def fibmind_forget(
         node_id: str,
         reason: str,
@@ -189,7 +286,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
             node_id, reason, identity=_state(owner, workspace_id, project_id, session_id, task_id).identity()
         )
 
-    @mcp.tool()
+    @tool()
     def fibmind_promote_knowledge(
         title: str,
         content: str,
@@ -227,7 +324,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
             identity=_state(owner, workspace_id, project_id, session_id, task_id).identity(),
         )
 
-    @mcp.tool()
+    @tool()
     def fibmind_link(
         from_node_id: str,
         to_node_id: str,
@@ -257,7 +354,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
             identity=_state(owner, workspace_id, project_id, session_id, task_id).identity(),
         )
 
-    @mcp.tool()
+    @tool()
     def fibmind_search(
         query: str,
         top_k: int = 5,
@@ -269,6 +366,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
         workspace_id: str | None = None,
         project_id: str | None = None,
         session_id: str | None = None,
+        task_id: str | None = None,
     ) -> dict[str, Any]:
         """Search memories by keyword relevance to ``query``.
 
@@ -289,9 +387,10 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
             workspace_id=workspace_id,
             project_id=project_id,
             session_id=session_id,
+            task_id=task_id,
         )
 
-    @mcp.tool()
+    @tool()
     def fibmind_search_from(
         node_id: str,
         depth: int = 2,
@@ -304,6 +403,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
         workspace_id: str | None = None,
         project_id: str | None = None,
         session_id: str | None = None,
+        task_id: str | None = None,
     ) -> dict[str, Any]:
         """Expand the association tree rooted at ``node_id`` up to ``depth`` hops.
 
@@ -325,9 +425,10 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
             workspace_id=workspace_id,
             project_id=project_id,
             session_id=session_id,
+            task_id=task_id,
         )
 
-    @mcp.tool()
+    @tool()
     def fibmind_context(
         goal: str,
         top_k: int = 5,
@@ -340,6 +441,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
         workspace_id: str | None = None,
         project_id: str | None = None,
         session_id: str | None = None,
+        task_id: str | None = None,
         budget_tokens: int | None = None,
     ) -> dict[str, Any]:
         """Build a compact memory pack to load into context before a task.
@@ -362,10 +464,11 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
             workspace_id=workspace_id,
             project_id=project_id,
             session_id=session_id,
+            task_id=task_id,
             budget_tokens=budget_tokens,
         )
 
-    @mcp.tool()
+    @tool()
     def fibmind_explain_recall(
         query: str,
         top_k: int = 5,
@@ -376,6 +479,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
         workspace_id: str | None = None,
         project_id: str | None = None,
         session_id: str | None = None,
+        task_id: str | None = None,
     ) -> dict[str, Any]:
         """Explain a recall: per-result lexical / vector / fusion / confidence /
         recency signals, matched terms, and why other candidates were excluded
@@ -392,15 +496,16 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
             workspace_id=workspace_id,
             project_id=project_id,
             session_id=session_id,
+            task_id=task_id,
             exclude_categories=["episode"],
         )
 
-    @mcp.tool()
+    @tool()
     def fibmind_status() -> dict[str, Any]:
         """Store size, lifecycle counts, lexical index size, and embedding health."""
         return service.status()
 
-    @mcp.tool()
+    @tool()
     def fibbrain_recall(
         goal: str,
         top_k: int = 5,
@@ -433,7 +538,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
             include_hot=include_hot,
         )
 
-    @mcp.tool()
+    @tool()
     def fibbrain_hot(
         refresh: bool = False,
         owner: str | None = None,
@@ -451,7 +556,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
             refresh=refresh,
         )
 
-    @mcp.tool()
+    @tool()
     def fibbrain_remember(
         category: str,
         title: str,
@@ -480,7 +585,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
             state=_state(owner, workspace_id, project_id, session_id, task_id),
         )
 
-    @mcp.tool()
+    @tool()
     def fibbrain_observe(
         kind: str,
         summary: str,
@@ -493,8 +598,9 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
     ) -> dict[str, Any]:
         """Note an episode event (tool result, decision, test, error, correction).
 
-        With a ``session_id`` the event is persisted as session-scoped scratch
-        that only this session can recall, and ``fibbrain_review_session`` can
+        With a ``session_id`` or ``task_id`` the event is persisted as
+        session-scoped scratch that this session — or any session (in any AI
+        tool) passing the same ``task_id`` — can recall, and ``fibbrain_review_session`` can
         later distil it. Use ``kind`` values ``decision``, ``test``, ``error``,
         ``correction``, ``risk``, or ``tool_result``; put changed paths under
         ``payload.files`` and the command under ``payload.command``. Observation
@@ -507,7 +613,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
             state=_state(owner, workspace_id, project_id, session_id, task_id),
         )
 
-    @mcp.tool()
+    @tool()
     def fibbrain_remember_procedure(
         title: str,
         trigger: str,
@@ -542,7 +648,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
             state=_state(owner, workspace_id, project_id, session_id, task_id),
         )
 
-    @mcp.tool()
+    @tool()
     def fibbrain_render(
         goal: str,
         format: str = "skill",
@@ -569,7 +675,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
             min_maturity=min_maturity,
         )
 
-    @mcp.tool()
+    @tool()
     def fibbrain_tune(apply: bool = True) -> dict[str, Any]:
         """Let the brain adjust its own ranking weights from evidence — but only
         if the fixed evaluation suite proves nothing regressed.
@@ -580,7 +686,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
         """
         return brain.tune(apply=apply)
 
-    @mcp.tool()
+    @tool()
     def fibbrain_revalidation_candidates(
         older_than_days: int = 90,
         owner: str | None = None,
@@ -597,7 +703,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
             older_than_days=older_than_days,
         )
 
-    @mcp.tool()
+    @tool()
     def fibbrain_review_session(
         session_id: str,
         mode: str = "approve",
@@ -621,7 +727,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
             close=close,
         )
 
-    @mcp.tool()
+    @tool()
     def fibbrain_pending_reviews(
         owner: str | None = None,
         workspace_id: str | None = None,
@@ -632,7 +738,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
         """List review memories waiting for approval in this working context."""
         return brain.pending_reviews(_state(owner, workspace_id, project_id, session_id, task_id))
 
-    @mcp.tool()
+    @tool()
     def fibbrain_approve_memory(
         node_id: str,
         reason: str = "approved by reviewer",
@@ -645,7 +751,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
         """Let a pending review memory into normal recall."""
         return brain.approve_memory(node_id, reason, _state(owner, workspace_id, project_id, session_id, task_id))
 
-    @mcp.tool()
+    @tool()
     def fibbrain_reject_memory(
         node_id: str,
         reason: str = "rejected by reviewer",
@@ -658,7 +764,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
         """Retire a pending review memory; it stays inspectable as stale."""
         return brain.reject_memory(node_id, reason, _state(owner, workspace_id, project_id, session_id, task_id))
 
-    @mcp.tool()
+    @tool()
     def fibbrain_advise(
         action: str,
         kind: str = "tool",
@@ -685,7 +791,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
             arguments=arguments,
         )
 
-    @mcp.tool()
+    @tool()
     def fibbrain_reflect(
         verdict: str,
         source: str,
@@ -712,7 +818,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
             state=_state(owner, workspace_id, project_id, session_id, task_id),
         )
 
-    @mcp.tool()
+    @tool()
     def fibbrain_plan(
         objective: str | None = None,
         goal_id: str | None = None,
@@ -736,7 +842,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
             state=_state(owner, workspace_id, project_id, session_id, task_id),
         )
 
-    @mcp.tool()
+    @tool()
     def fibbrain_coordinate(
         objective: str | None = None,
         goal_id: str | None = None,
@@ -758,7 +864,7 @@ def build_server(service: MemoryService, brain: FibBrain | None = None) -> MCPSe
             state=_state(owner, workspace_id, project_id, session_id, task_id),
         )
 
-    @mcp.tool()
+    @tool()
     def fibbrain_complete_goal(
         goal_id: str | None = None,
         objective: str | None = None,
@@ -782,18 +888,37 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="fibmind.mcp_server", description="FibBrain MCP server")
     parser.add_argument(
         "--store",
-        default=DEFAULT_STORE,
-        help=f"Path to a SQLite or JSON memory store (default: {DEFAULT_STORE})",
+        default=os.environ.get("FIBMIND_STORE") or DEFAULT_STORE,
+        help=f"Path to a SQLite or JSON memory store (env FIBMIND_STORE, default: {DEFAULT_STORE})",
     )
+    parser.add_argument("--owner", help="Default owner when a call omits it or passes an AI host name (FIBMIND_OWNER)")
+    parser.add_argument("--workspace-id", help="Default workspace_id (FIBMIND_WORKSPACE_ID)")
+    parser.add_argument("--project-id", help="Default project_id (FIBMIND_PROJECT_ID)")
+    parser.add_argument("--task-id", help="Default task_id (FIBMIND_TASK_ID)")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> None:
     args = _parse_args(argv)
+    defaults = IdentityDefaults.from_env(
+        owner=args.owner,
+        workspace_id=args.workspace_id,
+        project_id=args.project_id,
+        task_id=args.task_id,
+    )
+    store = Path(args.store).expanduser().resolve()
+    # stdout carries the MCP protocol; diagnostics go to stderr. Logging the
+    # resolved path makes a relative --store that split one brain into two
+    # (each host launching from a different cwd) visible at a glance.
+    print(
+        f"fibmind: store={store} owner={defaults.owner or '-'} "
+        f"workspace={defaults.workspace_id or '-'} project={defaults.project_id or '-'}",
+        file=sys.stderr,
+    )
     # Semantic recall is opt-in through FIBMIND_EMBEDDING=hashing|openai (plus
     # FIBMIND_EMBEDDING_URL / _MODEL / _API_KEY for openai). Unset = lexical.
-    service = MemoryService(Path(args.store), embedding_provider=provider_from_env())
-    server = build_server(service)
+    service = MemoryService(store, embedding_provider=provider_from_env())
+    server = build_server(service, defaults=defaults)
     server.run(transport="stdio")
 
 

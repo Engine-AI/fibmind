@@ -208,6 +208,7 @@ def build_context(
     workspace_id: str | None = None,
     project_id: str | None = None,
     session_id: str | None = None,
+    task_id: str | None = None,
     exclude_categories: set[str] | None = None,
     budget_tokens: int | None = None,
     hot: list[MemoryNode] | None = None,
@@ -235,6 +236,7 @@ def build_context(
         workspace_id=workspace_id,
         project_id=project_id,
         session_id=session_id,
+        task_id=task_id,
         exclude_categories=exclude_categories,
     )
     hits: list[ContextHit] = []
@@ -264,6 +266,7 @@ def build_context(
                 workspace_id=workspace_id,
                 project_id=project_id,
                 session_id=session_id,
+                task_id=task_id,
             ):
                 if expansion.node.id in seen:
                     continue
@@ -280,6 +283,7 @@ def build_context(
                     workspace_id=workspace_id,
                     project_id=project_id,
                     session_id=session_id,
+                    task_id=task_id,
                 ):
                     continue
                 hits.append(

@@ -4,10 +4,11 @@ FibBrain is the cognitive runtime. FibMind is the memory engine underneath.
 
 In this repo pass these identity fields on every `fibbrain_*` call:
 
-- `owner`: the human user if known, else `claude-code`
+- `owner`: `abbila` (the human user, never the host name such as `codex` / `claude-code` / `agy`). Put the host name in `metadata.host`. The MCP server also pins this via `FIBMIND_OWNER`, so an omitted or host-named owner is mapped to it.
 - `workspace_id`: `fibmind`
 - `project_id`: `fibmind`
-- `session_id`: the current conversation or task id if you have one
+- `session_id`: the current conversation session id
+- `task_id`: the task name the user gave, otherwise the current git branch (`git branch --show-current`, e.g. `main`, `feature/hybrid-retrieval`). Every AI tool must derive it the same way: the same `task_id` is what lets Codex, AGY, and Claude Code see each other's episode observations and active goal.
 
 ## Before a task
 

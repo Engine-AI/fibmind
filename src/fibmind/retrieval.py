@@ -270,6 +270,7 @@ def retrieve(
     workspace_id: str | None = None,
     project_id: str | None = None,
     session_id: str | None = None,
+    task_id: str | None = None,
     embeddings: EmbeddingCache | None = None,
     explain: bool = False,
     weights: RankingWeights | None = None,
@@ -298,6 +299,7 @@ def retrieve(
         workspace_id=workspace_id,
         project_id=project_id,
         session_id=session_id,
+        task_id=task_id,
     )
 
     def admissible(node: MemoryNode, why: list[str]) -> bool:

@@ -143,6 +143,7 @@ class EventOp(StrEnum):
     PROMOTE = "promote"
     CREATE_TREE = "create_tree"
     SET_STATUS = "set_status"
+    REASSIGN_OWNER = "reassign_owner"
 
 
 @dataclass(slots=True)
