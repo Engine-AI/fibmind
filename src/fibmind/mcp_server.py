@@ -946,6 +946,17 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=int(os.environ.get("FIBMIND_PORT") or "8765"),
         help="Port to bind HTTP/SSE server (env FIBMIND_PORT, default: 8765)",
     )
+    parser.add_argument(
+        "--allow-insecure-remote",
+        action="store_true",
+        default=os.environ.get("FIBMIND_ALLOW_INSECURE_REMOTE", "").lower() in ("1", "true", "yes"),
+        help="Allow binding daemon to non-loopback addresses (insecure, not recommended)",
+    )
+    parser.add_argument(
+        "--token",
+        default=os.environ.get("FIBMIND_TOKEN"),
+        help="Bearer token required for daemon HTTP/SSE authentication (env FIBMIND_TOKEN)",
+    )
     return parser.parse_args(argv)
 
 
@@ -954,17 +965,46 @@ def run_server(
     transport: str = "stdio",
     host: str = "127.0.0.1",
     port: int = 8765,
+    allow_insecure_remote: bool = False,
+    token: str | None = None,
 ) -> None:
     """Run the MCP server over stdio or as a daemon over SSE / streamable-http."""
     if transport == "stdio":
         server.run(transport="stdio")
-    elif transport == "sse":
+        return
+
+    safe_hosts = {"127.0.0.1", "localhost", "::1"}
+    if host not in safe_hosts and not allow_insecure_remote:
+        raise ValueError(
+            f"Refusing to bind daemon to non-loopback address '{host}'. "
+            "FibMind is a single-user local workstation memory store and does not support multi-tenant exposure. "
+            "Pass --allow-insecure-remote to override."
+        )
+
+    if transport == "sse":
         import anyio
         import uvicorn
+        from starlette.middleware.base import BaseHTTPMiddleware
         from starlette.responses import JSONResponse
         from starlette.routing import Route
 
         app = server.sse_app(host=host)
+
+        if token:
+            expected_token = token
+
+            class TokenAuthMiddleware(BaseHTTPMiddleware):
+                async def dispatch(self, request: Any, call_next: Any) -> Any:
+                    if request.url.path in ("/health",):
+                        return await call_next(request)
+                    auth = request.headers.get("authorization", "")
+                    query_token = request.query_params.get("token", "")
+                    passed_token = auth[7:].strip() if auth.startswith("Bearer ") else query_token
+                    if not passed_token or passed_token != expected_token:
+                        return JSONResponse({"error": "Unauthorized: invalid or missing daemon token"}, status_code=401)
+                    return await call_next(request)
+
+            app.add_middleware(TokenAuthMiddleware)
 
         async def health_endpoint(request: Any) -> JSONResponse:
             return JSONResponse({"status": "ok", "service": "fibmind", "transport": "sse"})
@@ -978,10 +1018,27 @@ def run_server(
     elif transport == "streamable-http":
         import anyio
         import uvicorn
+        from starlette.middleware.base import BaseHTTPMiddleware
         from starlette.responses import JSONResponse
         from starlette.routing import Route
 
         app = server.streamable_http_app(host=host)
+
+        if token:
+            expected_token = token
+
+            class TokenAuthMiddleware(BaseHTTPMiddleware):
+                async def dispatch(self, request: Any, call_next: Any) -> Any:
+                    if request.url.path in ("/health",):
+                        return await call_next(request)
+                    auth = request.headers.get("authorization", "")
+                    query_token = request.query_params.get("token", "")
+                    passed_token = auth[7:].strip() if auth.startswith("Bearer ") else query_token
+                    if not passed_token or passed_token != expected_token:
+                        return JSONResponse({"error": "Unauthorized: invalid or missing daemon token"}, status_code=401)
+                    return await call_next(request)
+
+            app.add_middleware(TokenAuthMiddleware)
 
         async def health_endpoint(request: Any) -> JSONResponse:
             return JSONResponse({"status": "ok", "service": "fibmind", "transport": "streamable-http"})
@@ -1018,7 +1075,14 @@ def main(argv: list[str] | None = None) -> None:
     # FIBMIND_EMBEDDING_URL / _MODEL / _API_KEY for openai). Unset = lexical.
     service = MemoryService(store, embedding_provider=provider_from_env())
     server = build_server(service, defaults=defaults)
-    run_server(server, transport=args.transport, host=args.host, port=args.port)
+    run_server(
+        server,
+        transport=args.transport,
+        host=args.host,
+        port=args.port,
+        allow_insecure_remote=args.allow_insecure_remote,
+        token=args.token,
+    )
 
 
 def daemon_main(argv: list[str] | None = None) -> None:

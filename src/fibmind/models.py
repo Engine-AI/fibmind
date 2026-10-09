@@ -129,6 +129,7 @@ class Verdict(StrEnum):
 
     CONFIRMED = "confirmed"
     REFUTED = "refuted"
+    INCONCLUSIVE = "inconclusive"
 
 
 class EventOp(StrEnum):

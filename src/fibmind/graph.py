@@ -111,11 +111,15 @@ class FibMind:
         payload = event.payload
         node_id = payload.get("node_id")
         verdict = payload.get("verdict")
-        if node_id is None or verdict not in (Verdict.CONFIRMED.value, Verdict.REFUTED.value):
+        if node_id is None or verdict not in (
+            Verdict.CONFIRMED.value,
+            Verdict.REFUTED.value,
+            Verdict.INCONCLUSIVE.value,
+        ):
             return
         row = self.outcome_index.setdefault(
             str(node_id),
-            {"confirmed": 0, "refuted": 0, "sessions": set(), "last_confirmed_at": None},
+            {"confirmed": 0, "refuted": 0, "inconclusive": 0, "sessions": set(), "last_confirmed_at": None},
         )
         if verdict == Verdict.CONFIRMED.value:
             row["confirmed"] += 1
@@ -125,8 +129,10 @@ class FibMind:
             last = row["last_confirmed_at"]
             if last is None or event.created_at > last:
                 row["last_confirmed_at"] = event.created_at
-        else:
+        elif verdict == Verdict.REFUTED.value:
             row["refuted"] += 1
+        elif verdict == Verdict.INCONCLUSIVE.value:
+            row["inconclusive"] = row.get("inconclusive", 0) + 1
 
     def _rebuild_outcome_index(self) -> None:
         self.outcome_index = {}
@@ -325,12 +331,17 @@ class FibMind:
         if not source or not source.strip():
             raise ValueError("source must name what produced the verdict")
 
-        step = CONFIDENCE_STEP if verdict == Verdict.CONFIRMED else -CONFIDENCE_STEP
-        node.confidence = max(0.0, min(1.0, node.confidence + step))
-        node.confidence_source = source
-        if verdict == Verdict.REFUTED:
+        if verdict == Verdict.CONFIRMED:
+            node.confidence = max(0.0, min(1.0, node.confidence + CONFIDENCE_STEP))
+            node.confidence_source = source
+        elif verdict == Verdict.REFUTED:
+            node.confidence = max(0.0, min(1.0, node.confidence - CONFIDENCE_STEP))
+            node.confidence_source = source
             node.status = MemoryStatus.REFUTED
             node.status_reason = note or f"refuted by {source}"
+        elif verdict == Verdict.INCONCLUSIVE:
+            # Inconclusive outcome does not alter confidence or mark status as refuted
+            pass
         node.updated_at = utc_now()
         self._record(
             EventOp.OBSERVE,

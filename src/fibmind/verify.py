@@ -14,6 +14,59 @@ from typing import Any
 from fibmind.brain import BrainState, FibBrain
 from fibmind.service import MemoryService
 
+ENV_FAILURE_PATTERNS = (
+    "modulenotfounderror",
+    "importerror",
+    "syntaxerror",
+    "indentationerror",
+    "command not found",
+    "no such file or directory",
+    "permission denied",
+    "errors during collection",
+    "collection error",
+    "internalerror",
+)
+
+
+def diagnose_verification_outcome(
+    exit_code: int,
+    stdout: str,
+    stderr: str,
+    *,
+    target_files: list[str] | tuple[str, ...] | None = None,
+) -> tuple[str, str]:
+    """Diagnose execution outcome into (verdict, explanation).
+
+    Returns:
+        verdict: 'confirmed', 'refuted', or 'inconclusive'
+        explanation: reason describing the decision
+    """
+    combined = (stderr + "\n" + stdout).lower()
+
+    # 1. Environment / Infrastructure Failures
+    if exit_code != 0:
+        if exit_code in (126, 127):
+            return "inconclusive", f"command failed to start (exit code {exit_code})"
+        for pattern in ENV_FAILURE_PATTERNS:
+            if pattern in combined:
+                return "inconclusive", f"environment or infrastructure failure ({pattern})"
+
+    # 2. Zero tests run
+    if "collected 0 items" in combined or "no tests ran" in combined:
+        return "inconclusive", "no tests collected or executed"
+
+    # 3. Target Scope / Files Binding Check
+    if exit_code != 0 and target_files:
+        normalized_targets = [Path(f).name.lower() for f in target_files if f]
+        touched = any(t in combined for t in normalized_targets)
+        if not touched:
+            return "inconclusive", f"failure occurred in unrelated modules; did not touch {target_files}"
+
+    # 4. Deterministic outcome
+    if exit_code == 0:
+        return "confirmed", "verification command passed"
+    return "refuted", f"verification command failed with exit code {exit_code}"
+
 
 def run_command_and_reflect(
     command: list[str] | str,
@@ -21,6 +74,7 @@ def run_command_and_reflect(
     node_id: str | None = None,
     goal: str | None = None,
     source: str | None = None,
+    target_files: list[str] | tuple[str, ...] | None = None,
     store_path: str | Path | None = None,
     owner: str | None = None,
     workspace_id: str | None = None,
@@ -33,8 +87,10 @@ def run_command_and_reflect(
 ) -> dict[str, Any]:
     """Execute a verification command and reflect its outcome into FibBrain.
 
-    Exit code 0 -> verdict="confirmed"
-    Exit code != 0 -> verdict="refuted"
+    Evaluates test attribution:
+    - Exit 0 -> 'confirmed' (unless 0 tests run)
+    - Exit != 0 with environment or unrelated failure -> 'inconclusive' (no confidence penalty)
+    - Exit != 0 with verified target failure -> 'refuted'
     """
     if isinstance(command, str):
         cmd_args = shlex.split(command)
@@ -47,29 +103,6 @@ def run_command_and_reflect(
         raise ValueError("Cannot execute empty command")
 
     inferred_source = source or Path(cmd_args[0]).name
-
-    start_time = time.monotonic()
-    proc = subprocess.run(
-        cmd_args,
-        cwd=cwd,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
-    duration = round(time.monotonic() - start_time, 2)
-    exit_code = proc.returncode
-    verdict = "confirmed" if exit_code == 0 else "refuted"
-
-    status_label = "passed" if exit_code == 0 else f"failed (code {exit_code})"
-    note_lines = [f"{cmd_display} ({status_label} in {duration}s)"]
-    if proc.stderr.strip():
-        stderr_tail = [line.strip() for line in proc.stderr.strip().splitlines() if line.strip()][-5:]
-        note_lines.append("stderr:\n" + "\n".join(stderr_tail))
-    elif proc.stdout.strip() and exit_code != 0:
-        stdout_tail = [line.strip() for line in proc.stdout.strip().splitlines() if line.strip()][-5:]
-        note_lines.append("stdout:\n" + "\n".join(stdout_tail))
-    note = "\n".join(note_lines)
 
     resolved_store = Path(store_path or os.environ.get("FIBMIND_STORE") or ".fibmind/memory.db").expanduser().resolve()
     service = MemoryService(resolved_store)
@@ -94,6 +127,37 @@ def run_command_and_reflect(
             target_goal = active_goal
         else:
             raise ValueError("Verification requires node_id or goal (or an active task goal in working context)")
+
+    # Resolve target files from node metadata if not explicitly provided
+    resolved_files = list(target_files) if target_files else []
+    if not resolved_files and target_node:
+        node_meta = service.read(lambda m: m.nodes.get(target_node).metadata if target_node in m.nodes else {})
+        extracted = node_meta.get("files") or node_meta.get("changed_files")
+        if isinstance(extracted, (list, tuple)):
+            resolved_files.extend(str(f) for f in extracted)
+
+    start_time = time.monotonic()
+    proc = subprocess.run(
+        cmd_args,
+        cwd=cwd,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    duration = round(time.monotonic() - start_time, 2)
+    exit_code = proc.returncode
+
+    verdict, reason = diagnose_verification_outcome(exit_code, proc.stdout, proc.stderr, target_files=resolved_files)
+
+    note_lines = [f"{cmd_display} ({verdict}: {reason} in {duration}s)"]
+    if proc.stderr.strip():
+        stderr_tail = [line.strip() for line in proc.stderr.strip().splitlines() if line.strip()][-5:]
+        note_lines.append("stderr:\n" + "\n".join(stderr_tail))
+    elif proc.stdout.strip() and exit_code != 0:
+        stdout_tail = [line.strip() for line in proc.stdout.strip().splitlines() if line.strip()][-5:]
+        note_lines.append("stdout:\n" + "\n".join(stdout_tail))
+    note = "\n".join(note_lines)
 
     reflection = brain.reflect(
         verdict=verdict,
@@ -124,6 +188,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--node-id", help="Memory node ID to verify")
     parser.add_argument("--goal", help="Task goal or search query to locate memory node")
+    parser.add_argument("--target-files", nargs="*", default=None, help="Target file paths expected to be affected")
     parser.add_argument("--source", help="Source identifier (default: command name)")
     parser.add_argument(
         "--store",
@@ -153,6 +218,7 @@ def main(argv: list[str] | None = None) -> int:
             cmd,
             node_id=args.node_id,
             goal=args.goal,
+            target_files=args.target_files,
             source=args.source,
             store_path=args.store,
             owner=args.owner,

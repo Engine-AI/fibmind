@@ -113,6 +113,101 @@ class VerifyLoopTests(unittest.TestCase):
             self.assertEqual(res["exit_code"], 0)
             self.assertEqual(res["reflection"]["node_id"], "mem_search_target")
 
+    def test_verify_environment_failure_is_inconclusive(self) -> None:
+        with tempfile.NamedTemporaryFile(suffix=".db") as f:
+            store_path = Path(f.name)
+            service = MemoryService(store_path)
+            node = MemoryNode(
+                id="mem_env_test",
+                title="Redis connection pool",
+                content="Use connection pool to avoid port exhaustion",
+                category="decision",
+                node_type=NodeType.CONCEPT,
+            )
+
+            def _init(m: FibMind) -> None:
+                m.nodes[node.id] = node
+
+            service.run(_init)
+
+            # ModuleNotFoundError in python
+            res = run_command_and_reflect(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; sys.stderr.write('ModuleNotFoundError: No module named foobar\\n'); sys.exit(1)",
+                ],
+                node_id="mem_env_test",
+                store_path=store_path,
+            )
+
+            self.assertEqual(res["exit_code"], 1)
+            self.assertEqual(res["verdict"], "inconclusive")
+            # Inconclusive should not degrade confidence
+            self.assertEqual(res["reflection"]["confidence"], 0.0)
+
+    def test_verify_unrelated_file_failure_is_inconclusive(self) -> None:
+        with tempfile.NamedTemporaryFile(suffix=".db") as f:
+            store_path = Path(f.name)
+            service = MemoryService(store_path)
+            node = MemoryNode(
+                id="mem_unrelated_test",
+                title="Auth token refresh",
+                content="Refresh expired auth tokens automatically",
+                category="decision",
+                node_type=NodeType.CONCEPT,
+                metadata={"files": ["src/fibmind/auth.py"]},
+            )
+
+            def _init(m: FibMind) -> None:
+                m.nodes[node.id] = node
+
+            service.run(_init)
+
+            # Failure occurs in test_unrelated.py, not mentioning auth.py
+            res = run_command_and_reflect(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; sys.stderr.write('AssertionError: tests/test_payment.py failed\\n'); sys.exit(1)",
+                ],
+                node_id="mem_unrelated_test",
+                store_path=store_path,
+            )
+
+            self.assertEqual(res["exit_code"], 1)
+            self.assertEqual(res["verdict"], "inconclusive")
+            self.assertIn("unrelated", res["note"])
+
+    def test_verify_zero_tests_collected_is_inconclusive(self) -> None:
+        with tempfile.NamedTemporaryFile(suffix=".db") as f:
+            store_path = Path(f.name)
+            service = MemoryService(store_path)
+            node = MemoryNode(
+                id="mem_zero_test",
+                title="Zero Test Target",
+                content="Feature with no tests",
+                category="decision",
+                node_type=NodeType.CONCEPT,
+            )
+
+            def _init(m: FibMind) -> None:
+                m.nodes[node.id] = node
+
+            service.run(_init)
+
+            res = run_command_and_reflect(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; print('collected 0 items'); sys.exit(0)",
+                ],
+                node_id="mem_zero_test",
+                store_path=store_path,
+            )
+
+            self.assertEqual(res["verdict"], "inconclusive")
+
     def test_verify_cli_main(self) -> None:
         with tempfile.NamedTemporaryFile(suffix=".db") as f:
             store_path = Path(f.name)

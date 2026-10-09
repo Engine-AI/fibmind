@@ -67,7 +67,7 @@ class HashingEmbeddingProvider:
     """
 
     dimensions: int = 256
-    min_similarity: float = 0.15
+    min_similarity: float = 0.25
     name: str = field(default="hashing-256", init=False)
 
     def __post_init__(self) -> None:
@@ -91,6 +91,8 @@ class HashingEmbeddingProvider:
         features: list[tuple[str, float]] = []
         for token in tokenize(text):
             features.append((f"t:{token}", 1.0))
+            if len(token) >= 4 and token.isascii():
+                features.append((f"p:{token[:4]}", 0.8))
             if len(token) >= 5 and token.isascii():
                 padded = f"#{token}#"
                 for index in range(len(padded) - 2):

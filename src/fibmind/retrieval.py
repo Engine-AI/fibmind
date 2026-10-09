@@ -254,6 +254,21 @@ def _recency_factor(node: MemoryNode) -> float:
     return 1.0 - (age / RECENCY_HORIZON)
 
 
+def is_lexical_shortcut_query(query: str) -> bool:
+    """Check if query is primarily a code symbol, path, or exact identifier.
+
+    Such queries benefit most from precise token matching without fuzzy semantic dilution.
+    """
+    for token in query.split():
+        if any(token.endswith(ext) for ext in (".py", ".json", ".db", ".toml", ".md", ".ts", ".js", ".sql")):
+            return True
+        if "/" in token or "\\" in token or "::" in token:
+            return True
+        if "_" in token and len(token) > 2 and token.isascii():
+            return True
+    return False
+
+
 def retrieve(
     memory: FibMind,
     query: str,
@@ -285,6 +300,7 @@ def retrieve(
         "vector_candidates": 0,
         "vector_enabled": embeddings is not None and embeddings.enabled,
         "vector_error": None,
+        "is_shortcut": is_lexical_shortcut_query(query),
         "weights": weights.to_dict(),
         "excluded": [],
     }
@@ -405,6 +421,7 @@ def retrieve(
 
     # --- fusion --------------------------------------------------------------
     if vector_ranked:
+        rrf_scale = 2.0 / (RRF_K + 1)
         for candidate in candidates.values():
             rrf = 0.0
             if candidate.lexical_rank is not None:
@@ -412,9 +429,16 @@ def retrieve(
             if candidate.vector_rank is not None:
                 rrf += 1.0 / (RRF_K + candidate.vector_rank)
             candidate.rrf = rrf
-        max_rrf = max(candidate.rrf for candidate in candidates.values()) or 1.0
-        for candidate in candidates.values():
-            candidate.relevance = candidate.rrf / max_rrf
+
+            if candidate.lexical_rank is not None and candidate.vector_rank is not None:
+                candidate.relevance = min(1.0, candidate.rrf / rrf_scale)
+            elif candidate.lexical_rank is not None:
+                candidate.relevance = max(candidate.lexical, candidate.rrf / rrf_scale)
+            else:
+                vec_sim = candidate.vector or 0.0
+                min_sim = float(getattr(embeddings.provider, "min_similarity", 0.0)) if embeddings else 0.0
+                vec_conf = max(0.0, (vec_sim - min_sim) / max(1e-6, 1.0 - min_sim))
+                candidate.relevance = (candidate.rrf / rrf_scale) * vec_conf
     else:
         for candidate in candidates.values():
             candidate.relevance = candidate.lexical

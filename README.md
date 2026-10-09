@@ -415,8 +415,32 @@ claude mcp add --scope project --transport stdio fibmind -- \
   --store .fibmind/memory.db
 ```
 
-Then tell the agent when to use it via `CLAUDE.md` (Claude Code) or `AGENTS.md`
-(Codex) — both are included in this repo.
+### Shared Daemon Mode (Multi-Tool Workstation)
+
+When multiple tools (Codex, Claude Code, AGY) run concurrently on the same workstation, SQLite multi-process WAL contention can occur. Running FibMind as a shared local daemon eliminates locking contention by serving requests from a single process:
+
+```bash
+# Run the shared memory daemon (binds to 127.0.0.1:8765 by default)
+fibmind-daemon --port 8765
+
+# Or via python directly
+.venv/bin/python -m fibmind.mcp_server --transport sse --port 8765
+```
+
+**Security Boundaries:**
+- **Workstation-Local Only:** FibMind is designed as a single-user local workstation memory engine, not a multi-tenant remote service. By default, it strictly binds to `127.0.0.1`. Remote binding (e.g. `0.0.0.0`) is refused unless `--allow-insecure-remote` is explicitly specified.
+- **Token Authentication:** For environments requiring access control, daemon mode supports Bearer tokens via `--token <secret>` or `FIBMIND_TOKEN`. When configured, all non-health requests require `Authorization: Bearer <token>` or `?token=<token>`.
+
+### Automated Verification Loop (`fibmind-verify` / `fibbrain_verify`)
+
+To prevent hallucinated self-confirmations and avoid poisoning the immutable event log with infrastructure errors:
+- Use `fibmind-verify` or the `fibbrain_verify` MCP tool to execute physical checks (e.g. pytest, compiler, linter).
+- **Attribution & Anti-Pollution:** Exit code 0 confirms the memory node; Exit non-zero refutes it. If failure is caused by environment/syntax collection errors or unrelated files, the outcome is marked as `inconclusive` rather than penalized, preventing log pollution.
+
+```bash
+# Verify a decision against physical test execution
+fibmind-verify --node-id <id> -- pytest -q tests/test_feature.py
+```
 
 ### Architecture
 
