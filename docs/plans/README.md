@@ -12,3 +12,4 @@ in [`../../ROADMAP.md`](../../ROADMAP.md).
 | 2 | [Identity: workspace / project / session / task and one visibility rule](02-identity.md) | `add fib brain` (identity half) |
 | 3 | [Brain v1: plan / recall / coordinate / remember / observe / advise / reflect](03-brain.md) | `add fib brain` |
 | 4 | [Evolve: S0–S7 — contract, DSH, episodes, procedures, hybrid retrieval, budgets, plugin, tuning gate](04-evolve.md) | `feat(S0)` … `feat(S7)` |
+| 5 | [Coding Agent Memory Layer: Real Benchmark, Attribution Fix, FTS5 Scaling, Struct Distill](05-coding-agent-memory-spec.md) | `spec: v0.2-v1.0 roadmap & PRD` |

@@ -10,3 +10,4 @@
 | 2 | [身份：workspace / project / session / task 与统一的可见性规则](02-identity.md) | `add fib brain`（身份部分） |
 | 3 | [Brain v1：plan / recall / coordinate / remember / observe / advise / reflect](03-brain.md) | `add fib brain` |
 | 4 | [Evolve：S0–S7——契约、DSH、episode、procedure、混合检索、预算、插件、调优门禁](04-evolve.md) | `feat(S0)` … `feat(S7)` |
+| 5 | [面向编码 Agent 的本地记忆层：真实基准、因果证据加固、FTS5主链路与结构化提炼](05-coding-agent-memory-spec.md) | `spec: v0.2-v1.0 演进规格书` |

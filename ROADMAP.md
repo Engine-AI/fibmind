@@ -559,3 +559,8 @@ Release conditions:
 - Derived knowledge supports evidence-invalidation propagation;
 - Security scanning, backup/restore, and diagnostics are complete;
 - Benefits are demonstrated in long-term evaluation on real projects.
+
+## Next Evolution: Coding Agent Memory Layer (v0.2 - v1.0)
+
+For the next-generation detailed engineering specifications, evidence attribution hardening, FTS5-driven lazy retrieval, incremental transactions, and real-world benchmark plan, see:
+[`docs/plans/05-coding-agent-memory-spec.md`](docs/plans/05-coding-agent-memory-spec.md).

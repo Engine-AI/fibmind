@@ -16,6 +16,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import StrEnum
+from pathlib import Path
 from typing import Any
 
 from fibmind.admission import AdmitVerdict, MemoryCandidate, decide_admission
@@ -71,6 +72,7 @@ from fibmind.service import MemoryService, _node_summary, _require_text
 class AdviseVerdict(StrEnum):
     ALLOW = "allow"
     REJECT = "reject"
+    WARN = "warn"
 
 
 EPISODE_LIMIT = 48
@@ -374,20 +376,23 @@ class FibBrain:
         state: BrainState | None = None,
         top_k: int = 5,
         arguments: dict[str, Any] | None = None,
+        planned_files: list[str] | tuple[str, ...] | None = None,
     ) -> dict[str, Any]:
         """Should this action run, given what we already know?
 
-        A refuted memory blocks the action only when it matches the action
-        name itself — not merely a word from the arguments. When ``arguments``
-        are given, the blocker must also share at least one argument term, so
-        evidence that ``rm build/`` failed does not block ``rm tmp/``; without
-        arguments, any refuted memory about the action blocks it.
+        A refuted memory blocks the action when it matches the action name,
+        shares argument terms, or matches refuted attempts targeting planned_files.
         """
         _require_text(action, "action")
         identity = (state or BrainState()).identity()
         action_terms = set(tokenize(action))
         argument_terms = set(tokenize(_flatten_arguments(arguments))) - action_terms if arguments else set()
-        query = " ".join([kind, action, *sorted(argument_terms)])
+        file_terms: set[str] = set()
+        if planned_files:
+            for pf in planned_files:
+                for part in Path(pf).parts:
+                    file_terms.update(tokenize(part))
+        query = " ".join([kind, action, *sorted(argument_terms), *sorted(file_terms)])
         search_kwargs = _identity_kwargs(identity)
         active = self.memory.search(query, top_k=top_k, **search_kwargs)
         refuted = self.memory.search(
@@ -400,15 +405,25 @@ class FibBrain:
         blockers = []
         for hit in refuted["results"]:
             matched = set(hit.get("matched_terms") or [])
-            if not matched & action_terms:
+            hit_files: set[str] = set()
+            meta = hit.get("metadata") or {}
+            for f in meta.get("files", []) or []:
+                for part in Path(f).parts:
+                    hit_files.update(tokenize(part))
+
+            file_match = bool(file_terms and (file_terms & matched or file_terms & hit_files))
+            action_match = bool(matched & action_terms)
+
+            if not (action_match or file_match):
                 continue
-            if argument_terms and not matched & argument_terms:
+            if argument_terms and not (matched & argument_terms or file_match):
                 continue
             blockers.append(hit)
         if blockers:
             decision = AdviseDecision(
                 AdviseVerdict.REJECT,
                 f"refuted evidence advises against {action}"
+                + (f" targeting {', '.join(sorted(planned_files))}" if planned_files else "")
                 + (f" with {', '.join(sorted(argument_terms))}" if argument_terms else ""),
                 memories=tuple(blockers + notes),
             )

@@ -560,3 +560,12 @@ class AdviseArgumentTests(unittest.TestCase):
         # The refuted memory mentions "packaging"; a different tool touching packaging is fine.
         decision = self.brain.advise("edit_file", arguments={"path": "packaging/setup.cfg"}, state=_state())
         self.assertEqual(decision["verdict"], AdviseVerdict.ALLOW.value)
+
+    def test_planned_files_blocks_refuted_target(self) -> None:
+        decision = self.brain.advise("clean", planned_files=["build/release.whl"], state=_state())
+        self.assertEqual(decision["verdict"], AdviseVerdict.REJECT.value)
+        self.assertIn("build", decision["reason"])
+
+    def test_planned_files_allows_safe_target(self) -> None:
+        decision = self.brain.advise("edit", planned_files=["src/models.py"], state=_state())
+        self.assertEqual(decision["verdict"], AdviseVerdict.ALLOW.value)

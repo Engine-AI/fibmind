@@ -173,6 +173,44 @@ class VectorTests(unittest.TestCase):
         self.assertEqual(calls, [2, 1])
         self.assertEqual(len(cache), 3)
 
+    def test_persistent_sqlite_embedding_cache(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        calls_1 = []
+        calls_2 = []
+
+        class Counting1(HashingEmbeddingProvider):
+            def embed(self, texts):
+                calls_1.append(len(texts))
+                return super().embed(texts)
+
+        class Counting2(HashingEmbeddingProvider):
+            def embed(self, texts):
+                calls_2.append(len(texts))
+                return super().embed(texts)
+
+        with tempfile.NamedTemporaryFile(suffix=".db") as f:
+            db_path = Path(f.name)
+            cache1 = EmbeddingCache(Counting1(), db_path=db_path)
+            vecs1 = cache1.vectors_for(["alpha", "beta"])
+            self.assertEqual(calls_1, [2])
+            self.assertEqual(len(vecs1), 2)
+
+            # Re-open cache with new instance pointing to same db
+            cache2 = EmbeddingCache(Counting2(), db_path=db_path)
+            # Re-reading alpha and beta should hit SQLite, zero calls to provider
+            vecs2 = cache2.vectors_for(["alpha", "beta"])
+            self.assertEqual(calls_2, [])
+            self.assertEqual(len(vecs2), 2)
+            # Check values match closely
+            self.assertAlmostEqual(vecs1[0][0], vecs2[0][0], places=4)
+
+            # Reading alpha and a new key gamma should only embed gamma
+            vecs3 = cache2.vectors_for(["alpha", "gamma"])
+            self.assertEqual(calls_2, [1])
+            self.assertEqual(len(vecs3), 2)
+
     def test_provider_from_env(self) -> None:
         self.assertIsNone(provider_from_env({}))
         self.assertIsNone(provider_from_env({"FIBMIND_EMBEDDING": "off"}))

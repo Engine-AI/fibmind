@@ -3,7 +3,16 @@
 from fibmind.admission import AdmitDecision, AdmitVerdict, MemoryCandidate, decide_admission
 from fibmind.brain import AdviseDecision, AdviseVerdict, BrainState, FibBrain, ObservedEvent, brain_state
 from fibmind.context import BudgetReport, ContextHit, ContextPack, build_context
-from fibmind.distill import CallableSummarizer, DeterministicPlanner, ExcerptSummarizer, Planner, Summarizer, Summary
+from fibmind.distill import (
+    CallableSummarizer,
+    DeterministicPlanner,
+    ExcerptSummarizer,
+    Planner,
+    StructuredDistillation,
+    StructuredSummarizer,
+    Summarizer,
+    Summary,
+)
 from fibmind.embedding import (
     EmbeddingCache,
     EmbeddingProvider,
@@ -98,6 +107,8 @@ __all__ = [
     "SafetyFinding",
     "SafetyReport",
     "ScoredHit",
+    "StructuredDistillation",
+    "StructuredSummarizer",
     "Summarizer",
     "Summary",
     "SearchHit",

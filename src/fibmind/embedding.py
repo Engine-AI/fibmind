@@ -15,10 +15,14 @@ import hashlib
 import json
 import math
 import os
+import sqlite3
+import struct
 import urllib.error
 import urllib.request
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Protocol
 
 from fibmind.ranking import tokenize
@@ -139,13 +143,46 @@ class OpenAICompatibleEmbeddingProvider:
 
 
 class EmbeddingCache:
-    """Vectors keyed by (provider, content hash). Failures are recorded, not raised."""
+    """Vectors keyed by (provider, content hash). Failures are recorded, not raised.
 
-    def __init__(self, provider: EmbeddingProvider | None) -> None:
+    Can be backed by persistent SQLite storage when ``db_path`` is provided.
+    """
+
+    def __init__(
+        self,
+        provider: EmbeddingProvider | None,
+        *,
+        db_path: str | Path | None = None,
+    ) -> None:
         self.provider = provider
+        self.db_path = Path(db_path).resolve() if db_path else None
         self._vectors: dict[tuple[str, str], list[float]] = {}
         self.failures = 0
         self.last_error: str | None = None
+        if self.db_path:
+            self._init_db()
+
+    def _init_db(self) -> None:
+        if not self.db_path:
+            return
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS vector_cache (
+                        content_hash TEXT NOT NULL,
+                        provider TEXT NOT NULL,
+                        dimensions INTEGER NOT NULL,
+                        vector BLOB NOT NULL,
+                        created_at TEXT NOT NULL,
+                        PRIMARY KEY(provider, content_hash)
+                    );
+                    """
+                )
+                conn.commit()
+        except sqlite3.OperationalError:
+            pass
 
     @property
     def enabled(self) -> bool:
@@ -156,20 +193,67 @@ class EmbeddingCache:
         if self.provider is None:
             return [None] * len(texts)
         hashes = [content_hash(text) for text in texts]
-        missing = [
-            (index, text)
-            for index, (text, digest) in enumerate(zip(texts, hashes, strict=True))
-            if (self.provider.name, digest) not in self._vectors
-        ]
-        if missing:
+
+        # 1. Check in-memory cache first
+        missing_indices: list[int] = []
+        for index, digest in enumerate(hashes):
+            if (self.provider.name, digest) not in self._vectors:
+                missing_indices.append(index)
+
+        # 2. Try loading missing vectors from SQLite if persistent db is configured
+        if missing_indices and self.db_path:
             try:
-                fresh = self.provider.embed([text for _, text in missing])
+                missing_hashes = list({hashes[i] for i in missing_indices})
+                placeholders = ",".join("?" for _ in missing_hashes)
+                with sqlite3.connect(self.db_path) as conn:
+                    rows = conn.execute(
+                        f"SELECT content_hash, vector FROM vector_cache WHERE provider = ? AND content_hash IN ({placeholders})",
+                        [self.provider.name, *missing_hashes],
+                    ).fetchall()
+                    for chash, blob in rows:
+                        dim = len(blob) // 4
+                        vec = list(struct.unpack(f"{dim}f", blob))
+                        self._vectors[(self.provider.name, chash)] = vec
+            except (sqlite3.OperationalError, struct.error):
+                pass
+
+            # Recompute still-missing indices
+            missing_indices = [i for i in missing_indices if (self.provider.name, hashes[i]) not in self._vectors]
+
+        # 3. Call provider for any remaining missing texts
+        if missing_indices:
+            missing_texts = [texts[i] for i in missing_indices]
+            try:
+                fresh = self.provider.embed(missing_texts)
             except (urllib.error.URLError, OSError, ValueError, KeyError, TimeoutError) as exc:
                 self.failures += 1
                 self.last_error = f"{type(exc).__name__}: {exc}"
                 return [self._vectors.get((self.provider.name, digest)) for digest in hashes]
-            for (_, text), vector in zip(missing, fresh, strict=False):
-                self._vectors[(self.provider.name, content_hash(text))] = vector
+
+            to_persist: list[tuple[str, str, int, bytes, str]] = []
+            now_iso = datetime.now(UTC).isoformat()
+            for idx, vector in zip(missing_indices, fresh, strict=False):
+                chash = hashes[idx]
+                self._vectors[(self.provider.name, chash)] = vector
+                if self.db_path:
+                    blob = struct.pack(f"{len(vector)}f", *vector)
+                    to_persist.append((chash, self.provider.name, len(vector), blob, now_iso))
+
+            if to_persist and self.db_path:
+                try:
+                    with sqlite3.connect(self.db_path) as conn:
+                        conn.executemany(
+                            """
+                            INSERT INTO vector_cache (content_hash, provider, dimensions, vector, created_at)
+                            VALUES (?, ?, ?, ?, ?)
+                            ON CONFLICT(provider, content_hash) DO NOTHING
+                            """,
+                            to_persist,
+                        )
+                        conn.commit()
+                except sqlite3.OperationalError:
+                    pass
+
         return [self._vectors.get((self.provider.name, digest)) for digest in hashes]
 
     def __len__(self) -> int:

@@ -1,0 +1,131 @@
+{
+  "name": "real_coding_benchmark",
+  "description": "Real-world coding agent benchmarks: breaking API changes, lock contention, session leaks, and framework pitfalls.",
+  "memories": [
+    {
+      "id": "sqlalchemy_20_commit",
+      "category": "decision",
+      "title": "SQLAlchemy 2.0 explicit commit requirement",
+      "content": "Engine connection in SQLAlchemy 2.0 requires explicit conn.commit() or conn.begin() context. Autocommit is removed. Never pass autocommit=True.",
+      "tags": ["sqlalchemy", "database", "commit", "transaction"],
+      "scope": "knowledge",
+      "owner": "fibmind-team",
+      "hot": true,
+      "metadata": {
+        "files": ["src/db/connection.py"],
+        "conditions": ["SQLAlchemy >= 2.0"],
+        "exceptions": ["Do not use raw autocommit"]
+      }
+    },
+    {
+      "id": "sqlite_wal_busy_timeout",
+      "category": "decision",
+      "title": "SQLite WAL mode and busy timeout",
+      "content": "Prevent database locked operational error under concurrent writers by setting PRAGMA journal_mode=WAL and PRAGMA busy_timeout=5000.",
+      "tags": ["sqlite", "concurrency", "lock", "wal"],
+      "scope": "knowledge",
+      "owner": "fibmind-team",
+      "hot": true,
+      "metadata": {
+        "files": ["src/storage/sqlite.py"],
+        "conditions": ["multi-process concurrency"],
+        "exceptions": ["Not supported on NFS network shares"]
+      }
+    },
+    {
+      "id": "pydantic_v2_model_dump",
+      "category": "decision",
+      "title": "Pydantic v2 model_dump migration",
+      "content": "In Pydantic v2, replace legacy .dict() with .model_dump() and .json() with .model_dump_json(). Calling .dict() emits deprecation warnings or breaks.",
+      "tags": ["pydantic", "serialization", "migration"],
+      "scope": "knowledge",
+      "owner": "fibmind-team",
+      "metadata": {
+        "files": ["src/models/schema.py"],
+        "conditions": ["Pydantic >= 2.0"]
+      }
+    },
+    {
+      "id": "pytest_asyncio_auto_mode",
+      "category": "decision",
+      "title": "pytest-asyncio auto mode configuration",
+      "content": "To prevent fixture loop scope mismatch and asyncio warnings, configure asyncio_mode = 'auto' in pyproject.toml [tool.pytest.ini_options].",
+      "tags": ["pytest", "asyncio", "testing"],
+      "scope": "knowledge",
+      "owner": "fibmind-team",
+      "metadata": {
+        "files": ["pyproject.toml"],
+        "conditions": ["pytest-asyncio >= 0.21"]
+      }
+    },
+    {
+      "id": "requests_session_socket_leak",
+      "category": "decision",
+      "title": "HTTP requests connection pool socket leak",
+      "content": "Always manage requests.Session inside a with context manager or call session.close() in finally block to avoid unclosed socket warnings.",
+      "tags": ["http", "requests", "socket", "leak"],
+      "scope": "knowledge",
+      "owner": "fibmind-team",
+      "metadata": {
+        "files": ["src/client/http.py"]
+      }
+    },
+    {
+      "id": "stale_sqlalchemy_14_autocommit",
+      "category": "decision",
+      "title": "Legacy autocommit flag",
+      "content": "Pass autocommit=True to create_engine or execution_options to enable driver-level autocommit.",
+      "tags": ["sqlalchemy", "autocommit"],
+      "scope": "personal",
+      "owner": "fibmind-team",
+      "stale": true,
+      "metadata": {
+        "superseded_by": "sqlalchemy_20_commit"
+      }
+    }
+  ],
+  "cases": [
+    {
+      "id": "fix_sqlalchemy_transaction",
+      "query": "How to commit transactions in SQLAlchemy 2.0 engine connections?",
+      "relevant_ids": ["sqlalchemy_20_commit"],
+      "expected_answer_terms": ["conn.commit()", "conn.begin()", "explicit"],
+      "owner": "fibmind-team"
+    },
+    {
+      "id": "resolve_sqlite_database_locked",
+      "query": "How to prevent SQLite database is locked concurrency errors?",
+      "relevant_ids": ["sqlite_wal_busy_timeout"],
+      "expected_answer_terms": ["WAL", "busy_timeout=5000", "journal_mode=WAL"],
+      "owner": "fibmind-team"
+    },
+    {
+      "id": "pydantic_v2_serialization",
+      "query": "What method replaces .dict() in Pydantic v2?",
+      "relevant_ids": ["pydantic_v2_model_dump"],
+      "expected_answer_terms": ["model_dump()", "model_dump_json()"],
+      "owner": "fibmind-team"
+    },
+    {
+      "id": "pytest_asyncio_fixture_error",
+      "query": "How to configure pytest-asyncio to avoid fixture loop scope warnings?",
+      "relevant_ids": ["pytest_asyncio_auto_mode"],
+      "expected_answer_terms": ["asyncio_mode", "auto"],
+      "owner": "fibmind-team"
+    },
+    {
+      "id": "prevent_requests_socket_leak",
+      "query": "How to avoid socket leak with requests.Session?",
+      "relevant_ids": ["requests_session_socket_leak"],
+      "expected_answer_terms": ["context manager", "session.close()"],
+      "owner": "fibmind-team"
+    },
+    {
+      "id": "trap_autocommit_must_not_return_stale",
+      "query": "Can we enable autocommit=True in SQLAlchemy 2.0?",
+      "relevant_ids": ["sqlalchemy_20_commit"],
+      "expected_answer_terms": ["explicit conn.commit()", "autocommit is removed"],
+      "owner": "fibmind-team"
+    }
+  ]
+}

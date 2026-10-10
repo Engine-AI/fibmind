@@ -71,6 +71,104 @@ class ExcerptSummarizer:
 
 
 @dataclass(frozen=True, slots=True)
+class StructuredDistillation:
+    title: str
+    directive: str
+    conditions: tuple[str, ...] = ()
+    exceptions: tuple[str, ...] = ()
+    verified_by: tuple[str, ...] = ()
+    risk_level: str = "low"
+
+    def to_text(self) -> str:
+        parts = [f"- [RULE] {self.title}: {self.directive}"]
+        if self.conditions:
+            parts.append(f"  • Conditions: {'; '.join(self.conditions)}")
+        if self.exceptions:
+            parts.append(f"  • Exceptions: {'; '.join(self.exceptions)}")
+        if self.verified_by:
+            parts.append(f"  • VerifiedBy: {'; '.join(self.verified_by)}")
+        return "\n".join(parts)
+
+
+@dataclass(frozen=True, slots=True)
+class StructuredSummarizer:
+    """Extract directives, conditions, exceptions, and evidence without lossy character truncation."""
+
+    name: str = "structured-v1"
+
+    def distill_node(self, node: MemoryNode) -> StructuredDistillation:
+        content = node.content.strip()
+        lines = [line.strip() for line in content.splitlines() if line.strip()]
+
+        # 1. Directive: first substantive sentence or content
+        directive = lines[0] if lines else node.title
+        for line in lines:
+            lower = line.lower()
+            if not any(
+                lower.startswith(p) for p in ("when ", "if ", "note:", "warning:", "beware", "avoid ", "precondition:")
+            ):
+                directive = line
+                break
+
+        # 2. Conditions from metadata or lines
+        conditions: list[str] = []
+        meta_conds = node.metadata.get("conditions") or node.metadata.get("preconditions")
+        if isinstance(meta_conds, (list, tuple)):
+            conditions.extend(str(c) for c in meta_conds)
+        for line in lines:
+            lower = line.lower()
+            if any(lower.startswith(prefix) for prefix in ("when ", "if ", "requires ", "under ", "precondition:")):
+                conditions.append(line)
+
+        # 3. Exceptions and Traps from metadata or lines
+        exceptions: list[str] = []
+        meta_ex = node.metadata.get("exceptions") or node.metadata.get("risks") or node.metadata.get("pitfalls")
+        if isinstance(meta_ex, (list, tuple)):
+            exceptions.extend(str(e) for e in meta_ex)
+        for line in lines:
+            lower = line.lower()
+            if any(
+                lower.startswith(prefix)
+                for prefix in ("avoid ", "beware ", "do not ", "don't ", "except ", "warning:", "pitfall:", "unless ")
+            ):
+                exceptions.append(line)
+
+        # 4. Verified By
+        verified_by: list[str] = []
+        meta_files = node.metadata.get("files") or node.metadata.get("changed_files")
+        if isinstance(meta_files, (list, tuple)) and meta_files:
+            verified_by.append(f"files: {', '.join(str(f) for f in meta_files)}")
+        if getattr(node, "confidence", 0.0) > 0:
+            verified_by.append(f"confidence: {node.confidence:.2f}")
+        meta_source = node.metadata.get("source") or node.metadata.get("verification")
+        if meta_source:
+            verified_by.append(f"source: {meta_source}")
+
+        risk = "high" if exceptions else ("medium" if conditions else "low")
+
+        return StructuredDistillation(
+            title=node.title,
+            directive=directive,
+            conditions=tuple(conditions),
+            exceptions=tuple(exceptions),
+            verified_by=tuple(verified_by),
+            risk_level=risk,
+        )
+
+    def summarize(self, nodes: list[MemoryNode]) -> Summary:
+        distillations = [self.distill_node(node) for node in nodes]
+        rendered = "\n".join(d.to_text() for d in distillations)
+        return Summary(
+            text=rendered,
+            provenance={
+                "summarizer": self.name,
+                "source_node_ids": [node.id for node in nodes],
+                "count": len(nodes),
+            },
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class DeterministicPlanner:
     """The template planner: recall → avoid/reuse → work → verify → reflect."""
 

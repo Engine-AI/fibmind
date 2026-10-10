@@ -291,6 +291,120 @@ class VerifyLoopTests(unittest.TestCase):
 
             asyncio.run(scenario())
 
+    def test_verify_success_unrelated_target_is_inconclusive(self) -> None:
+        with tempfile.NamedTemporaryFile(suffix=".db") as f:
+            store_path = Path(f.name)
+            service = MemoryService(store_path)
+            node = MemoryNode(
+                id="mem_target_scope_test",
+                title="Auth Token Expiry",
+                content="Refresh expired tokens automatically",
+                category="decision",
+                node_type=NodeType.CONCEPT,
+                metadata={"files": ["src/fibmind/auth.py"]},
+            )
+
+            def _init(m: FibMind) -> None:
+                m.nodes[node.id] = node
+
+            service.run(_init)
+
+            # Succeeded command, but output only mentions payment module, NOT auth.py
+            res = run_command_and_reflect(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; print('tests/test_payment.py passed successfully'); sys.exit(0)",
+                ],
+                node_id="mem_target_scope_test",
+                store_path=store_path,
+            )
+
+            self.assertEqual(res["exit_code"], 0)
+            self.assertEqual(res["verdict"], "inconclusive")
+            self.assertIn("did not touch target files", res["note"])
+            # Confidence must not be elevated
+            self.assertEqual(res["reflection"]["confidence"], 0.0)
+            self.assertEqual(res["attribution"]["touched_targets"], [])
+
+    def test_verify_success_matching_target_is_confirmed(self) -> None:
+        with tempfile.NamedTemporaryFile(suffix=".db") as f:
+            store_path = Path(f.name)
+            service = MemoryService(store_path)
+            node = MemoryNode(
+                id="mem_target_touch_test",
+                title="Auth Token Expiry",
+                content="Refresh expired tokens automatically",
+                category="decision",
+                node_type=NodeType.CONCEPT,
+                metadata={"files": ["src/fibmind/auth.py"]},
+            )
+
+            def _init(m: FibMind) -> None:
+                m.nodes[node.id] = node
+
+            service.run(_init)
+
+            # Succeeded command that explicitly verifies auth.py
+            res = run_command_and_reflect(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; print('tests/test_auth.py: PASSED (verified src/fibmind/auth.py)'); sys.exit(0)",
+                ],
+                node_id="mem_target_touch_test",
+                store_path=store_path,
+            )
+
+            self.assertEqual(res["exit_code"], 0)
+            self.assertEqual(res["verdict"], "confirmed")
+            self.assertGreater(res["reflection"]["confidence"], 0.0)
+            self.assertIn("src/fibmind/auth.py", res["attribution"]["touched_targets"])
+
+    def test_verify_assertion_patterns(self) -> None:
+        with tempfile.NamedTemporaryFile(suffix=".db") as f:
+            store_path = Path(f.name)
+            service = MemoryService(store_path)
+            node = MemoryNode(
+                id="mem_assert_test",
+                title="Bulk Query Benchmark",
+                content="Query latency must be under 50ms",
+                category="decision",
+                node_type=NodeType.CONCEPT,
+            )
+
+            def _init(m: FibMind) -> None:
+                m.nodes[node.id] = node
+
+            service.run(_init)
+
+            # Command succeeds but lacks required assertion pattern
+            res_fail = run_command_and_reflect(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; print('Done without benchmark numbers'); sys.exit(0)",
+                ],
+                node_id="mem_assert_test",
+                assertion_patterns=[r"latency:\s*\d+ms"],
+                store_path=store_path,
+            )
+            self.assertEqual(res_fail["verdict"], "inconclusive")
+            self.assertIn("missed required assertion pattern", res_fail["note"])
+
+            # Command succeeds and matches assertion pattern
+            res_ok = run_command_and_reflect(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; print('Benchmark completed: latency: 25ms'); sys.exit(0)",
+                ],
+                node_id="mem_assert_test",
+                assertion_patterns=[r"latency:\s*\d+ms"],
+                store_path=store_path,
+            )
+            self.assertEqual(res_ok["verdict"], "confirmed")
+
 
 if __name__ == "__main__":
     unittest.main()

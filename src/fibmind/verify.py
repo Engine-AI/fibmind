@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -27,6 +28,16 @@ ENV_FAILURE_PATTERNS = (
     "internalerror",
 )
 
+ZERO_TEST_PATTERNS = (
+    "collected 0 items",
+    "no tests ran",
+    "ran 0 tests",
+    "0 passed, 0 total",
+    "[no test files]",
+    "no test suite found",
+    "no tests found",
+)
+
 
 def diagnose_verification_outcome(
     exit_code: int,
@@ -34,6 +45,7 @@ def diagnose_verification_outcome(
     stderr: str,
     *,
     target_files: list[str] | tuple[str, ...] | None = None,
+    assertion_patterns: list[str] | tuple[str, ...] | None = None,
 ) -> tuple[str, str]:
     """Diagnose execution outcome into (verdict, explanation).
 
@@ -52,19 +64,44 @@ def diagnose_verification_outcome(
                 return "inconclusive", f"environment or infrastructure failure ({pattern})"
 
     # 2. Zero tests run
-    if "collected 0 items" in combined or "no tests ran" in combined:
-        return "inconclusive", "no tests collected or executed"
+    for zpat in ZERO_TEST_PATTERNS:
+        if zpat in combined:
+            return "inconclusive", f"no tests collected or executed ({zpat})"
 
-    # 3. Target Scope / Files Binding Check
-    if exit_code != 0 and target_files:
-        normalized_targets = [Path(f).name.lower() for f in target_files if f]
+    # 3. Target Scope / Files Binding Check (symmetrical check on both success and failure)
+    if target_files:
+        normalized_targets = set()
+        for f in target_files:
+            if not f:
+                continue
+            p = Path(f)
+            normalized_targets.add(p.name.lower())
+            if p.stem:
+                normalized_targets.add(p.stem.lower())
+
         touched = any(t in combined for t in normalized_targets)
         if not touched:
-            return "inconclusive", f"failure occurred in unrelated modules; did not touch {target_files}"
+            if exit_code != 0:
+                return "inconclusive", f"failure occurred in unrelated modules; did not touch {list(target_files)}"
+            return "inconclusive", f"verification passed but did not touch target files: {list(target_files)}"
 
-    # 4. Deterministic outcome
+    # 4. Assertion Patterns Check
+    if assertion_patterns:
+        matched = any(re.search(pat, combined, re.IGNORECASE) for pat in assertion_patterns)
+        if not matched:
+            return (
+                "inconclusive",
+                f"command succeeded but missed required assertion pattern: {list(assertion_patterns)}",
+            )
+
+    # 5. Deterministic outcome
     if exit_code == 0:
-        return "confirmed", "verification command passed"
+        return (
+            "confirmed",
+            "verification command passed with confirmed target coverage"
+            if target_files
+            else "verification command passed",
+        )
     return "refuted", f"verification command failed with exit code {exit_code}"
 
 
@@ -75,6 +112,7 @@ def run_command_and_reflect(
     goal: str | None = None,
     source: str | None = None,
     target_files: list[str] | tuple[str, ...] | None = None,
+    assertion_patterns: list[str] | tuple[str, ...] | None = None,
     store_path: str | Path | None = None,
     owner: str | None = None,
     workspace_id: str | None = None,
@@ -88,7 +126,8 @@ def run_command_and_reflect(
     """Execute a verification command and reflect its outcome into FibBrain.
 
     Evaluates test attribution:
-    - Exit 0 -> 'confirmed' (unless 0 tests run)
+    - Exit 0 with touched targets -> 'confirmed'
+    - Exit 0 but missing targets -> 'inconclusive'
     - Exit != 0 with environment or unrelated failure -> 'inconclusive' (no confidence penalty)
     - Exit != 0 with verified target failure -> 'refuted'
     """
@@ -148,7 +187,13 @@ def run_command_and_reflect(
     duration = round(time.monotonic() - start_time, 2)
     exit_code = proc.returncode
 
-    verdict, reason = diagnose_verification_outcome(exit_code, proc.stdout, proc.stderr, target_files=resolved_files)
+    verdict, reason = diagnose_verification_outcome(
+        exit_code,
+        proc.stdout,
+        proc.stderr,
+        target_files=resolved_files,
+        assertion_patterns=assertion_patterns,
+    )
 
     note_lines = [f"{cmd_display} ({verdict}: {reason} in {duration}s)"]
     if proc.stderr.strip():
@@ -168,6 +213,24 @@ def run_command_and_reflect(
         state=state,
     )
 
+    touched_targets = []
+    if resolved_files:
+        combined_lower = (proc.stderr + "\n" + proc.stdout).lower()
+        for f in resolved_files:
+            p = Path(f)
+            if p.name.lower() in combined_lower or (p.stem and p.stem.lower() in combined_lower):
+                touched_targets.append(f)
+
+    attribution = {
+        "command": cmd_display,
+        "exit_code": exit_code,
+        "verdict": verdict,
+        "target_files": resolved_files,
+        "touched_targets": touched_targets,
+        "duration_sec": duration,
+        "source": inferred_source,
+    }
+
     return {
         "command": cmd_display,
         "exit_code": exit_code,
@@ -178,6 +241,7 @@ def run_command_and_reflect(
         "stdout": proc.stdout,
         "stderr": proc.stderr,
         "reflection": reflection,
+        "attribution": attribution,
     }
 
 

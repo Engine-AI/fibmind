@@ -161,6 +161,28 @@ class Fts5StorageTests(unittest.TestCase):
             hits = service.search_fts("routing")
             self.assertIn("mem_svc", hits)
 
+    def test_recall_is_fts_accelerated_when_backed_by_sqlite(self) -> None:
+        with tempfile.NamedTemporaryFile(suffix=".db") as f:
+            service = MemoryService(f.name)
+            node = MemoryNode(
+                id="mem_recall_fts",
+                title="Database Sharding Architecture",
+                content="Consistent hashing algorithm partition keys across cluster nodes",
+                category="decision",
+                node_type=NodeType.CONCEPT,
+            )
+
+            def _add(m: FibMind) -> None:
+                m.nodes[node.id] = node
+
+            service.run(_add)
+
+            # Normal explain_recall should now report fts_accelerated: True
+            report = service.explain_recall("hashing partition cluster")
+            self.assertTrue(report.get("fts_accelerated"))
+            self.assertEqual(len(report["results"]), 1)
+            self.assertEqual(report["results"][0]["node_id"], "mem_recall_fts")
+
 
 if __name__ == "__main__":
     unittest.main()

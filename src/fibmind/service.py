@@ -171,8 +171,11 @@ class MemoryService:
         self._store: MemoryStore = open_store(store_path)
         self._lock = threading.RLock()
         # Vectors are cached per process, keyed by content hash, and attached
-        # to every forest this service loads. No provider means lexical only.
-        self._embeddings = EmbeddingCache(embedding_provider)
+        # to every forest this service loads. Backed by persistent SQLite storage when available.
+        db_path = getattr(self._store, "path", None)
+        if db_path is not None and not str(db_path).endswith((".db", ".sqlite", ".sqlite3")):
+            db_path = None
+        self._embeddings = EmbeddingCache(embedding_provider, db_path=db_path)
         # Ranking weights accepted by a past tuning run, else the defaults.
         self._weights = self._load_weights()
         # Last loaded forest, kept while the store's revision is unchanged.
@@ -208,6 +211,8 @@ class MemoryService:
     def _attach(self, memory: FibMind) -> FibMind:
         memory.embeddings = self._embeddings
         memory.weights = self._weights
+        if hasattr(self._store, "search_fts"):
+            memory.fts_searcher = self._store.search_fts
         return memory
 
     def _invalidate(self) -> None:
