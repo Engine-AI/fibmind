@@ -56,6 +56,7 @@ def _node_summary(node: MemoryNode) -> dict[str, Any]:
         "confidence_source": node.confidence_source,
         "familiarity": round(node.familiarity, 4),
         "access_count": node.access_count,
+        "metadata": dict(node.metadata),
     }
 
 
@@ -471,10 +472,11 @@ class MemoryService:
         content: str | None = None,
         tags: list[str] | None = None,
         expected_version: int | None = None,
+        protect_verified: bool = False,
         *,
         identity: dict[str, str | None] | None = None,
     ) -> dict[str, Any]:
-        """Correct a memory. Its accumulated confidence is reset."""
+        """Correct a memory. Its accumulated confidence is reset (or staged as pending if protect_verified)."""
         if title is None and content is None and tags is None:
             raise ValueError("revise needs at least one of title, content, or tags")
         with self._lock, self._transaction() as memory:
@@ -486,6 +488,7 @@ class MemoryService:
                     content=content,
                     tags=tags,
                     expected_version=expected_version,
+                    protect_verified=protect_verified,
                 )
             except KeyError as exc:
                 raise ValueError(str(exc)) from exc

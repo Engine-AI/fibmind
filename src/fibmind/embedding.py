@@ -162,12 +162,19 @@ class EmbeddingCache:
         if self.db_path:
             self._init_db()
 
+    def _connect(self) -> sqlite3.Connection:
+        assert self.db_path is not None
+        conn = sqlite3.connect(self.db_path, timeout=5.0)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+        return conn
+
     def _init_db(self) -> None:
         if not self.db_path:
             return
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._connect() as conn:
                 conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS vector_cache (
@@ -205,7 +212,7 @@ class EmbeddingCache:
             try:
                 missing_hashes = list({hashes[i] for i in missing_indices})
                 placeholders = ",".join("?" for _ in missing_hashes)
-                with sqlite3.connect(self.db_path) as conn:
+                with self._connect() as conn:
                     rows = conn.execute(
                         f"SELECT content_hash, vector FROM vector_cache WHERE provider = ? AND content_hash IN ({placeholders})",
                         [self.provider.name, *missing_hashes],
@@ -241,7 +248,7 @@ class EmbeddingCache:
 
             if to_persist and self.db_path:
                 try:
-                    with sqlite3.connect(self.db_path) as conn:
+                    with self._connect() as conn:
                         conn.executemany(
                             """
                             INSERT INTO vector_cache (content_hash, provider, dimensions, vector, created_at)

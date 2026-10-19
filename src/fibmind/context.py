@@ -121,7 +121,22 @@ def _excerpt(content: str, limit: int = EXCERPT_CHARS) -> str:
 
 
 def _line(hit: ContextHit) -> str:
-    return f"- [{hit.node.category}] {hit.node.title}: {_excerpt(hit.node.content)}"
+    base = f"- [{hit.node.category}] {hit.node.title}: {_excerpt(hit.node.content)}"
+    meta = hit.node.metadata or {}
+    conds = meta.get("conditions") or meta.get("preconditions")
+    excs = meta.get("exceptions") or meta.get("risks") or meta.get("pitfalls")
+    extras: list[str] = []
+    if isinstance(conds, (list, tuple)) and conds:
+        extras.append(f"Conditions: {'; '.join(str(c) for c in conds)}")
+    elif isinstance(conds, str) and conds.strip():
+        extras.append(f"Conditions: {conds.strip()}")
+    if isinstance(excs, (list, tuple)) and excs:
+        extras.append(f"Exceptions: {'; '.join(str(e) for e in excs)}")
+    elif isinstance(excs, str) and excs.strip():
+        extras.append(f"Exceptions: {excs.strip()}")
+    if extras:
+        return f"{base} [{' | '.join(extras)}]"
+    return base
 
 
 def _fit(line: str, budget: int, counter: TokenCounter) -> tuple[str, int, bool]:

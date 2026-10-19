@@ -3,7 +3,13 @@
 import unittest
 
 from fibmind import MemoryNode, NodeType
-from fibmind.distill import ExcerptSummarizer, StructuredDistillation, StructuredSummarizer
+from fibmind.distill import (
+    CallableSummarizer,
+    ExcerptSummarizer,
+    StructuredDistillation,
+    StructuredSummarizer,
+    verify_distillation_fidelity,
+)
 
 
 class DistillTests(unittest.TestCase):
@@ -74,6 +80,42 @@ class DistillTests(unittest.TestCase):
         self.assertIn("• VerifiedBy:", summary.text)
         self.assertEqual(summary.provenance["summarizer"], "structured-v1")
         self.assertEqual(summary.provenance["count"], 1)
+
+    def test_callable_summarizer_fidelity_gate_falls_back_on_dropped_constraints(self) -> None:
+        node = MemoryNode(
+            id="n_fidelity",
+            title="Database Transaction Guard",
+            content="Always commit inside transaction block.\nDo not call raw close() inside nested handlers.",
+            category="decision",
+            node_type=NodeType.CONCEPT,
+            metadata={"files": ["src/db/tx.py"], "exceptions": ["Never bypass lock on SQLite"]},
+        )
+
+        # Lossy LLM summarizer that drops both 'tx.py' and the exceptions
+        lossy = CallableSummarizer(
+            fn=lambda nodes: "Use transactions for database operations.",
+            model="lossy-llm-v1",
+            prompt_version="v1",
+        )
+        summary = lossy.summarize([node])
+        self.assertIn("fidelity_check_failed", summary.provenance.get("fallback_from", ""))
+        self.assertIn("Never bypass lock on SQLite", summary.text)
+        self.assertIn("src/db/tx.py", summary.text)
+
+        # Faithful LLM summarizer that preserves anchors and exceptions passes
+        faithful = CallableSummarizer(
+            fn=lambda nodes: (
+                "In src/db/tx.py, always commit inside transaction block. "
+                "Never bypass lock on SQLite and do not call raw close() inside nested handlers."
+            ),
+            model="faithful-llm-v1",
+            prompt_version="v1",
+        )
+        ok_summary = faithful.summarize([node])
+        self.assertEqual(ok_summary.provenance["summarizer"], "callable")
+        passed, missing = verify_distillation_fidelity([node], ok_summary.text)
+        self.assertTrue(passed)
+        self.assertEqual(missing, [])
 
 
 if __name__ == "__main__":

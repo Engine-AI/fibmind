@@ -16,7 +16,17 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from fibmind.models import Edge, EventOp, MemoryEvent, MemoryNode, MemoryStatus, MemoryTree, NodeType, Verdict
+from fibmind.models import (
+    Edge,
+    EventOp,
+    MemoryEvent,
+    MemoryNode,
+    MemoryStatus,
+    MemoryTree,
+    NodeType,
+    RelationType,
+    Verdict,
+)
 
 if TYPE_CHECKING:
     from fibmind.graph import FibMind
@@ -67,6 +77,14 @@ def _apply_create(memory: FibMind, event: MemoryEvent, payload: dict[str, Any]) 
 def _apply_link(memory: FibMind, event: MemoryEvent, payload: dict[str, Any]) -> None:
     edge = Edge.from_dict(payload["edge"])
     memory.edges[edge.id] = edge
+    if edge.relation_type == RelationType.CONTRADICTS:
+        reason = edge.metadata.get("reason")
+        for nid in (edge.from_node_id, edge.to_node_id):
+            node = memory.nodes.get(nid)
+            if node is not None:
+                node.metadata["conflicted"] = True
+                if reason:
+                    node.metadata["conflict_reason"] = reason
 
 
 def _apply_fold(memory: FibMind, event: MemoryEvent, payload: dict[str, Any]) -> None:
@@ -113,6 +131,26 @@ def _apply_observe(memory: FibMind, event: MemoryEvent, payload: dict[str, Any])
         node.status_reason = payload.get("note") or f"refuted by {payload.get('source')}"
     if payload.get("updated_at"):
         node.updated_at = datetime.fromisoformat(payload["updated_at"])
+    if node.status == MemoryStatus.REFUTED:
+        counterparts = {
+            edge.to_node_id if edge.from_node_id == node.id else edge.from_node_id
+            for edge in memory.edges.values()
+            if edge.relation_type == RelationType.CONTRADICTS and node.id in (edge.from_node_id, edge.to_node_id)
+        } - {node.id}
+        for other_id in counterparts:
+            other = memory.nodes.get(other_id)
+            if other is None:
+                continue
+            still_conflicted = any(
+                (peer := memory.nodes.get(e.to_node_id if e.from_node_id == other_id else e.from_node_id)) is not None
+                and peer.id != other_id
+                and peer.status == MemoryStatus.ACTIVE
+                for e in memory.edges.values()
+                if e.relation_type == RelationType.CONTRADICTS and other_id in (e.from_node_id, e.to_node_id)
+            )
+            if not still_conflicted:
+                other.metadata.pop("conflicted", None)
+                other.metadata.pop("conflict_reason", None)
 
 
 def _apply_set_status(memory: FibMind, event: MemoryEvent, payload: dict[str, Any]) -> None:

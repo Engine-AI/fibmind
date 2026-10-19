@@ -11,3 +11,4 @@
 | 3 | [Brain v1：plan / recall / coordinate / remember / observe / advise / reflect](03-brain.md) | `add fib brain` |
 | 4 | [Evolve：S0–S7——契约、DSH、episode、procedure、混合检索、预算、插件、调优门禁](04-evolve.md) | `feat(S0)` … `feat(S7)` |
 | 5 | [面向编码 Agent 的本地记忆层：真实基准、因果证据加固、FTS5主链路与结构化提炼](05-coding-agent-memory-spec.md) | `spec: v0.2-v1.0 演进规格书` |
+| 6 | [元认知：知道自己不知道什么——`fibbrain_assess`、缺口路由与缺口评测](06-metacognition.md) | 草案，未开始 |

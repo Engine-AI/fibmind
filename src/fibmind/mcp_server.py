@@ -229,6 +229,7 @@ def build_server(
         content: str | None = None,
         tags: list[str] | None = None,
         expected_version: int | None = None,
+        protect_verified: bool = False,
         owner: str | None = None,
         workspace_id: str | None = None,
         project_id: str | None = None,
@@ -240,6 +241,8 @@ def build_server(
         Prefer this over appending a contradicting memory. Confidence resets to
         zero, since evidence backing the old text says nothing about the new.
         Pass ``expected_version`` for optimistic concurrency control (OCC).
+        Set ``protect_verified=True`` to stage revisions of verified/knowledge
+        memories as pending shadow candidates until verified.
         """
         return service.revise(
             node_id,
@@ -247,6 +250,7 @@ def build_server(
             content=content,
             tags=tags,
             expected_version=expected_version,
+            protect_verified=protect_verified,
             identity=_state(owner, workspace_id, project_id, session_id, task_id).identity(),
         )
 
@@ -796,6 +800,7 @@ def build_server(
         action: str,
         kind: str = "tool",
         arguments: dict[str, Any] | None = None,
+        planned_files: list[str] | None = None,
         owner: str | None = None,
         workspace_id: str | None = None,
         project_id: str | None = None,
@@ -806,9 +811,9 @@ def build_server(
         """Ask whether an action should run, given stored evidence.
 
         Rejects when a refuted memory matches the action — and, if you pass the
-        tool ``arguments``, also shares a term with them, so ``rm build/`` being
-        refuted does not block ``rm tmp/``. Otherwise allows and returns related
-        memories as notes.
+        tool ``arguments`` or ``planned_files``, also shares a term or file path
+        with them, so ``rm build/`` being refuted does not block ``rm tmp/``.
+        Otherwise allows and returns related memories as notes.
         """
         return brain.advise(
             action,
@@ -816,6 +821,41 @@ def build_server(
             state=_state(owner, workspace_id, project_id, session_id, task_id),
             top_k=top_k,
             arguments=arguments,
+            planned_files=planned_files,
+        )
+
+    @tool()
+    def fibbrain_reflex(
+        goal: str,
+        execute: bool = False,
+        inputs: dict[str, str] | None = None,
+        min_confidence: float = 0.75,
+        min_maturity: str = "verified",
+        model_id: str | None = None,
+        require_files_exist: bool = False,
+        owner: str | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
+    ) -> dict[str, Any]:
+        """System 1 fast reflex: answer from high-confidence verified memory or run a verified procedure without LLM.
+
+        Returns ``bypass_llm=True`` when a verified declarative memory or procedure
+        satisfies environmental preconditions (file hashes, target files, non-conflicted,
+        model-generation compatible). When ``execute=True`` and a verified procedure
+        matches, runs its steps and automatically trips a circuit breaker (`refuted`)
+        if execution fails, falling back to ``recall`` context for System 2 LLM reasoning.
+        """
+        return brain.reflex(
+            goal,
+            state=_state(owner, workspace_id, project_id, session_id, task_id),
+            execute=execute,
+            inputs=inputs,
+            min_confidence=min_confidence,
+            min_maturity=min_maturity,
+            model_id=model_id,
+            require_files_exist=require_files_exist,
         )
 
     @tool()
@@ -851,6 +891,8 @@ def build_server(
         node_id: str | None = None,
         goal: str | None = None,
         source: str | None = None,
+        target_files: list[str] | None = None,
+        assertion_patterns: list[str] | None = None,
         owner: str | None = None,
         workspace_id: str | None = None,
         project_id: str | None = None,
@@ -860,9 +902,9 @@ def build_server(
         """Execute a verification command and automatically reflect its outcome.
 
         Runs the command in the workspace (e.g. 'pytest -q', 'cargo check', 'npm test').
-        If the command exits with 0, automatically records verdict='confirmed'.
-        If the command exits non-zero, automatically records verdict='refuted'.
-        Pass node_id or goal to select the target memory.
+        If the command exits with 0 and touches target_files, records verdict='confirmed'.
+        If the command exits non-zero on target_files, records verdict='refuted'.
+        Environment or unrelated failures record verdict='inconclusive' without penalty.
         """
         from fibmind.verify import run_command_and_reflect
 
@@ -871,6 +913,8 @@ def build_server(
             node_id=node_id,
             goal=goal,
             source=source,
+            target_files=target_files,
+            assertion_patterns=assertion_patterns,
             store_path=service._store.path,
             owner=owner,
             workspace_id=workspace_id,

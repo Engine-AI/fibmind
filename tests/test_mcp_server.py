@@ -27,6 +27,7 @@ EXPECTED_TOOLS = {
     "fibmind_explain_recall",
     "fibmind_status",
     "fibbrain_recall",
+    "fibbrain_reflex",
     "fibbrain_remember",
     "fibbrain_observe",
     "fibbrain_advise",

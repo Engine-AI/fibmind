@@ -184,20 +184,53 @@ class DeterministicPlanner:
         return synthesize_plan(objective, memories=memories, status=status, goal_id=goal_id)
 
 
+def verify_distillation_fidelity(nodes: list[MemoryNode], summary_text: str) -> tuple[bool, list[str]]:
+    """Audit whether a distilled summary preserves critical code anchors and exceptions.
+
+    Returns ``(passed, missing_items)``. Used to guard LLM-backed or custom
+    summarizers against dropping negative constraints ('do not', 'avoid',
+    exceptions) or concrete file/symbol anchors during compression.
+    """
+    from fibmind.retrieval import extract_node_anchors
+
+    summary_lower = summary_text.lower()
+    missing: list[str] = []
+    structured = StructuredSummarizer()
+    for node in nodes:
+        anchors = extract_node_anchors(node)
+        if anchors:
+            by_base: dict[str, set[str]] = {}
+            for anchor in anchors:
+                base = anchor.rsplit("/", 1)[-1]
+                by_base.setdefault(base, set()).add(anchor)
+            for base, variants in by_base.items():
+                if not any(v in summary_lower for v in variants):
+                    missing.append(f"anchor:{base}")
+        distilled = structured.distill_node(node)
+        for exc in distilled.exceptions:
+            exc_lower = exc.strip().lower()
+            if exc_lower and exc_lower not in summary_lower:
+                missing.append(f"exception:{exc.strip()}")
+    return (len(missing) == 0, missing)
+
+
 @dataclass
 class CallableSummarizer:
     """Wrap any ``(nodes) -> str`` — an LLM call, for instance.
 
     ``model`` and ``prompt_version`` are recorded on every summary so the
     output can be reproduced or invalidated later. A failure falls back to
-    the excerpt summarizer instead of blocking the fold.
+    ``fallback``; a fidelity audit violation falls back to ``fidelity_fallback``
+    (defaulting to :class:`StructuredSummarizer`) so constraints are preserved.
     """
 
     fn: Any
     model: str
     prompt_version: str
     name: str = "callable"
-    fallback: ExcerptSummarizer = field(default_factory=ExcerptSummarizer)
+    fallback: Summarizer = field(default_factory=ExcerptSummarizer)
+    fidelity_fallback: Summarizer = field(default_factory=StructuredSummarizer)
+    verify_fidelity: bool = True
 
     def summarize(self, nodes: list[MemoryNode]) -> Summary:
         try:
@@ -208,6 +241,13 @@ class CallableSummarizer:
             return fallback
         if not text:
             return self.fallback.summarize(nodes)
+        if self.verify_fidelity:
+            passed, missing = verify_distillation_fidelity(nodes, text)
+            if not passed:
+                fallback = self.fidelity_fallback.summarize(nodes)
+                fallback.provenance["fallback_from"] = f"{self.name}: fidelity_check_failed"
+                fallback.provenance["missing_fidelity"] = missing
+                return fallback
         return Summary(
             text=text,
             provenance={

@@ -102,6 +102,7 @@ class BrainState:
     project_id: str | None = None
     session_id: str | None = None
     task_id: str | None = None
+    model_id: str | None = None
 
     def identity(self) -> dict[str, str | None]:
         return {
@@ -250,6 +251,37 @@ class FibBrain:
         pack["episode"] = [event.to_dict() for event in self._episode_for(identity)]
         return pack
 
+    def reflex(
+        self,
+        goal: str,
+        *,
+        state: BrainState | None = None,
+        execute: bool = False,
+        inputs: dict[str, str] | None = None,
+        min_confidence: float = 0.75,
+        min_maturity: str = "verified",
+        cwd: str | Path | None = None,
+        model_id: str | None = None,
+        require_files_exist: bool = False,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        """System 1 fast reflex: answer from high-confidence verified memory or run a verified procedure without LLM."""
+        from fibmind.reflex import run_reflex
+
+        return run_reflex(
+            self,
+            goal,
+            state=state,
+            execute=execute,
+            inputs=inputs,
+            min_confidence=min_confidence,
+            min_maturity=min_maturity,
+            cwd=cwd,
+            model_id=model_id,
+            require_files_exist=require_files_exist,
+            timeout=timeout,
+        )
+
     # ------------------------------------------------------------------
     # L0 hot memory
 
@@ -264,6 +296,7 @@ class FibBrain:
         leaves the current one frozen.
         """
         identity = (state or BrainState()).identity()
+        model_id = state.model_id if state else None
         session_id = identity["session_id"]
 
         def find_existing(memory: FibMind) -> MemoryNode | None:
@@ -297,7 +330,7 @@ class FibBrain:
                 assert cached is not None
                 return cached
 
-            selected = _select_hot(memory, identity)
+            selected = _select_hot(memory, identity, model_id=model_id)
             node_ids = [node.id for node in selected]
             snapshot_id = None
             if session_id is not None:
@@ -1187,8 +1220,12 @@ def _last_confirmation(memory: FibMind, node_id: str) -> datetime | None:
     return memory.last_confirmation(node_id)
 
 
-def _select_hot(memory: FibMind, identity: dict[str, str | None]) -> list[MemoryNode]:
-    """Deterministic L0 selection: hot kinds, visible, active, evidence first."""
+def _select_hot(
+    memory: FibMind,
+    identity: dict[str, str | None],
+    model_id: str | None = None,
+) -> list[MemoryNode]:
+    """Deterministic L0 selection: hot kinds, visible, active, non-conflicted, evidence first."""
     from fibmind.tokens import DEFAULT_COUNTER
 
     kwargs = _identity_kwargs(identity)
@@ -1199,6 +1236,13 @@ def _select_hot(memory: FibMind, identity: dict[str, str | None]) -> list[Memory
         and node.memory_kind.value in HOT_KINDS
         and node.node_type.value == "raw"
         and node.category not in {EPISODE_CATEGORY, HOT_CATEGORY, GOAL_CATEGORY}
+        and not node.metadata.get("conflicted")
+        and not (
+            model_id
+            and node.metadata.get("grounding") == "model_heuristic"
+            and node.metadata.get("model_id")
+            and str(node.metadata.get("model_id")) != str(model_id)
+        )
         and memory.is_visible(node, **kwargs)
     ]
     candidates.sort(key=lambda node: (node.confidence, node.updated_at, node.id), reverse=True)

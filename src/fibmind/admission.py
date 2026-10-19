@@ -126,8 +126,18 @@ def _is_empty_speculation(candidate: MemoryCandidate) -> bool:
     return bool(SPECULATION.match(text) or SPECULATION.match(candidate.title.strip()))
 
 
+NEAR_DUPLICATE_JACCARD = 0.85
+_NEGATION_TOKENS = frozenset(
+    {"not", "never", "avoid", "dont", "don", "no", "without", "disable", "禁止", "不要", "切勿"}
+)
+
+
 def _duplicate_of(memory: FibMind, candidate: MemoryCandidate) -> MemoryNode | None:
+    from fibmind.ranking import tokenize
+
     needle = fingerprint(candidate.title, candidate.content)
+    cand_tokens = set(tokenize(f"{candidate.title} {candidate.content}"))
+    cand_negations = cand_tokens & _NEGATION_TOKENS
     workspace_id = optional_id(candidate.workspace_id)
     project_id = optional_id(candidate.project_id)
     session_id = optional_id(candidate.session_id)
@@ -145,4 +155,10 @@ def _duplicate_of(memory: FibMind, candidate: MemoryCandidate) -> MemoryNode | N
             continue
         if fingerprint(node.title, node.content) == needle:
             return node
+        if node.category == candidate.category and len(cand_tokens) >= 4:
+            node_tokens = set(tokenize(f"{node.title} {node.content}"))
+            if len(node_tokens) >= 4 and (node_tokens & _NEGATION_TOKENS) == cand_negations:
+                union = len(cand_tokens | node_tokens)
+                if union > 0 and (len(cand_tokens & node_tokens) / union) >= NEAR_DUPLICATE_JACCARD:
+                    return node
     return None

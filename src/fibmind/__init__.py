@@ -12,6 +12,7 @@ from fibmind.distill import (
     StructuredSummarizer,
     Summarizer,
     Summary,
+    verify_distillation_fidelity,
 )
 from fibmind.embedding import (
     EmbeddingCache,
@@ -44,6 +45,7 @@ from fibmind.models import (
 from fibmind.planning import BrainGoal, GoalStatus, PlanStep, StepStatus, infer_capabilities, synthesize_plan
 from fibmind.procedure import Procedure, render_skill, render_tool
 from fibmind.ranking import ScoredHit, rank_nodes, tokenize
+from fibmind.reflex import ReflexDecision, check_node_preconditions, compute_file_hashes, run_reflex
 from fibmind.retrieval import Candidate, LexicalIndex, RankingWeights, retrieve
 from fibmind.review import ReviewCandidate, ReviewMode, digest_episode, extract_candidates
 from fibmind.safety import SafetyFinding, SafetyReport, scan_candidate, scan_text
@@ -101,6 +103,7 @@ __all__ = [
     "RankingWeights",
     "Planner",
     "Procedure",
+    "ReflexDecision",
     "RelationType",
     "ReviewCandidate",
     "ReviewMode",
@@ -119,6 +122,8 @@ __all__ = [
     "Verdict",
     "brain_state",
     "build_context",
+    "check_node_preconditions",
+    "compute_file_hashes",
     "decide_admission",
     "estimate_tokens",
     "digest_episode",
@@ -135,10 +140,12 @@ __all__ = [
     "optional_id",
     "provider_from_env",
     "rank_nodes",
+    "run_reflex",
     "scan_candidate",
     "scan_text",
     "retrieve",
     "render_skill",
     "render_tool",
     "tokenize",
+    "verify_distillation_fidelity",
 ]

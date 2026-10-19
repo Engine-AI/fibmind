@@ -56,6 +56,11 @@ class ConcurrencyAndConflictTests(unittest.TestCase):
         self.assertTrue(any(e.from_node_id == id_a and e.to_node_id == id_b for e in contradict_edges))
         self.assertTrue(any(e.from_node_id == id_b and e.to_node_id == id_a for e in contradict_edges))
 
+        # Replay before resolution must preserve conflicted metadata
+        replayed_mid = FibMind.rebuild_from_log(memory.events)
+        self.assertTrue(replayed_mid.nodes[id_a].metadata.get("conflicted"))
+        self.assertEqual(replayed_mid.nodes[id_a].metadata.get("conflict_reason"), "contradictory journal modes")
+
         # Resolve conflict: A wins over B based on pytest benchmark
         resolution = memory.resolve_conflict(
             winning_node_id=id_a,
@@ -66,9 +71,12 @@ class ConcurrencyAndConflictTests(unittest.TestCase):
         self.assertEqual(resolution["winner_id"], id_a)
         self.assertEqual(resolution["loser_id"], id_b)
 
-        # Winning node has conflict markers cleared
+        # Winning node has conflict markers cleared (both live and after replay)
         self.assertNotIn("conflicted", memory.nodes[id_a].metadata)
         self.assertNotIn("conflict_reason", memory.nodes[id_a].metadata)
+        replayed_after = FibMind.rebuild_from_log(memory.events)
+        self.assertNotIn("conflicted", replayed_after.nodes[id_a].metadata)
+        self.assertNotIn("conflict_reason", replayed_after.nodes[id_a].metadata)
 
         # Losing node has been refuted
         self.assertEqual(memory.nodes[id_b].status, MemoryStatus.REFUTED)

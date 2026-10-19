@@ -312,6 +312,50 @@ class FibMind:
         self._record(EventOp.LINK, {"edge": edge.to_dict()})
         return edge.id
 
+    def _version_targets(self, node_id: str) -> list[str]:
+        """Return target node IDs that ``node_id`` is a VERSION_OF."""
+        targets: list[str] = []
+        node = self.nodes.get(node_id)
+        if node is not None:
+            superseded = node.metadata.get("supersedes_node_id")
+            if isinstance(superseded, str) and superseded:
+                targets.append(superseded)
+        for edge_id in self.adjacency.get(node_id, set()):
+            edge = self.edges.get(edge_id)
+            if edge is not None and edge.relation_type == RelationType.VERSION_OF and edge.from_node_id == node_id:
+                if edge.to_node_id not in targets:
+                    targets.append(edge.to_node_id)
+        return targets
+
+    def _clear_resolved_conflicts(self, refuted_node_id: str) -> None:
+        """Clear conflict flags on active counterparts when their contradicting node is refuted."""
+        counterparts: set[str] = set()
+        for edge_id in self.adjacency.get(refuted_node_id, set()) | self.reverse_adjacency.get(refuted_node_id, set()):
+            edge = self.edges.get(edge_id)
+            if edge is None or edge.relation_type != RelationType.CONTRADICTS:
+                continue
+            other_id = edge.to_node_id if edge.from_node_id == refuted_node_id else edge.from_node_id
+            if other_id != refuted_node_id:
+                counterparts.add(other_id)
+        for other_id in counterparts:
+            other = self.nodes.get(other_id)
+            if other is None:
+                continue
+            still_conflicted = False
+            for edge_id in self.adjacency.get(other_id, set()) | self.reverse_adjacency.get(other_id, set()):
+                edge = self.edges.get(edge_id)
+                if edge is None or edge.relation_type != RelationType.CONTRADICTS:
+                    continue
+                peer_id = edge.to_node_id if edge.from_node_id == other_id else edge.from_node_id
+                peer = self.nodes.get(peer_id)
+                if peer is not None and peer.id != other_id and peer.status == MemoryStatus.ACTIVE:
+                    still_conflicted = True
+                    break
+            if not still_conflicted:
+                other.metadata.pop("conflicted", None)
+                other.metadata.pop("conflict_reason", None)
+                other.updated_at = utc_now()
+
     def record_outcome(
         self,
         node_id: str,
@@ -332,9 +376,13 @@ class FibMind:
         if not source or not source.strip():
             raise ValueError("source must name what produced the verdict")
 
+        version_targets = self._version_targets(node_id)
         if verdict == Verdict.CONFIRMED:
             node.confidence = max(0.0, min(1.0, node.confidence + CONFIDENCE_STEP))
             node.confidence_source = source
+            if node.status == MemoryStatus.PENDING and version_targets:
+                node.status = MemoryStatus.ACTIVE
+                node.status_reason = f"verified by {source}"
         elif verdict == Verdict.REFUTED:
             node.confidence = max(0.0, min(1.0, node.confidence - CONFIDENCE_STEP))
             node.confidence_source = source
@@ -358,8 +406,14 @@ class FibMind:
                 "updated_at": node.updated_at.isoformat(),
             },
         )
-        if verdict == Verdict.REFUTED:
+        if verdict == Verdict.CONFIRMED and version_targets:
+            for target_id in version_targets:
+                old_node = self.nodes.get(target_id)
+                if old_node is not None and old_node.status == MemoryStatus.ACTIVE:
+                    self.mark_stale(target_id, f"superseded by verified revision {node_id}")
+        elif verdict == Verdict.REFUTED:
             self._propagate_refutation(node)
+            self._clear_resolved_conflicts(node_id)
         return node
 
     def derived_knowledge(self, node_id: str) -> list[MemoryNode]:
@@ -506,18 +560,55 @@ class FibMind:
         content: str | None = None,
         tags: Iterable[str] | None = None,
         expected_version: int | None = None,
+        protect_verified: bool = False,
     ) -> MemoryNode:
         """Correct a memory in place, resetting the evidence that backed it.
 
         Confidence is earned by the old content, so it does not transfer: a
         revised claim starts unproven again. If ``expected_version`` is specified
         and does not match the node's current revision, raises ``ConflictError``.
+
+        When ``protect_verified=True`` and the target node already holds verified
+        confidence (``confidence > 0``) or is promoted ``KNOWLEDGE``, the revision
+        is staged as a ``PENDING`` shadow candidate linked via ``VERSION_OF`` so the
+        verified memory remains intact until the new candidate is confirmed.
         """
         node = self._require_node(node_id)
         if expected_version is not None and node.revision != expected_version:
             raise ConflictError(
                 f"Conflict: memory node '{node_id}' is at revision {node.revision}, expected {expected_version}"
             )
+        if protect_verified and (node.confidence > 0.0 or node.scope == MemoryScope.KNOWLEDGE):
+            shadow_meta = dict(node.metadata)
+            shadow_meta["supersedes_node_id"] = node.id
+            shadow_meta["base_revision"] = node.revision
+            shadow_id = self.append(
+                category=node.category,
+                title=title if title is not None else node.title,
+                content=content if content is not None else node.content,
+                tags=tags if tags is not None else sorted(node.tags),
+                metadata=shadow_meta,
+                scope=node.scope,
+                owner=node.owner,
+                workspace_id=node.workspace_id,
+                project_id=node.project_id,
+                session_id=node.session_id,
+                task_id=node.task_id,
+                auto_link=False,
+                status=MemoryStatus.PENDING,
+                compress=False,
+                memory_kind=node.memory_kind,
+            )
+            self.link_nodes(
+                shadow_id,
+                node.id,
+                RelationType.VERSION_OF,
+                weight=1.0,
+                direction=EdgeDirection.DIRECTED,
+                metadata={"supersedes": node.id, "base_revision": node.revision},
+            )
+            return self.nodes[shadow_id]
+
         before = {
             "title": node.title,
             "content": node.content,
@@ -563,8 +654,11 @@ class FibMind:
         """Mark two memories as in dialectical contradiction with CONTRADICTS edges."""
         node_a = self._require_node(node_id_a)
         node_b = self._require_node(node_id_b)
-        self.link_nodes(node_id_a, node_id_b, RelationType.CONTRADICTS, weight=1.0)
-        self.link_nodes(node_id_b, node_id_a, RelationType.CONTRADICTS, weight=1.0)
+        edge_meta: dict[str, Any] = {"conflicted": True}
+        if reason:
+            edge_meta["reason"] = reason
+        self.link_nodes(node_id_a, node_id_b, RelationType.CONTRADICTS, weight=1.0, metadata=dict(edge_meta))
+        self.link_nodes(node_id_b, node_id_a, RelationType.CONTRADICTS, weight=1.0, metadata=dict(edge_meta))
         node_a.metadata["conflicted"] = True
         node_b.metadata["conflicted"] = True
         if reason:

@@ -405,6 +405,27 @@ class VerifyLoopTests(unittest.TestCase):
             )
             self.assertEqual(res_ok["verdict"], "confirmed")
 
+    def test_short_or_generic_stems_do_not_false_positive_match(self) -> None:
+        from fibmind.verify import diagnose_verification_outcome
+
+        # 'io.py' stem 'io' appears inside 'execution', and 'test.py' stem 'test' appears inside 'test session'
+        verdict, _ = diagnose_verification_outcome(
+            0,
+            "=== test session starts ===\nexecution finished in 0.12s",
+            "",
+            target_files=["src/fibmind/io.py", "src/fibmind/test.py"],
+        )
+        self.assertEqual(verdict, "inconclusive")
+
+        # Explicit filename 'io.py' does match
+        verdict_ok, _ = diagnose_verification_outcome(
+            0,
+            "tests/test_io.py verified src/fibmind/io.py",
+            "",
+            target_files=["src/fibmind/io.py"],
+        )
+        self.assertEqual(verdict_ok, "confirmed")
+
 
 if __name__ == "__main__":
     unittest.main()

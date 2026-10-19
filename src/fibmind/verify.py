@@ -38,6 +38,40 @@ ZERO_TEST_PATTERNS = (
     "no tests found",
 )
 
+GENERIC_STEMS = frozenset(
+    {
+        "__init__",
+        "main",
+        "test",
+        "tests",
+        "index",
+        "utils",
+        "common",
+        "base",
+        "conftest",
+        "config",
+        "app",
+        "cli",
+    }
+)
+
+
+def _target_touched(target: str, combined_lower: str) -> bool:
+    """Return True if ``target`` file or non-generic module stem appears in ``combined_lower``."""
+    raw = str(target).strip().lower().replace("\\", "/")
+    if not raw:
+        return False
+    if raw in combined_lower:
+        return True
+    p = Path(raw)
+    if p.name and p.name in combined_lower:
+        return True
+    stem = p.stem
+    if stem and len(stem) >= 4 and stem not in GENERIC_STEMS:
+        if re.search(rf"(?<![a-z0-9]){re.escape(stem)}(?![a-z0-9])", combined_lower):
+            return True
+    return False
+
 
 def diagnose_verification_outcome(
     exit_code: int,
@@ -70,16 +104,8 @@ def diagnose_verification_outcome(
 
     # 3. Target Scope / Files Binding Check (symmetrical check on both success and failure)
     if target_files:
-        normalized_targets = set()
-        for f in target_files:
-            if not f:
-                continue
-            p = Path(f)
-            normalized_targets.add(p.name.lower())
-            if p.stem:
-                normalized_targets.add(p.stem.lower())
-
-        touched = any(t in combined for t in normalized_targets)
+        non_empty_targets = [f for f in target_files if f and str(f).strip()]
+        touched = any(_target_touched(f, combined) for f in non_empty_targets) if non_empty_targets else True
         if not touched:
             if exit_code != 0:
                 return "inconclusive", f"failure occurred in unrelated modules; did not touch {list(target_files)}"
@@ -217,8 +243,7 @@ def run_command_and_reflect(
     if resolved_files:
         combined_lower = (proc.stderr + "\n" + proc.stdout).lower()
         for f in resolved_files:
-            p = Path(f)
-            if p.name.lower() in combined_lower or (p.stem and p.stem.lower() in combined_lower):
+            if _target_touched(f, combined_lower):
                 touched_targets.append(f)
 
     attribution = {
@@ -253,6 +278,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--node-id", help="Memory node ID to verify")
     parser.add_argument("--goal", help="Task goal or search query to locate memory node")
     parser.add_argument("--target-files", nargs="*", default=None, help="Target file paths expected to be affected")
+    parser.add_argument(
+        "--assertion-patterns",
+        nargs="*",
+        default=None,
+        help="Regex patterns that must appear in command output",
+    )
     parser.add_argument("--source", help="Source identifier (default: command name)")
     parser.add_argument(
         "--store",
@@ -283,6 +314,7 @@ def main(argv: list[str] | None = None) -> int:
             node_id=args.node_id,
             goal=args.goal,
             target_files=args.target_files,
+            assertion_patterns=args.assertion_patterns,
             source=args.source,
             store_path=args.store,
             owner=args.owner,
