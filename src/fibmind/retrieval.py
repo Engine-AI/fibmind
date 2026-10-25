@@ -352,6 +352,7 @@ def retrieve(
         "is_shortcut": is_lexical_shortcut_query(query),
         "weights": weights.to_dict(),
         "excluded": [],
+        "hidden_candidates": 0,
         "fts_accelerated": False,
     }
     if not query_terms:
@@ -391,29 +392,38 @@ def retrieve(
 
     # --- lexical candidates ------------------------------------------------
     candidates: dict[str, Candidate] = {}
+    eligible: set[str] = set()
+    for node_id in memory.lexical.candidates(query_terms):
+        node = memory.nodes.get(node_id)
+        if node is None:
+            continue
+        why: list[str] = []
+        if admissible(node, why):
+            eligible.add(node_id)
+        elif explain:
+            diagnostic_filter = {**visible_filter, "statuses": set(MemoryStatus), "include_folded": True}
+            if memory.is_visible(node, **diagnostic_filter):
+                report["excluded"].append({"node_id": node.id, "title": node.title, "reason": why[0]})
+            else:
+                report["hidden_candidates"] += 1
     fts_candidate_ids: set[str] | None = None
     if candidate_node_ids is not None:
         fts_candidate_ids = set(candidate_node_ids)
         report["fts_accelerated"] = True
     elif getattr(memory, "fts_searcher", None) is not None:
         try:
-            hits = memory.fts_searcher(query, limit=LEXICAL_TOP_N * 3)
+            hits = memory.fts_searcher(query, limit=LEXICAL_TOP_N * 3, eligible_node_ids=eligible)
             if hits is not None:
                 fts_candidate_ids = set(hits)
                 report["fts_accelerated"] = True
         except Exception:
             fts_candidate_ids = None
 
-    lexical_node_ids = fts_candidate_ids if fts_candidate_ids is not None else memory.lexical.candidates(query_terms)
+    lexical_node_ids = eligible if fts_candidate_ids is None else eligible.intersection(fts_candidate_ids)
 
     for node_id in lexical_node_ids:
         node = memory.nodes.get(node_id)
         if node is None:
-            continue
-        why: list[str] = []
-        if not admissible(node, why):
-            if explain:
-                report["excluded"].append({"node_id": node.id, "title": node.title, "reason": why[0]})
             continue
         bm25, matched = memory.lexical.bm25(node.id, query_terms)
         if not matched:

@@ -52,7 +52,7 @@ version-1 events without this optional field retain their original timestamp;
 their historical mutation time cannot be reconstructed from those payloads.
 
 **Stores.** A JSON store carries `log_version` at the top level. A SQLite store
-carries it in `meta.log_version` and `schema_version` (currently 5) for its
+carries it in `meta.log_version` and `schema_version` (currently 7) for its
 own table layout. A missing `log_version` is read as version 1. A reader must
 refuse a log whose version is greater than what it implements.
 
@@ -66,18 +66,21 @@ unknown fields and default missing ones.
 | --- | --- |
 | `scope` | `session` / `personal` / `knowledge`. `knowledge` is only written by `promote_to_knowledge`. |
 | `status` | `active` / `pending` / `stale` / `refuted` / `forgotten`. Normal recall sees only `active`. `pending` is a review-written memory awaiting approval. |
-| `owner`, `workspace_id`, `project_id`, `session_id`, `task_id` | Identity. Visibility is exact-match per [`02-identity.md`](plans/02-identity.md); `task_id` is recorded but never filters. |
+| `owner`, `workspace_id`, `project_id`, `session_id`, `task_id` | Identity. Personal memories use exact owner/workspace/project labels unless explicitly broadened below. Session scratch requires the same session or a shared nonempty task ID, within the same owner/workspace/project. |
 | `confidence`, `confidence_source` | Moves only through `observe` events with a named source. The only trust signal ranking may use. |
 | `familiarity`, `access_count` | Usage counters. Never enter ranking. Not replayed. |
 | `folded_into` | Set by `fold`. Folded nodes are excluded from normal recall but keep their text. |
-| `memory_kind` | `preference` / `decision` / `error` / `requirement` / `summary` / `knowledge` / `procedure`, or absent. Inferred from the category when not given. `procedure` nodes carry a JSON body with `kind: fibbrain_procedure` and are the only kind `render` emits. |
+| `memory_kind` | `profile` / `preference` / `decision` / `error` / `requirement` / `summary` / `knowledge` / `procedure`, or absent. Inferred from the category when not given. `procedure` nodes carry a JSON body with `kind: fibbrain_procedure` and are the only kind `render` emits. |
+| `metadata.context_level` | Explicit personal `user` context has NULL workspace/project and follows the same human across projects. `workspace` context has a workspace and NULL project and stays in that workspace. `project` and legacy unlabelled metadata keep exact labels. Other owners never inherit personal context. Folding groups by this level and preserves it in summaries and replay. |
 
 ## 2. Brain protocol
 
-The MCP server registers exactly the tools listed under `tools` in
+With `--profile full` (the server default), the MCP server registers exactly the tools listed under `tools` in
 [`tests/fixtures/demo-brain.expected.json`](../tests/fixtures/demo-brain.expected.json).
 Tool names and the meaning of their parameters are stable. New optional
 parameters may be added; existing ones are not renamed or removed.
+`--profile memory` exposes background, admission, reflection, retrieval, and
+upkeep tools; the configuration generator defaults to this smaller profile.
 
 Every `fibbrain_*` tool accepts the identity quintet `owner`, `workspace_id`,
 `project_id`, `session_id`, `task_id` as optional strings. Omitting a field means
@@ -85,13 +88,14 @@ Every `fibbrain_*` tool accepts the identity quintet `owner`, `workspace_id`,
 
 | tool | question | persists |
 | --- | --- | --- |
+| `fibbrain_context(goal, identity, workspace_path, budget_tokens)` | Which user background and relevant memories should this harness know? | no semantic writes: no goals, hot snapshots, or episodes |
 | `fibbrain_plan(objective \| goal_id, identity)` | What am I doing, in what order? | yes: a `goal` node tagged `fibbrain-goal`, JSON document with `kind: fibbrain_goal` |
 | `fibbrain_recall(goal, identity, top_k, depth, budget_tokens, include_hot)` | What do I already know, inside this many tokens? | first call in a session persists the hot snapshot |
 | `fibbrain_hot(identity, refresh)` | What is this session's standing preamble? | yes: a `scope=session` node in category `hot` |
 | `fibbrain_tune(apply)` | Should my ranking weights move, and does the gate allow it? | yes: a `tuning` observation; weights only when adopted |
 | `fibbrain_revalidation_candidates(older_than_days, identity)` | What has gone unconfirmed too long? | no |
 | `fibbrain_coordinate(objective \| goal_id, identity)` | Which capabilities next, and are they safe? | may mark the goal `blocked` |
-| `fibbrain_remember(category, title, content, tags, scope, identity)` | Is this worth keeping? | only on `verdict: write` |
+| `fibbrain_remember(category, title, content, tags, scope, identity, context_level, workspace_path)` | Is this worth keeping, and at which explicit personal context level? | only on `verdict: write` |
 | `fibbrain_observe(kind, summary, payload, identity)` | What just happened? | with a `session_id`: yes, as `scope=session` scratch in category `episode`; recall never returns it as a hit |
 | `fibbrain_review_session(session_id, mode, close, identity)` | What from this session is worth keeping? | `approve`: as `pending`; `auto`: as `active`; `candidates`: nothing |
 | `fibbrain_pending_reviews(identity)` / `fibbrain_approve_memory` / `fibbrain_reject_memory` | Which review memories wait, and do they get in? | status changes only |
@@ -106,6 +110,17 @@ fields may appear.
 
 **Guarantees a conforming brain must keep:**
 
+- `context` is the host-neutral background entry point. It returns applicable
+  personal profile/preferences plus relevant visible memories/knowledge, omits
+  internal goal/hot/episode records and inactive/conflicted/unsafe memories,
+  and does not execute actions or create conversational state. No relevant task
+  facts is a valid result even when profile is present. Its budget bounds
+  rendered `text`; the compact `memories` manifest contains rendered IDs only.
+- `context` and `remember` can derive identity from an absolute local
+  `workspace_path`: the canonical git-root path is the workspace, its basename
+  the project, and HEAD's branch the task. Existing explicit labels/server
+  defaults override inference. A root `.fibmind-project.json` may declare
+  established workspace/project labels. All applications reuse the returned `state`.
 - `remember` returns `verdict` ∈ `write` / `skip` and a `reason`. Skipped
   candidates are not persisted. Exact duplicates within the same owner /
   workspace / project are skipped.

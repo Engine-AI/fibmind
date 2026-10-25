@@ -9,7 +9,7 @@ import pytest
 
 pytest.importorskip("mcp")
 
-from fibmind.mcp_server import _parse_args, build_server  # noqa: E402
+from fibmind.mcp_server import MEMORY_TOOLS, _parse_args, build_server  # noqa: E402
 from fibmind.service import MemoryService  # noqa: E402
 
 EXPECTED_TOOLS = {
@@ -27,6 +27,7 @@ EXPECTED_TOOLS = {
     "fibmind_explain_recall",
     "fibmind_status",
     "fibbrain_recall",
+    "fibbrain_context",
     "fibbrain_reflex",
     "fibbrain_remember",
     "fibbrain_observe",
@@ -61,6 +62,17 @@ def _result_json(result: object) -> dict:
 
 
 class McpServerTests(unittest.TestCase):
+    def test_memory_profile_exposes_context_and_management_without_execution(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = build_server(MemoryService(Path(tmp) / "store.db"), profile="memory")
+            tools = {tool.name: tool for tool in server._tool_manager.list_tools()}
+            self.assertEqual(set(tools), MEMORY_TOOLS)
+            self.assertFalse(
+                {"fibbrain_verify", "fibbrain_reflex", "fibbrain_plan", "fibbrain_coordinate"} & set(tools)
+            )
+            self.assertTrue(tools["fibbrain_context"].annotations.read_only_hint)
+            self.assertFalse(tools["fibbrain_context"].annotations.destructive_hint)
+
     def test_direct_mutation_tool_checks_identity(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             service = MemoryService(Path(tmp) / "memory.db")

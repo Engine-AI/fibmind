@@ -32,7 +32,7 @@ from fibmind.models import (
 from fibmind.ranking import ScoredHit
 from fibmind.replay import apply_event
 from fibmind.retrieval import DEFAULT_WEIGHTS, LexicalIndex, RankingWeights, retrieve, to_scored_hits
-from fibmind.visibility import identity_key, is_visible, promotion_identity
+from fibmind.visibility import ContextLevel, context_level, identity_key, is_visible, promotion_identity
 
 # How much a single confirmation/refutation moves a node's confidence. Evidence
 # accumulates rather than deciding outright, so one lucky pass does not make a
@@ -1278,6 +1278,16 @@ class FibMind:
             confidence=max((node.confidence for node in source_nodes), default=0.0),
             memory_weight=sum(node.memory_weight for node in source_nodes),
         )
+
+        if source_nodes and context_level(source_nodes[0]) != ContextLevel.PROJECT:
+            compressed.metadata["context_level"] = context_level(source_nodes[0]).value
+        hosts = {str(node.metadata["host"]) for node in source_nodes if node.metadata.get("host")}
+        for node in source_nodes:
+            source_hosts = node.metadata.get("source_hosts", [])
+            if isinstance(source_hosts, (list, tuple)):
+                hosts.update(str(host) for host in source_hosts if host)
+        if hosts:
+            compressed.metadata["source_hosts"] = sorted(hosts)
 
         tree_id = self.create_tree(category)
         compressed.tree_ids.add(tree_id)

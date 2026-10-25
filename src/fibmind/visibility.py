@@ -9,9 +9,28 @@ rule once instead of once per code path.
 
 from __future__ import annotations
 
+from enum import StrEnum
+
 from fibmind.models import MemoryNode, MemoryScope, MemoryStatus, optional_id
 
 ACTIVE_ONLY: frozenset[MemoryStatus] = frozenset({MemoryStatus.ACTIVE})
+
+
+class ContextLevel(StrEnum):
+    USER = "user"
+    WORKSPACE = "workspace"
+    PROJECT = "project"
+
+
+def context_level(node: MemoryNode) -> ContextLevel:
+    """Broader personal context is opt-in; legacy None labels stay exact."""
+    level = node.metadata.get("context_level")
+    if node.scope == MemoryScope.PERSONAL:
+        if level == ContextLevel.USER and node.workspace_id is None and node.project_id is None:
+            return ContextLevel.USER
+        if level == ContextLevel.WORKSPACE and node.workspace_id is not None and node.project_id is None:
+            return ContextLevel.WORKSPACE
+    return ContextLevel.PROJECT
 
 
 def is_visible(
@@ -57,6 +76,11 @@ def is_visible(
         if node.project_id is not None and node.project_id != optional_id(project_id):
             return False
         return True
+    level = context_level(node)
+    if level == ContextLevel.USER:
+        return True
+    if level == ContextLevel.WORKSPACE:
+        return node.workspace_id == optional_id(workspace_id)
     if node.workspace_id != optional_id(workspace_id):
         return False
     if node.project_id != optional_id(project_id):
@@ -74,6 +98,7 @@ def identity_key(node: MemoryNode) -> tuple:
         node.project_id,
         node.session_id if node.scope == MemoryScope.SESSION else None,
         node.task_id if node.scope == MemoryScope.SESSION else None,
+        context_level(node),
     )
 
 

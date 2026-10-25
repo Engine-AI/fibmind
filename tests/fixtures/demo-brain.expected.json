@@ -63,6 +63,7 @@
     "fibbrain_observe",
     "fibbrain_pending_reviews",
     "fibbrain_plan",
+    "fibbrain_context",
     "fibbrain_recall",
     "fibbrain_reflect",
     "fibbrain_reflex",

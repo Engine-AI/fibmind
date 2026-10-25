@@ -2,8 +2,10 @@
 
 English | [简体中文](README.zh-CN.md)
 
-FibBrain is a cognitive runtime for agents. **FibMind** is the memory engine
-underneath it.
+**FibMind** manages shared user memory for Codex, Claude Code, Antigravity
+(AGY), and other harnesses. On each request it supplies relevant stored user
+background and knowledge. **FibBrain** provides its context/admission interface
+and an optional cognitive workflow; the calling harness controls execution.
 
 ```text
 Agent  =  FibBrain (plan / recall / decide / coordinate / remember)
@@ -11,10 +13,11 @@ Agent  =  FibBrain (plan / recall / decide / coordinate / remember)
        +  Plugins  (tools / MCP / models)
 ```
 
-Brain v1 implements seven actions on top of the existing store:
+The background interface and Brain v1 actions sit on top of the existing store:
 
 | Action | Question |
 | --- | --- |
+| `context` | Which user background and relevant facts should this harness know? |
 | `plan` | What am I doing, and in what order? |
 | `recall` | What do I already know about this goal? |
 | `coordinate` | Which capabilities should the body involve next? |
@@ -100,6 +103,24 @@ you do not have it). Development checks, all of which CI runs on every push:
 
 The evaluation floor is a merge gate, not a report. Raise it when the suite
 improves; do not lower it to make a build pass.
+
+### Share memory across applications
+
+Generate and preview Codex, Claude Code, and AGY configuration for the same
+human owner and existing database:
+
+```bash
+.venv/bin/fibmind-config --owner abbila --store .fibmind/memory.db \
+  --profile full --output-dir .fibmind/integrations
+.venv/bin/fibmind-connect --bundle .fibmind/integrations
+.venv/bin/fibmind-connect --bundle .fibmind/integrations --apply
+```
+
+The generator defaults to a smaller `memory` tool profile. This repository uses
+`full` to preserve its existing AGENTS workflow. Registration backs up existing
+host settings and installs a marked context-use instruction block. See
+[cross-application memory](docs/cross-application-memory.md) for identity,
+visibility levels, and protocol versus live-application verification.
 
 ## Retrieval Evaluation
 
@@ -316,6 +337,7 @@ Recall and record:
 
 | Tool | Purpose |
 | --- | --- |
+| `fibbrain_context` | Read-only user profile plus task-relevant memory/knowledge, with budget and evidence labels. |
 | `fibbrain_plan` | Create or refresh a persisted goal and its deterministic plan. |
 | `fibbrain_coordinate` | Recommend the next capabilities and advise each one. |
 | `fibbrain_complete_goal` | Mark a persisted goal complete; it stays recallable. |
@@ -350,8 +372,11 @@ Judgement and upkeep — the half that keeps the store from degrading:
 | `fibmind_forget` | Delete a memory permanently, including from log history. |
 | `fibmind_promote_knowledge` | Turn several observations into one shared claim. |
 
-`fibbrain_plan` then `fibbrain_recall` before starting a task, and
-`fibbrain_remember` after finishing one, are the calls you use most.
+For cross-application background, call `fibbrain_context` before answering and
+`fibbrain_remember` when durable information appears. Explicit
+`context_level=user` carries personal background across projects; project facts
+remain project-specific. The optional cognitive workflow uses `fibbrain_plan`
+then `fibbrain_recall` before work.
 `fibbrain_coordinate` names the next capabilities; `fibbrain_advise` can still
 be called directly for a specific action. `fibbrain_remember` will skip a
 duplicate or a dump. A store that only ever writes still degrades unless

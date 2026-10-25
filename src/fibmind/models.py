@@ -90,6 +90,7 @@ class MemoryKind(StrEnum):
     """
 
     PREFERENCE = "preference"
+    PROFILE = "profile"
     DECISION = "decision"
     ERROR = "error"
     REQUIREMENT = "requirement"

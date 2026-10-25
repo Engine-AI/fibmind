@@ -6,7 +6,7 @@ import json
 import os
 import sqlite3
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
@@ -705,7 +705,7 @@ class SqliteStore:
         )
         connection.execute("UPDATE meta SET value = CAST(value AS INTEGER) + 1 WHERE key = 'revision'")
 
-    def search_fts(self, query: str, limit: int = 50) -> list[str]:
+    def search_fts(self, query: str, limit: int = 50, *, eligible_node_ids: Iterable[str] | None = None) -> list[str]:
         """Perform fast full-text search directly via SQLite FTS5 BM25 ranking.
 
         Returns matching node IDs ordered by relevance without full graph deserialization.
@@ -715,10 +715,19 @@ class SqliteStore:
             return []
         escaped_terms = [t.replace('"', '""') for t in terms]
         match_expr = " OR ".join(f'"{t}"' for t in escaped_terms)
+        eligible = frozenset(eligible_node_ids) if eligible_node_ids is not None else None
+        if eligible is not None and not eligible:
+            return []
         with self._connect() as connection:
+            predicate = ""
+            if eligible is not None:
+                # Reuse the visibility decisions made by the domain layer. A
+                # UDF avoids a second policy in SQL and SQLite's parameter cap.
+                connection.create_function("fibmind_eligible", 1, lambda node_id: int(node_id in eligible))
+                predicate = " AND fibmind_eligible(id)"
             try:
                 rows = connection.execute(
-                    "SELECT id, rank FROM nodes_fts WHERE nodes_fts MATCH ? ORDER BY rank LIMIT ?",
+                    f"SELECT id, rank FROM nodes_fts WHERE nodes_fts MATCH ?{predicate} ORDER BY rank LIMIT ?",
                     (match_expr, limit),
                 ).fetchall()
                 return [row[0] for row in rows]

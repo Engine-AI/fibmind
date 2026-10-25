@@ -41,6 +41,8 @@ fibbrain-mcp = "fibmind.mcp_server:main"
 fibmind-daemon = "fibmind.mcp_server:daemon_main"
 fibmind-migrate = "fibmind.migrate:main"
 fibmind-verify = "fibmind.verify:main"
+fibmind-config = "fibmind.integrations:main"
+fibmind-connect = "fibmind.hosts:main"
 
 [build-system]
 requires = ["setuptools>=68"]

@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-FibBrain 是面向 agent 的认知运行时（cognitive runtime），**FibMind** 是它底层的记忆引擎。
+**FibMind** 为 Codex、Claude Code、Antigravity（AGY）等 harness 提供共享的用户记忆，在每次请求时补充相关的用户背景、历史记忆和知识。**FibBrain** 提供上下文、记忆准入接口及可选的认知工作流，具体执行由调用方 harness 控制。
 
 ```text
 Agent  =  FibBrain (plan / recall / decide / coordinate / remember)
@@ -10,10 +10,11 @@ Agent  =  FibBrain (plan / recall / decide / coordinate / remember)
        +  Plugins  (tools / MCP / models)
 ```
 
-Brain v1 在现有存储之上实现了七个动作：
+上下文接口和 Brain v1 动作建立在现有存储之上：
 
 | 动作 | 回答的问题 |
 | --- | --- |
+| `context` | 当前 harness 需要知道哪些用户背景和相关事实？ |
 | `plan` | 我在做什么，按什么顺序做？ |
 | `recall` | 关于这个目标，我已经知道什么？ |
 | `coordinate` | 下一步该让躯体（body）调动哪些能力？ |
@@ -69,6 +70,19 @@ uv sync --locked --extra dev --python 3.12.13
 ```
 
 评测下限是合并门禁，不是报告。评测结果提升时就上调它；不要为了让构建通过而下调它。
+
+### 跨应用共享记忆
+
+为 Codex、Claude Code 和 AGY 生成指向同一用户、同一现有数据库的配置，并预览接入操作：
+
+```bash
+.venv/bin/fibmind-config --owner abbila --store .fibmind/memory.db \
+  --profile full --output-dir .fibmind/integrations
+.venv/bin/fibmind-connect --bundle .fibmind/integrations
+.venv/bin/fibmind-connect --bundle .fibmind/integrations --apply
+```
+
+生成器默认使用较小的 `memory` 工具集，本仓库使用 `full` 以兼容现有 AGENTS 工作流。应用配置前会备份原设置，并加入带标记的上下文使用规则。身份、可见范围以及协议测试和真实应用验证的区别见[跨应用记忆说明](docs/cross-application-memory.md)。
 
 ## 检索评测
 
@@ -213,6 +227,7 @@ recall 与记录：
 
 | 工具 | 用途 |
 | --- | --- |
+| `fibbrain_context` | 只读获取用户背景和任务相关记忆/知识，附带预算、证据和来源。 |
 | `fibbrain_plan` | 创建或刷新一个持久化目标及其确定性计划。 |
 | `fibbrain_coordinate` | 推荐下一步要调动的能力，并逐一给出 advise。 |
 | `fibbrain_complete_goal` | 把持久化目标标记为完成；它仍然可以被 recall。 |
@@ -247,7 +262,7 @@ recall 与记录：
 | `fibmind_forget` | 永久删除一条记忆，包括日志历史中的内容。 |
 | `fibmind_promote_knowledge` | 把多条观察合并为一条共享结论。 |
 
-最常用的调用是：开始任务前先 `fibbrain_plan`、再 `fibbrain_recall`，完成后 `fibbrain_remember`。`fibbrain_coordinate` 给出下一步该调动的能力；针对某个具体动作，仍然可以直接调用 `fibbrain_advise`。`fibbrain_remember` 会跳过重复内容和原始转储（dump）。只写不评的存储照样会退化，除非用 `fibbrain_reflect` 记录这些记忆是否经受住了检验。
+跨应用背景的常用流程是：回答前调用 `fibbrain_context`，出现值得长期保留的信息时调用 `fibbrain_remember`。显式设置 `context_level=user` 才会让个人背景跟随用户跨项目使用，项目事实仍限制在对应项目内。可选的认知工作流继续使用 `fibbrain_plan`、`fibbrain_recall` 和 `fibbrain_coordinate`。`fibbrain_remember` 会跳过重复内容和原始转储；`fibbrain_reflect` 根据具名的实际证据记录记忆是否正确。
 
 ### Host 验证
 

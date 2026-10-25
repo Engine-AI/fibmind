@@ -67,6 +67,7 @@ from fibmind.review import (
     extract_candidates,
 )
 from fibmind.service import MemoryService, _node_summary, _require_text
+from fibmind.visibility import ContextLevel
 
 
 class AdviseVerdict(StrEnum):
@@ -90,7 +91,7 @@ HOT_KIND = "fibbrain_hot_snapshot"
 HOT_MAX_ITEMS = 8
 HOT_BUDGET_TOKENS = 300
 DEFAULT_BUDGET_TOKENS = 500
-HOT_KINDS = ("preference", "requirement", "decision", "knowledge")
+HOT_KINDS = ("preference", "profile", "requirement", "decision", "knowledge")
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,6 +252,34 @@ class FibBrain:
         pack["episode"] = [event.to_dict() for event in self._episode_for(identity)]
         return pack
 
+    def context(
+        self,
+        goal: str = "",
+        state: BrainState | None = None,
+        *,
+        top_k: int = 5,
+        profile_top_k: int = 3,
+        budget_tokens: int = 500,
+        min_relevance: float = 0.12,
+        model_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Read user background for any harness; no plan, episode, or snapshot writes."""
+        from fibmind.background import build_background
+
+        effective = state or BrainState()
+        return self.memory.read(
+            lambda memory: build_background(
+                memory,
+                goal,
+                **effective.identity(),
+                top_k=top_k,
+                profile_top_k=profile_top_k,
+                budget_tokens=budget_tokens,
+                min_relevance=min_relevance,
+                model_id=model_id or effective.model_id,
+            )
+        )
+
     def reflex(
         self,
         goal: str,
@@ -397,8 +426,25 @@ class FibBrain:
         metadata: dict[str, Any] | None = None,
         scope: str = MemoryScope.PERSONAL.value,
         state: BrainState | None = None,
+        context_level: str | None = None,
     ) -> dict[str, Any]:
         """Admit, then write. Skipped candidates are not persisted."""
+        if context_level is not None:
+            level = ContextLevel(context_level)
+            identity = (state or BrainState()).identity()
+            if scope != MemoryScope.PERSONAL.value or not identity["owner"]:
+                raise ValueError("context_level requires personal scope and a human owner")
+            origin = {key: identity[key] for key in ("workspace_id", "project_id")}
+            if level == ContextLevel.USER:
+                identity.update(workspace_id=None, project_id=None)
+            elif level == ContextLevel.WORKSPACE:
+                if not identity["workspace_id"]:
+                    raise ValueError("workspace context requires workspace_id")
+                identity["project_id"] = None
+            elif not identity["project_id"]:
+                raise ValueError("project context requires project_id")
+            state = BrainState(**identity)
+            metadata = {**(metadata or {}), "context_level": level.value, "source_context": origin}
         candidate = _candidate(category, title, content, tags, scope, state)
         return self.memory.remember(candidate, metadata=metadata)
 

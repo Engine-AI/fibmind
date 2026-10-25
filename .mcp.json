@@ -8,7 +8,11 @@
         "fibmind.mcp_server",
         "--store",
         ".fibmind/memory.db"
-      ]
+      ],
+      "env": {
+        "FIBMIND_OWNER": "abbila",
+        "FIBMIND_APPLICATION": "claude-code"
+      }
     }
   }
 }

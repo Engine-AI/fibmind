@@ -243,7 +243,8 @@ class ExplainTests(unittest.TestCase):
         self.assertEqual(report["results"], [])
         reasons = {row["title"]: row["reason"] for row in report["excluded"]}
         self.assertEqual(reasons["Cache layer"], "status:stale")
-        self.assertEqual(reasons["Other owner cache"], "not_visible")
+        self.assertNotIn("Other owner cache", reasons)
+        self.assertEqual(report["hidden_candidates"], 1)
         self.assertEqual(report["weights"]["familiarity"], 0.0)
 
         report = memory.explain_recall("login token expiry", **IDENT)

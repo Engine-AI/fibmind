@@ -27,13 +27,35 @@ from pathlib import Path
 from typing import Any
 
 from mcp.server import MCPServer
+from mcp.types import ToolAnnotations
 
 from fibmind.brain import BrainState, FibBrain
 from fibmind.embedding import provider_from_env
 from fibmind.migrate import DEFAULT_HOST_OWNERS
 from fibmind.service import MemoryService
+from fibmind.working_context import working_context
 
 DEFAULT_STORE = ".fibmind/memory.db"
+MEMORY_TOOLS = frozenset(
+    {
+        "fibbrain_context",
+        "fibbrain_remember",
+        "fibbrain_reflect",
+        "fibbrain_remember_procedure",
+        "fibbrain_render",
+        "fibmind_search",
+        "fibmind_search_from",
+        "fibmind_explain_recall",
+        "fibmind_status",
+        "fibmind_revise",
+        "fibmind_mark_stale",
+        "fibmind_forget",
+        "fibmind_promote_knowledge",
+        "fibmind_link",
+        "fibmind_mark_conflict",
+        "fibbrain_resolve_conflict",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +74,7 @@ class IdentityDefaults:
     workspace_id: str | None = None
     project_id: str | None = None
     task_id: str | None = None
+    application: str | None = None
     owner_aliases: frozenset[str] = field(default_factory=lambda: frozenset(DEFAULT_HOST_OWNERS))
 
     @classmethod
@@ -71,15 +94,20 @@ class IdentityDefaults:
             workspace_id=pick("workspace_id"),
             project_id=pick("project_id"),
             task_id=pick("task_id"),
+            application=pick("application"),
             owner_aliases=frozenset(DEFAULT_HOST_OWNERS) | frozenset(extra),
         )
 
     @property
     def active(self) -> bool:
-        return any((self.owner, self.workspace_id, self.project_id, self.task_id))
+        return any((self.owner, self.workspace_id, self.project_id, self.task_id, self.application))
 
     def apply(self, arguments: dict[str, Any], accepted: set[str]) -> dict[str, Any]:
         resolved = dict(arguments)
+        if self.application and "metadata" in accepted:
+            metadata = dict(resolved.get("metadata") or {})
+            metadata.setdefault("host", self.application)
+            resolved["metadata"] = metadata
         if "owner" in accepted and self.owner is not None:
             owner = resolved.get("owner")
             owner = str(owner).strip() if owner is not None else ""
@@ -102,7 +130,13 @@ def _state(
     project_id: str | None,
     session_id: str | None,
     task_id: str | None,
+    workspace_path: str | None = None,
 ) -> BrainState:
+    if workspace_path:
+        resolved = working_context(workspace_path)
+        workspace_id = workspace_id or resolved["workspace_id"]
+        project_id = project_id or resolved["project_id"]
+        task_id = task_id or resolved["task_id"]
     return BrainState(
         owner=owner,
         workspace_id=workspace_id,
@@ -112,7 +146,9 @@ def _state(
     )
 
 
-def _tool_registrar(mcp: MCPServer, defaults: IdentityDefaults) -> Callable[[], Callable[[Callable], Callable]]:
+def _tool_registrar(
+    mcp: MCPServer, defaults: IdentityDefaults, enabled_tools: frozenset[str] | None = None
+) -> Callable[[], Callable[[Callable], Callable]]:
     """``mcp.tool()`` that first fills identity arguments from ``defaults``.
 
     ``functools.wraps`` keeps the original signature and docstring, which is
@@ -121,15 +157,22 @@ def _tool_registrar(mcp: MCPServer, defaults: IdentityDefaults) -> Callable[[], 
 
     def tool() -> Callable[[Callable], Callable]:
         def decorate(fn: Callable) -> Callable:
+            if enabled_tools is not None and fn.__name__ not in enabled_tools:
+                return fn
+            annotations = (
+                ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True)
+                if fn.__name__ == "fibbrain_context"
+                else None
+            )
             if not defaults.active:
-                return mcp.tool()(fn)
+                return mcp.tool(annotations=annotations)(fn)
             accepted = set(inspect.signature(fn).parameters)
 
             @functools.wraps(fn)
             def wrapper(**kwargs: Any) -> Any:
                 return fn(**defaults.apply(kwargs, accepted))
 
-            return mcp.tool()(wrapper)
+            return mcp.tool(annotations=annotations)(wrapper)
 
         return decorate
 
@@ -140,11 +183,15 @@ def build_server(
     service: MemoryService,
     brain: FibBrain | None = None,
     defaults: IdentityDefaults | None = None,
+    *,
+    profile: str = "full",
 ) -> MCPServer:
     """Create an MCP server whose tools delegate to ``service`` and ``brain``."""
+    if profile not in {"memory", "full"}:
+        raise ValueError("profile must be memory or full")
     brain = brain or FibBrain(service)
     mcp = MCPServer("fibmind")
-    tool = _tool_registrar(mcp, defaults or IdentityDefaults())
+    tool = _tool_registrar(mcp, defaults or IdentityDefaults(), MEMORY_TOOLS if profile == "memory" else None)
 
     @tool()
     def fibmind_append(
@@ -537,6 +584,44 @@ def build_server(
         return service.status()
 
     @tool()
+    def fibbrain_context(
+        goal: str = "",
+        top_k: int = 5,
+        profile_top_k: int = 3,
+        budget_tokens: int = 500,
+        min_relevance: float = 0.12,
+        model_id: str | None = None,
+        owner: str | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
+        workspace_path: str | None = None,
+    ) -> dict[str, Any]:
+        """Read relevant human background for Codex, Claude Code, AGY, or any harness.
+
+        Call before answering a user request. Combines applicable user profile,
+        project memories, and shared knowledge. With no goal, returns profile
+        only. Does not write plans, snapshots, or episodes, and executes nothing.
+        ``budget_tokens`` bounds rendered ``text``; ``memories`` contains compact
+        provenance for rendered entries only. Historical evidence is not fresh
+        verification. Current user instructions take precedence over memories.
+        Supply absolute ``workspace_path`` to derive the same workspace,
+        project, and git-branch task labels in every local harness. Explicit
+        IDs or server defaults take precedence. Reuse returned ``state`` when
+        remembering or checking a memory later.
+        """
+        return brain.context(
+            goal,
+            state=_state(owner, workspace_id, project_id, session_id, task_id, workspace_path),
+            top_k=top_k,
+            profile_top_k=profile_top_k,
+            budget_tokens=budget_tokens,
+            min_relevance=min_relevance,
+            model_id=model_id,
+        )
+
+    @tool()
     def fibbrain_recall(
         goal: str,
         top_k: int = 5,
@@ -600,11 +685,17 @@ def build_server(
         project_id: str | None = None,
         session_id: str | None = None,
         task_id: str | None = None,
+        context_level: str | None = None,
+        workspace_path: str | None = None,
     ) -> dict[str, Any]:
         """Admit a candidate, then write it if it is worth keeping.
 
         Use this after a task instead of raw fibmind_append. Duplicates, raw
         dumps, and empty speculation are skipped and returned with a reason.
+        For personal memories, explicitly set ``context_level`` to "user" for
+        cross-project profile/preferences, "workspace" for workspace-wide
+        context, or "project" for the current project. Omitting it preserves
+        existing exact-context behavior. The human owner stays private.
         """
         return brain.remember(
             category,
@@ -613,7 +704,8 @@ def build_server(
             tags=tags,
             metadata=metadata,
             scope=scope,
-            state=_state(owner, workspace_id, project_id, session_id, task_id),
+            state=_state(owner, workspace_id, project_id, session_id, task_id, workspace_path),
+            context_level=context_level,
         )
 
     @tool()
@@ -1026,6 +1118,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--project-id", help="Default project_id (FIBMIND_PROJECT_ID)")
     parser.add_argument("--task-id", help="Default task_id (FIBMIND_TASK_ID)")
     parser.add_argument(
+        "--profile",
+        choices=["memory", "full"],
+        default=os.environ.get("FIBMIND_TOOL_PROFILE", "full"),
+        help="memory: context and memory management only; full: legacy cognitive/command tools too",
+    )
+    parser.add_argument(
         "--transport",
         choices=["stdio", "sse", "streamable-http"],
         default=os.environ.get("FIBMIND_TRANSPORT") or "stdio",
@@ -1170,7 +1268,7 @@ def main(argv: list[str] | None = None) -> None:
     # Semantic recall is opt-in through FIBMIND_EMBEDDING=hashing|openai (plus
     # FIBMIND_EMBEDDING_URL / _MODEL / _API_KEY for openai). Unset = lexical.
     service = MemoryService(store, embedding_provider=provider_from_env())
-    server = build_server(service, defaults=defaults)
+    server = build_server(service, defaults=defaults, profile=args.profile)
     run_server(
         server,
         transport=args.transport,

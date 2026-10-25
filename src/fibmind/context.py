@@ -13,6 +13,7 @@ budget is derived from it.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -56,6 +57,11 @@ class ContextHit:
             "category": self.node.category,
             "layer": self.node.layer,
             "node_type": self.node.node_type.value,
+            "scope": self.node.scope.value,
+            "owner": self.node.owner,
+            "status": self.node.status.value,
+            "confidence": round(self.node.confidence, 4),
+            "confidence_source": self.node.confidence_source,
             "workspace_id": self.node.workspace_id,
             "project_id": self.node.project_id,
             "session_id": self.node.session_id,
@@ -162,6 +168,7 @@ def _render_sections(
     sections: list[tuple[str, list[ContextHit], int]],
     counter: TokenCounter,
     total: int,
+    line_formatter: Callable[[ContextHit], str] = _line,
 ) -> tuple[str, BudgetReport]:
     """Render each section inside its budget; unused budget flows downward.
 
@@ -181,7 +188,7 @@ def _render_sections(
         kept = 0
         for hit in hits:
             separator = 1 if lines else 0
-            line, cost, cut = _fit(_line(hit), available - spent - separator, counter)
+            line, cost, cut = _fit(line_formatter(hit), available - spent - separator, counter)
             if not line:
                 truncated.append({"node_id": hit.node.id, "section": name, "reason": "over_budget"})
                 continue
