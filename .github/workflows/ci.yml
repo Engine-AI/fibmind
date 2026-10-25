@@ -20,8 +20,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: uv sync --locked --extra dev
-      - run: uv run ruff check src tests evals examples
-      - run: uv run ruff format --check src tests evals examples
+      - run: uv run ruff check src tests evals examples scripts
+      - run: uv run ruff format --check src tests evals examples scripts
       - run: uv run pytest -q
       # The evaluation suite is a merge gate, not a report: it must not fall
       # below evals/floor.json.

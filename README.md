@@ -68,12 +68,32 @@ tracked copies in `data/` double as the conformance fixture for
 `examples/demo.py --fixture`. SQLite is the recommended backend for a
 persistent agent memory service.
 
+The local SQLite runtime is pinned to **3.51.3** in `.sqlite-version`. To
+reproduce the CPython 3.12.13 environment on macOS or Linux:
+
+```bash
+uv sync --locked --extra dev --python 3.12.13
+.venv/bin/python scripts/setup_sqlite_runtime.py
+.venv/bin/python -c 'import sqlite3; print(sqlite3.sqlite_version)'
+```
+
+The installer requires a C compiler, `make`, Perl, and development libraries
+for xz, bzip2, and libffi (Command Line Tools and Homebrew `xz` on macOS). It verifies the
+official source checksums, builds a private interpreter with SQLite 3.51.3
+and the original OpenSSL 3.5.5, and switches `.venv` after an FTS5/import
+smoke check. Packages and memory files are preserved. Sources, logs, the
+interpreter, and the previous venv configuration live in `.fibmind/runtime/`;
+keep that directory while using this venv. Reapply the installer after
+recreating `.venv`, and restart existing MCP/daemon processes to use the new
+runtime. This does not upgrade other Python environments or the system SQLite
+command.
+
 `uv` is the supported way to create the environment (`pip install uv` works if
 you do not have it). Development checks, all of which CI runs on every push:
 
 ```bash
-.venv/bin/ruff check src tests evals examples     # lint
-.venv/bin/ruff format --check src tests evals examples
+.venv/bin/ruff check src tests evals examples scripts     # lint
+.venv/bin/ruff format --check src tests evals examples scripts
 .venv/bin/pytest -q
 .venv/bin/python -m evals.gate                    # evaluation suite must not fall below evals/floor.json
 ```

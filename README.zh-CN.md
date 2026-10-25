@@ -49,11 +49,21 @@ uv sync --locked --extra dev
 
 演示脚本会把两个示例 JSON 存储写到 `.fibmind/demo/`（已被 gitignore）。`data/` 下纳入版本管理的副本同时充当 `tests/test_contract.py` 的一致性测试夹具（conformance fixture）；只有在有意为之时才用 `examples/demo.py --fixture` 重新生成。持久化的 agent 记忆服务推荐使用 SQLite 后端。
 
+本地 SQLite 运行时在 `.sqlite-version` 中固定为 **3.51.3**。在 macOS 或 Linux 上复现 CPython 3.12.13 环境：
+
+```bash
+uv sync --locked --extra dev --python 3.12.13
+.venv/bin/python scripts/setup_sqlite_runtime.py
+.venv/bin/python -c 'import sqlite3; print(sqlite3.sqlite_version)'
+```
+
+安装脚本需要 C 编译器、`make`、Perl，以及 xz、bzip2 和 libffi 开发库（macOS 使用 Command Line Tools 和 Homebrew `xz`）。脚本校验官方源码的哈希，构建包含 SQLite 3.51.3、保留原 OpenSSL 3.5.5 的项目私有解释器，通过 FTS5 和包导入检查后切换 `.venv`。已安装的包和记忆文件保留；源码、日志、解释器和原虚拟环境配置存放在 `.fibmind/runtime/`，使用该虚拟环境期间请保留此目录。重建 `.venv` 后需重新运行安装脚本；已启动的 MCP/守护进程需重启才能使用新运行时。此操作只作用于本项目环境，不更改其他 Python 环境或系统 SQLite 命令。
+
 `uv` 是官方支持的环境创建方式（没有的话可以 `pip install uv`）。以下开发检查在每次 push 时都会由 CI 运行：
 
 ```bash
-.venv/bin/ruff check src tests evals examples     # 代码检查
-.venv/bin/ruff format --check src tests evals examples
+.venv/bin/ruff check src tests evals examples scripts     # 代码检查
+.venv/bin/ruff format --check src tests evals examples scripts
 .venv/bin/pytest -q
 .venv/bin/python -m evals.gate                    # 评测结果不得低于 evals/floor.json
 ```
