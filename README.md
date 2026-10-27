@@ -2,18 +2,19 @@
 
 English | [简体中文](README.zh-CN.md)
 
-**FibMind** manages shared user memory for Codex, Claude Code, Antigravity
-(AGY), and other harnesses. On each request it supplies relevant stored user
-background and knowledge. **FibBrain** provides its context/admission interface
-and an optional cognitive workflow; the calling harness controls execution.
+**FibMind** is a local memory engine that shares one human's background,
+project history, and knowledge across Codex, Claude Code, Antigravity (AGY),
+and other MCP harnesses. **FibBrain** provides the context, admission, and
+evidence interfaces, plus an optional cognitive workflow. The calling harness
+controls its conversation, permissions, and execution.
 
 ```text
-Agent  =  FibBrain (plan / recall / decide / coordinate / remember)
+Agent  =  FibBrain (context / recall / plan / remember / reflect)
        +  Harness  (run / execute / observe)
        +  Plugins  (tools / MCP / models)
 ```
 
-The background interface and Brain v1 actions sit on top of the existing store:
+The background interface and optional workflow sit on top of the same store:
 
 | Action | Question |
 | --- | --- |
@@ -25,38 +26,72 @@ The background interface and Brain v1 actions sit on top of the existing store:
 | `observe` | What just happened in this episode? |
 | `advise` | Should this action run, given past evidence? |
 | `reflect` | Did a stored memory hold up? |
+| `verify` | What did a physical check establish about a memory? |
+| `reflex` | Can a verified memory or procedure answer this without an LLM? |
 
 It does not own an agent loop or a plugin manager. DeepSeek-Harness (or any
 other harness) stays the body. Planning is an explicit persisted goal, not a
 rewrite of the harness Goal service. Coordination names capabilities and
-advises them; it does not execute plugins.
+advises them; it does not execute plugins. The full tool profile also exposes
+explicit command execution through `fibbrain_verify` and opt-in
+`fibbrain_reflex(execute=true)`.
 
 The memory engine models long-term knowledge as:
 
 - multiple category trees, forming a memory forest
-- an append-only event log as the source of truth, with nodes and edges as a
-  rebuildable cache
+- an event log as the source of truth, with nodes and edges as a rebuildable
+  cache; forgetting redacts earlier event content
 - separate signals for how *familiar* a memory is and how much external evidence
   says it is *correct*
-- scopes that keep one owner's personal memories out of everyone else's recall,
-  with a statistical bar for promoting an observation into shared knowledge
+- owner and working-context visibility, with explicit user-wide preferences
+  and a minimum-support gate for promoting observations into shared knowledge
 - Fibonacci-sized layers for raw, compressed, summary, and long-term memory
 - graph edges between related nodes, plus local graph search
 
 The graph, retrieval, context, admission, and storage modules use only the
 Python standard library. Recall is an inverted index with BM25 plus title,
-confidence, and recency signals; set `FIBMIND_EMBEDDING=hashing` (offline) or
+confidence, and recency signals. SQLite-backed recall also uses a persistent
+FTS5 candidate index, including CJK tokenization and file/symbol anchors.
+Set `FIBMIND_EMBEDDING=hashing` (offline feature hashing) or
 `FIBMIND_EMBEDDING=openai` with `FIBMIND_EMBEDDING_URL` / `_MODEL` / `_API_KEY`
-to fuse a vector candidate list in with reciprocal rank fusion. A provider
-failure degrades to lexical recall instead of failing the call. The agent-facing server uses the MCP Python SDK 2.x. Prefer
-the `fibbrain_*` tools; `fibmind_*` remains the direct store API.
+to fuse a vector candidate list in with reciprocal rank fusion (RRF). The
+SQLite vector cache is keyed by provider and content hash. A provider failure
+degrades to lexical recall instead of failing the call. The agent-facing
+server uses the MCP Python SDK 2.x. Prefer the `fibbrain_*` tools;
+`fibmind_*` remains the direct store API.
+
+## Current Status
+
+As of **2026-10-27**, the package version is **0.1.0** (alpha). Implemented
+features include:
+
+| Area | Available now |
+| --- | --- |
+| Cross-application context | Read-only `fibbrain_context`, explicit user/workspace/project levels, shared human identity, configuration generation and native host registration. |
+| Retrieval | BM25 inverted index, SQLite FTS5 candidates, optional hashing/OpenAI-compatible embeddings, persistent vector cache, RRF, and recall explanations. |
+| Context budgets | Pluggable token counter, section budgets, frozen session hot memory, and rendered-memory accounting. The default counter is an estimate. |
+| Memory loop | Admission scanning, exact and token-overlap deduplication, episode observation, idempotent review, and pending approval. |
+| Evidence and revision | Named outcomes, conflict marking/resolution, optimistic revision checks, pending revisions of verified memories, and derived-knowledge invalidation. |
+| Procedures | Skill/tool rendering, maturity levels, and an optional reflex path with precondition checks and fallback to recall. |
+| Persistence | JSON and SQLite, event replay, incremental SQL writes, revision-aware in-process cache, and a shared local daemon. |
+
+The fixed evaluation has **8 datasets and 33 cases**. The current and hashing
+hybrid baselines both reach Recall@K / MRR **1.0**, with zero stale pollution
+and forbidden-memory hits. The tight-budget baseline still loses recall;
+these small fixtures establish regression behavior, not production accuracy
+or proven token savings. See [the roadmap](ROADMAP.md) for measurements,
+remaining work, and release gates. `fibbrain_assess` is a design proposal and
+is not an available tool.
 
 > [!WARNING]
-> FibMind is currently a local, single-user prototype. Multi-owner isolation and
-> complete event-log replay invariants are still being hardened. Do not use it as
-> a multi-tenant production service or store secrets in it yet.
+> FibMind is a local, single-user prototype. Isolation, evidence attribution,
+> compression, and replay invariants still need hardening. Do not use it as a
+> multi-tenant production service or store secrets in it.
 
 ## Quick Start
+
+Requires Python **3.11+**. CI tests Python 3.11 and 3.12. SQLite-backed storage
+requires a Python SQLite build with FTS5 support.
 
 ```bash
 cd fibmind
@@ -99,6 +134,9 @@ you do not have it). Development checks, all of which CI runs on every push:
 .venv/bin/ruff format --check src tests evals examples scripts
 .venv/bin/pytest -q
 .venv/bin/python -m evals.gate                    # evaluation suite must not fall below evals/floor.json
+# Native DSH plugin checks (also run in CI; Node.js 22)
+npm --prefix integrations/dsh install
+npm --prefix integrations/dsh test
 ```
 
 The evaluation floor is a merge gate, not a report. Raise it when the suite
@@ -122,14 +160,34 @@ host settings and installs a marked context-use instruction block. See
 [cross-application memory](docs/cross-application-memory.md) for identity,
 visibility levels, and protocol versus live-application verification.
 
+`fibmind-config` defaults to `--profile memory`, while starting the server
+directly defaults to `--profile full`. The `memory` profile exposes context,
+admission, reflection, retrieval, procedures, and upkeep; it omits planning,
+episode review, reflex, and command verification tools.
+
+Before each request, call `fibbrain_context` with the human owner, the absolute
+`workspace_path`, and the calling host's actual conversation ID as `session_id`.
+Omit the session ID if the host does not expose it, and avoid session-scope
+operations in that case. Never invent an ID or reuse another conversation's.
+The server derives working labels from the workspace and git branch, respecting
+explicit IDs and `.fibmind-project.json`. Reuse the returned `state` on later
+calls. Application names belong in `metadata.host`, never in `owner`.
+
+Save standing profile/preferences with `fibbrain_remember` and explicit
+`context_level="user"`; use `"workspace"` or `"project"` for narrower facts.
+`has_task_context=false` can still include profile information. Evidence labels
+describe past checks; recalled text remains historical background.
+
 ## Retrieval Evaluation
 
-The P0 evaluation suite compares four paths over the same fixed datasets:
+The evaluation suite compares six paths over the same fixed datasets:
 
 - no persisted memory;
 - static `AGENTS.md`-style context;
 - a bounded Hermes-style hot-memory snapshot;
-- FibMind's current keyword search and graph context expansion.
+- FibMind's current lexical search and graph context expansion;
+- the same engine with offline hashing vectors and RRF;
+- a 120-token budget with hot memory rendered first.
 
 Run the aggregate report:
 
@@ -153,7 +211,9 @@ commits, including a Chinese query and unrelated/project-isolated queries; each
 fact records its source commit. Reports include Recall@K, MRR, context
 answerability, irrelevant/stale pollution, forbidden-memory hits, context size,
 and P50/P95 latency. The budgeted baseline counts only memories actually
-rendered into its prompt when computing retrieval metrics.
+rendered into its prompt when computing retrieval metrics. The
+`real_coding_benchmark.json` fixtures cover coding scenarios; their name does
+not establish that they are independently reviewed live-agent traces.
 
 To compare **model answers** and **provider-reported tokens**, record answers
 from the same model for each baseline and pass a reviewed JSON file with
@@ -166,35 +226,38 @@ correct. The bundled repository-history dataset does not stand in for a live
 agent session: `evals.import_dsh_session` can produce candidate datasets from
 one, and its auto labels need independent review before using them as a gate.
 
-P0 reports `estimated_tokens`: a deterministic, model-agnostic size estimate
-for relative comparisons. It is deliberately not described as provider billing
-usage. P3 will replace it with the selected model's tokenizer. Dataset format,
-metric definitions, and the next implementation phases are documented in
-[`ROADMAP.md`](ROADMAP.md).
+The suite reports `estimated_tokens`: a deterministic, model-agnostic size
+estimate for relative comparisons. The runtime already accepts a custom
+`TokenCounter`, but a bundled model tokenizer and calibrated savings target
+remain open. The fixed retrieval gate covers `fibmind_current`; it does not
+measure native application behavior, automatic write precision, or end-to-end
+answer correctness without reviewed answers. See [`ROADMAP.md`](ROADMAP.md)
+for the current results and remaining acceptance criteria.
 
 ## Design Constraints
 
 Six properties the implementation is built around. They are worth stating
 because each rules out a shape that looks reasonable:
 
-**The log is the source of truth.** Every semantic change appends a
+**The log is the source of truth.** Every semantic change records a
 `MemoryEvent`; `FibMind.rebuild_from_log` reconstructs the whole forest from it.
 Node and edge tables are a cache you can throw away. This is what makes a store
-replayable when a better summarizer comes along, and mergeable across devices —
-text diffs and merges, derived state does not. Recall counters (`familiarity`,
+replayable when a better summarizer comes along. Cross-device synchronization
+and log merging are not implemented. Recall counters (`familiarity`,
 `access_count`) are the exception: they describe usage rather than knowledge and
 are not replayed.
 
-**Recall is not evidence.** `familiarity` rises whenever a memory is read back;
-it is deliberately absent from relevance scoring. Only `confidence` — which moves
-solely through `record_outcome`, and only with a named source — affects ranking.
-Scoring recall frequency instead closes a loop (read → ranked higher → read
-more) that converges on whatever is familiar rather than whatever is true.
+**Recall is not evidence.** Activation may raise `familiarity`; normal search
+is read-only, and familiarity is absent from relevance scoring. Named external
+outcomes affect `confidence`. Re-reading a memory or agreement from another
+model does not establish correctness. Evidence inheritance during compression
+still needs hardening, as tracked in the roadmap.
 
-**Nothing gets in unscanned.** Admission rejects candidates carrying API keys,
+**Admission scans candidates.** It rejects candidates carrying API keys,
 private keys, connection strings, prompt-injection phrasing, or invisible
-Unicode, and returns the finding kind. A memory is replayed into every later
-prompt, so a leak or an injected instruction would be permanent.
+Unicode, and returns the finding kind. Prefer `fibbrain_remember`: the direct
+store write API bypasses admission. Background rendering also scans recalled
+content, but these checks are not a guarantee that arbitrary content is safe.
 
 **Knowledge inherits its evidence.** A shared claim is linked to the
 observations it was promoted from. Refuting one supporter scales the claim's
@@ -220,9 +283,9 @@ Edge        A typed relationship between two nodes.
 Tree        A category or topic tree whose root is also a normal node.
 Forest      Many trees connected by cross-tree graph edges.
 Layer       A capacity band controlled by Fibonacci-sized limits.
-Event       One entry in the append-only log. The forest is a function of these.
+Event       One entry in the replayable log; forget redacts historical content.
 Scope       session / personal / knowledge — who a memory belongs to.
-Status      active / stale / refuted — whether normal recall may return it.
+Status      active / pending / stale / refuted — whether normal recall may return it.
 ```
 
 ### Scopes
@@ -240,13 +303,24 @@ with one person's preferences — and a personal layer impersonal. `append` writ
 `personal` or `session`; `knowledge` is only reachable through
 `promote_to_knowledge`, which requires at least three distinct supporting
 observations and links each one as provenance so a claim that later proves wrong
-can be traced back.
+can be traced back. The optional `require_cross_provenance` gate additionally
+requires multiple sessions/hosts or existing verification evidence.
+
+Personal visibility also has an explicit `context_level`: `user` follows the
+same human across projects, `workspace` stays in one workspace, and `project`
+stays in one workspace/project pair. Broader visibility is opt-in; legacy
+unlabelled records retain exact matching. Session scratch is visible in the
+same session or a shared named task within its owner/workspace/project boundary.
 
 Normal search and context return only `active` memories. `mark_stale` retires a
 superseded memory while preserving its provenance; a `refuted` outcome also
 removes a memory from normal recall. Maintenance queries can explicitly request
-inactive statuses. `revise` corrects the content and makes the memory active and
-unproven again. Personal/session memories require an exact owner match; omitting
+inactive statuses. `revise` normally corrects the content and makes the memory
+active and unproven again. Pass `expected_version` to reject a stale edit, or
+`protect_verified=True` to stage a verified memory's replacement as a pending
+`VERSION_OF` candidate until confirmation. Conflict marking and resolution
+are explicit operations; general automatic contradiction detection is still
+planned. Personal/session memories require an exact owner match; omitting
 an owner no longer exposes memories belonging to named owners.
 
 ## Default Layers
@@ -267,21 +341,25 @@ Two honest caveats about this part:
 - Capacity answers *how many* memories fit, not *which* are worth keeping. The
   Fibonacci spacing gives growing bands with a stated rule for the gaps; any
   similarly growing sequence would behave the same.
-- `_summarize` concatenates truncated excerpts. Its output sits at the same level
-  of abstraction as its inputs, merely shorter — it is a placeholder, not
-  distillation. Real promotion of specifics into general claims goes through
-  `promote_to_knowledge`. Because folding marks sources with a `folded_into`
-  pointer instead of overwriting them, the originals survive for a better
-  summarizer to redo the work.
+- Folding uses a pluggable `Summarizer`. The default `ExcerptSummarizer` still
+  concatenates truncated excerpts. `StructuredSummarizer` extracts directives,
+  conditions, exceptions, and evidence; `CallableSummarizer` wraps an external
+  model with provenance and a fidelity check. It does not configure or call an
+  LLM by default. Folding retains sources through `folded_into` pointers.
+  Preserving source evidence and constraints across all compression paths is
+  ongoing work; a shorter summary is not a newly verified general claim.
 
 ## Main Operations
 
 ```python
+from fibmind import FibMind, RelationType, Verdict
+
 memory = FibMind()
 tree_id = memory.create_tree("code", title="Code Tree")
 node_id = memory.append("code", title="Login bug", content="401 after token expiry")
+related_id = memory.append("code", title="Token refresh", content="Refresh before retrying login")
 
-memory.link_nodes(node_id, other_node_id, RelationType.RELATED_TO)
+memory.link_nodes(node_id, related_id, RelationType.RELATED_TO)
 memory.promote_node(node_id)
 results = memory.search_from(node_id, depth=2)
 activated = memory.search_from(node_id, depth=2, reinforce=True)
@@ -291,14 +369,18 @@ memory.record_outcome(node_id, Verdict.CONFIRMED, source="pytest tests/test_auth
 
 # Correct a memory (confidence resets), retire an old one, or delete it for good.
 memory.revise(node_id, content="401 only after refresh-token expiry")
-memory.mark_stale(old_node_id, reason="superseded by the refresh-token decision")
-memory.forget(stale_node_id, reason="user asked for removal")
+memory.mark_stale(related_id, reason="superseded by the refresh-token decision")
+memory.forget(related_id, reason="user asked for removal")
 
 # Distil repeated observations into one shareable claim (needs >= 3 supporters).
+supporting_ids = [
+    memory.append("error", title=f"Upload timeout {i}", content="A transient timeout ended an upload")
+    for i in range(3)
+]
 claim_id = memory.promote_to_knowledge(
     title="Uploads need an explicit retry budget",
     content="Large uploads die at the first transient timeout without a retry budget.",
-    supporting_node_ids=[first, second, third],
+    supporting_node_ids=supporting_ids,
 )
 
 # Nodes and edges are a cache; this rebuilds them from the log alone.
@@ -309,8 +391,8 @@ replayed = FibMind.rebuild_from_log(memory.events)
 should behave like memory activation — note this raises `familiarity` only, and
 familiarity does not affect ranking.
 
-`search()` is the query-based counterpart: it ranks the whole forest by keyword
-relevance to a text query and never mutates nodes. Pass `owner=` to exclude other
+`search()` is the query-based counterpart: it ranks indexed candidates for a
+text query and never mutates nodes. Pass `owner=` to exclude other
 owners' personal memories, or `scopes=` to restrict to e.g. shared knowledge.
 
 ## MCP Server (long-term memory for agents)
@@ -331,7 +413,14 @@ The direct command waits silently for MCP messages on stdin. That is expected:
 it is not an HTTP server and does not print a URL. Normally the MCP host starts
 and manages this process for you.
 
+The CLI defaults to the `full` tool profile. Add `--owner abbila` to pin the
+human identity, or `--profile memory` for background and memory management
+without command execution or the optional cognitive workflow.
+
 ### Tools
+
+The following tables describe the `full` profile. The smaller `memory` profile
+is defined by `MEMORY_TOOLS` in `src/fibmind/mcp_server.py`.
 
 Recall and record:
 
@@ -354,6 +443,8 @@ Recall and record:
 | `fibbrain_approve_memory` / `fibbrain_reject_memory` | Let a pending review memory in, or retire it as stale. |
 | `fibbrain_advise` | Allow or reject an action given stored evidence. |
 | `fibbrain_reflect` | Record that a memory turned out right or wrong. |
+| `fibbrain_verify` | Execute a check and record confirmed/refuted/inconclusive, with optional target-file and output-pattern checks. |
+| `fibbrain_reflex` | Return a verified answer or procedure without an LLM; procedure execution requires `execute=true`. |
 | `fibmind_context` | Direct store context pack (prefer `fibbrain_recall`). |
 | `fibmind_append` | Direct write that bypasses admit (prefer `fibbrain_remember`). |
 | `fibmind_search` | Rank memories by keyword relevance to a query (read-only). |
@@ -367,7 +458,9 @@ Judgement and upkeep — the half that keeps the store from degrading:
 | Tool | Purpose |
 | --- | --- |
 | `fibmind_record_outcome` | Record that a memory turned out right or wrong, with a source. |
-| `fibmind_revise` | Correct a memory and reactivate it with confidence reset. |
+| `fibmind_revise` | Correct a memory; optionally enforce `expected_version` or stage a pending replacement with `protect_verified`. |
+| `fibmind_mark_conflict` | Flag contradictory memories and link them with `CONTRADICTS`. |
+| `fibbrain_resolve_conflict` | Record a sourced resolution and refute the losing claim. |
 | `fibmind_mark_stale` | Retire superseded content while keeping provenance. |
 | `fibmind_forget` | Delete a memory permanently, including from log history. |
 | `fibmind_promote_knowledge` | Turn several observations into one shared claim. |
@@ -382,19 +475,18 @@ be called directly for a specific action. `fibbrain_remember` will skip a
 duplicate or a dump. A store that only ever writes still degrades unless
 `fibbrain_reflect` records whether those memories held up.
 
-### Host check
+### Host checks
 
-Claude Code and Codex can both drive FibBrain over stdio MCP. The scripted
-feasibility pass writes isolated memories into `.fibmind/memory.db`:
+`tests/test_cross_app_mcp.py` launches independent stdio MCP servers from
+different directories and checks shared persistence, profile visibility,
+provenance, isolation, and read-only background. This verifies the protocol
+path. Native application checks depend separately on each host's credentials,
+model availability, and tool permissions; protocol success does not prove
+that all three applications invoked the tool.
 
-| Host | Sequence |
-| --- | --- |
-| Claude Code (`claude -p`) | `plan` → `remember` → `recall` → `coordinate` → `complete` |
-| Codex (`codex exec`) | same sequence, after per-server MCP auto-approve |
-
-Paste [`examples/host_mcp_prompt.md`](examples/host_mcp_prompt.md) into a **new**
-interactive session to repeat it by hand. Restart or open a new task after
-changing MCP config; an already-open session will not see the server.
+See [cross-application memory](docs/cross-application-memory.md) and
+[`examples/host_mcp_prompt.md`](examples/host_mcp_prompt.md) for manual checks.
+Restart or open a new host session after changing MCP configuration.
 
 ### DeepSeek-Harness
 
@@ -417,7 +509,8 @@ its current working directory:
 codex mcp add fibmind -- \
   "$PWD/.venv/bin/python" \
   -m fibmind.mcp_server \
-  --store "$PWD/.fibmind/memory.db"
+  --store "$PWD/.fibmind/memory.db" \
+  --owner abbila --profile full
 ```
 
 Verify the saved configuration:
@@ -433,8 +526,10 @@ server. You do not need to keep a separate terminal running the server; Codex
 launches the stdio process itself.
 
 To verify the connection from a new Codex task, ask it to call
-`fibbrain_remember` with a small test memory and then retrieve it with
-`fibbrain_recall`. This repository's `AGENTS.md` already tells Codex to:
+`fibbrain_context` with `owner="abbila"` and this checkout's absolute
+`workspace_path`. An empty new store should return empty context successfully.
+This repository's `AGENTS.md` requires context before each request and tells
+Codex to:
 
 1. call `fibbrain_plan` and `fibbrain_recall` before non-trivial work;
 2. call `fibbrain_coordinate` (or `fibbrain_advise`) before acting on a capability
@@ -451,53 +546,82 @@ general Codex configuration details.
 ### Register with Claude Code
 
 A project-scoped server starts from the repository root, so relative paths
-work. The committed [`.mcp.json`](.mcp.json) is exactly this registration:
+work. The committed [`.mcp.json`](.mcp.json) uses this server/store, with owner
+and host provenance supplied through environment variables. A manual equivalent
+with an explicit owner is:
 
 ```bash
 claude mcp add --scope project --transport stdio fibmind -- \
   .venv/bin/python \
   -m fibmind.mcp_server \
-  --store .fibmind/memory.db
+  --store .fibmind/memory.db --owner abbila --profile full
 ```
 
 ### Shared Daemon Mode (Multi-Tool Workstation)
 
-When multiple tools (Codex, Claude Code, AGY) run concurrently on the same workstation, SQLite multi-process WAL contention can occur. Running FibMind as a shared local daemon eliminates locking contention by serving requests from a single process:
+When several applications run concurrently, a shared daemon centralizes their
+memory requests, cache, and process-local lock. All participating hosts must
+connect to that daemon; separate stdio processes still open the store
+independently, and can still contend with it.
 
 ```bash
 # Run the shared memory daemon (binds to 127.0.0.1:8765 by default)
-fibmind-daemon --port 8765
+.venv/bin/fibmind-daemon --store "$PWD/.fibmind/memory.db" --owner abbila --port 8765
 
 # Or via python directly
-.venv/bin/python -m fibmind.mcp_server --transport sse --port 8765
+.venv/bin/python -m fibmind.mcp_server --transport sse \
+  --store "$PWD/.fibmind/memory.db" --owner abbila --port 8765
 ```
 
-**Security Boundaries:**
-- **Workstation-Local Only:** FibMind is designed as a single-user local workstation memory engine, not a multi-tenant remote service. By default, it strictly binds to `127.0.0.1`. Remote binding (e.g. `0.0.0.0`) is refused unless `--allow-insecure-remote` is explicitly specified.
-- **Token Authentication:** For environments requiring access control, daemon mode supports Bearer tokens via `--token <secret>` or `FIBMIND_TOKEN`. When configured, all non-health requests require `Authorization: Bearer <token>` or `?token=<token>`.
+SSE and `--transport streamable-http` are supported. The daemon binds to
+`127.0.0.1` by default and refuses non-loopback binding unless
+`--allow-insecure-remote` is supplied. Optional token authentication uses
+`FIBMIND_TOKEN` or `--token`; when configured, requests other than `/health`
+require a Bearer header or token query parameter. These are local workstation
+controls, not a multi-tenant authorization model.
 
 ### Automated Verification Loop (`fibmind-verify` / `fibbrain_verify`)
 
-To prevent hallucinated self-confirmations and avoid poisoning the immutable event log with infrastructure errors:
-- Use `fibmind-verify` or the `fibbrain_verify` MCP tool to execute physical checks (e.g. pytest, compiler, linter).
-- **Attribution & Anti-Pollution:** Exit code 0 confirms the memory node; Exit non-zero refutes it. If failure is caused by environment/syntax collection errors or unrelated files, the outcome is marked as `inconclusive` rather than penalized, preventing log pollution.
+Use `fibmind-verify` or `fibbrain_verify` to run a physical check such as a
+test, compiler, or linter. Environment failures, zero collected tests, and
+output that misses supplied target files or assertion patterns are classified
+as `inconclusive`; otherwise success confirms and failure refutes the memory.
+Target matching applies to both success and failure. It uses command-output
+heuristics, not coverage instrumentation, so callers still need to choose a
+check that actually establishes the claim.
 
 ```bash
 # Verify a decision against physical test execution
-fibmind-verify --node-id <id> -- pytest -q tests/test_feature.py
+.venv/bin/fibmind-verify --owner abbila \
+  --workspace-id fibmind --project-id fibmind --node-id <id> \
+  --target-files tests/test_verify.py -- \
+  .venv/bin/python -m pytest -v tests/test_verify.py
 ```
+
+### Reflex and guarded revision
+
+`fibbrain_reflex` first looks for a mature procedure, then a high-confidence
+declarative memory. It checks recorded file hashes, conflicts, optional file
+existence, and model-specific metadata. `execute=false` is the default; with
+`execute=true`, it runs procedure steps and falls back to recall when a step
+fails.
+
+This execution path is experimental: it does not yet execute a procedure's
+separate `verify` specification, and its MCP file checks use the server's
+working directory. These gaps, summary evidence inheritance, and protected
+revision race handling are priorities in [the roadmap](ROADMAP.md).
 
 ### Architecture
 
 ```text
-Codex / Claude Code
+Codex / Claude Code / AGY / DSH / other MCP harnesses
         │ fibbrain_* / fibmind_* MCP tools
         ▼
 MCP Server                (src/fibmind/mcp_server.py)
         ▼
-FibBrain                  (plan / recall / coordinate / remember / observe / advise / reflect)
+FibBrain                  (background / recall / admission / evidence / optional workflow)
         ▼
-MemoryService             (src/fibmind/service.py — load/lock/persist)
+MemoryService             (src/fibmind/service.py — revision cache / lock / persist)
         ▼
 FibMind Core              (graph, ranking, context, admission)
         ▼
@@ -512,14 +636,12 @@ fsync, good for demos) or `.db` / `.sqlite` for `SqliteStore` (WAL, `BEGIN
 IMMEDIATE` transactions). Both persist the event log alongside the materialized
 state.
 
-SQLite schema v4 adds `workspace_id`, `project_id`, `session_id`, and `task_id`
-so recall can isolate one working context from another. Schema v3 added
-lifecycle `status` and `status_reason`. Schema v2 introduced `scope`, `owner`,
-`familiarity`, `confidence`, `confidence_source`, `folded_into`, and the
-`event_log` table. Older databases upgrade in place on open: the old
-`importance` column becomes `familiarity` (confidence starts at zero, since
-nothing external ever backed those numbers), and nodes v1 folded by rewriting
-their layer recover a `folded_into` pointer.
+The current SQLite schema is **v7**, including working-context identity,
+lifecycle status, memory kind, node revisions, and the persistent FTS5 index.
+The optional vector cache is stored alongside it. Older schemas upgrade in
+place on open. SQL writes update changed nodes, trees, edges, and events;
+the transaction still loads and compares the full forest, so fully lazy
+retrieval and an explicit mutation journal remain future work.
 `fibmind-migrate` converts a JSON store to SQLite.
 
 ```bash

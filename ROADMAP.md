@@ -1,566 +1,422 @@
-# FibMind Roadmap
+# FibBrain / FibMind Roadmap
+
+Last reviewed: **2026-10-27** against the current `main` checkout.
+The package version in `pyproject.toml` is **0.1.0** (alpha); the milestones
+below are future acceptance gates, not released versions or delivery dates.
+
+FibMind is the local memory engine. FibBrain supplies shared user context,
+admission, evidence, and an optional cognitive workflow. The harness owns the
+conversation, permissions, and execution.
 
 ## Goals
 
-Further FibMind development focuses on four verifiable goals:
+1. Share the same human's applicable background across Codex, Claude Code,
+   Antigravity (AGY), and other MCP harnesses.
+2. Retrieve relevant history across sessions while preserving owner,
+   workspace, project, and session/task boundaries.
+3. Reduce context cost without losing answer accuracy or critical constraints.
+4. Capture durable decisions, errors, corrections, and procedures with a
+   measurable admission/review loop.
+5. Keep memories traceable, revisable, and grounded in external evidence.
 
-1. Reduce the tokens an agent spends to obtain historical context;
-2. Improve context recall accuracy across sessions and tasks;
-3. Automatically summarize and save memories worth keeping long term;
-4. Distil memories that have been verified repeatedly into traceable, revisable
-   knowledge.
-
-Work is ordered by "prove the value first, then expand the capabilities":
-
-```text
-P0 Evaluation baseline
-  ↓
-P1 Architecture and identity model
-  ↓
-P2 Hybrid retrieval
-  ↓
-P3 Token budget and two-tier memory
-  ↓
-Release v0.2 Retrieval MVP; use the evaluation to decide whether to continue
-  ↓
-P4 Automatic memory loop
-  ↓
-P5 Summarization, knowledge governance, and security
-```
-
-The first three phases produce the first MVP whose value can be verified. P3 is
-the decision gate for further investment: if the evaluation cannot show FibMind
-keeping or improving accuracy while also reducing tokens, non-core features are
-not extended.
+Evaluation remains the gate for further expansion. A feature being implemented
+does not mean its quality or release criteria have been met.
 
 ## Status
 
-As of 2026-08-03, the first version of the P0 evaluation infrastructure has
-landed:
+| Area | Implemented | Remaining acceptance work |
+| --- | --- | --- |
+| P0: evaluation | Eight datasets, six baselines, retrieval/pollution/token/latency reports, reviewed-answer import, and a CI floor. | Independently reviewed real-session traces, recorded model answers, automatic-write quality, and persistent-store performance. |
+| P1: identity and structure | Shared visibility policy, event replay module, node-ID mutation guards, working-context inference, and explicit context levels. | Compression/replay boundary hardening and further separation of graph responsibilities. |
+| P2: retrieval | BM25, persistent SQLite FTS5 candidates, CJK and file/symbol anchors, optional vectors, RRF, persistent vector cache, and explanations. | Candidate-pruning/fallback robustness, real semantic-provider evaluation, and large-store benchmarks. |
+| P3: context budgets | Pluggable counter, section budgets, frozen L0 snapshots, and rendered-memory accounting. | Model tokenizer integration and savings without an accuracy regression. |
+| P4: automatic memory | Admission, exact and token-overlap deduplication, episode observation, idempotent review, approval, and native DSH hooks. | Semantic deduplication, automatic version/conflict detection, and quantified admission quality. |
+| P5: governance | Summarizer/planner interfaces, structured distillation, outcome propagation, scanning, tuning gate, and diagnostics. | Faithful compression with sound evidence inheritance, backup/restore/export, encryption interface, and broader observability. |
+| P6: reflex and metacognition | Optional reflex, file/model preconditions, protected revisions, explicit conflicts, and command verification. | Procedure verification and workspace binding; knowledge-gap assessment is design only. |
+| P7: cross-application context | Read-only background, user/workspace/project levels, shared owner, configuration bundles, native registration, and independent MCP-client tests. | Repeatable acceptance inside each native application and broader background-selection regression coverage. |
 
-- [x] Fixed JSON dataset format and validation;
-- [x] Four baselines: no memory, `AGENTS.md`, Hermes hot memory, and current
-  FibMind;
-- [x] Recall@K, MRR, context answerability, irrelevant/stale pollution,
-  forbidden-memory hits, estimated tokens, and latency metrics;
-- [x] Command-line table and full JSON report;
-- [x] Four sample datasets: project history, stale memory, conflicting memory,
-  and cross-session;
-- [ ] Extend the datasets with real project traces;
-- [ ] Add model-answer evaluation to replace the current context-answerability
-  proxy metric;
-- [ ] Calibrate the 30% token-savings threshold once P3 uses the target model's
-  tokenizer.
+Current storage is SQLite schema **v7** or JSON. SQLite has incremental SQL
+writes and FTS5 indexing; transactions still load and compare the full forest.
+The revision cache avoids repeated warm loads, but fully lazy storage access is
+not implemented. SSE and streamable HTTP provide a shared local daemon;
+separate stdio processes still access the store independently.
 
-Update 2026-09-24: `git_history.json` has been compiled from the real
-repository commit history and labelled by hand, including Chinese and unrelated
-queries. `evals.runner --answers` can merge independently judged model answers
-and provider token usage. The repository does not yet have complete labelled
-real DSH sessions or recorded model answers, so the three open long-term
-acceptance items above still have to be completed on real traces.
+## Current Priorities
 
-The first baseline run then drove a P1/P2 governance slice: `active/stale/refuted`
-lifecycle states, non-active memories excluded by default, strict owner
-matching, and English stop-word filtering. Across 15 fixed scenarios (including
-cross-project / session scratch isolation), current FibMind keeps Recall@K at
-1.0, while the stale-pollution and forbidden-memory hit rates drop from non-zero
-to 0 and accuracy on queries with no relevant memory rises from 0 to 1.0. The
-sample set is small; these results serve as regression checks, not claims about
-production performance.
+Complete these before extending autonomous behavior:
+
+1. **Make evidence attribution reliable.** Reflex must run a procedure's
+   declared `verify` check, distinguish `inconclusive` from success, and reject
+   empty execution as evidence. Bind command and precondition checks to the
+   caller's workspace. Preserve file/command anchors from episode review.
+   Enforce the recorded base revision when a pending replacement is confirmed.
+2. **Preserve meaning and trust through compression.** Retain conditions,
+   exceptions, source anchors, memory kind, and applicability metadata. A
+   summary currently inherits the maximum source confidence; replace that
+   shortcut with traceable evidence semantics that cannot make unchecked
+   content appear independently verified.
+3. **Harden background and retrieval selection.** Keep standing user
+   preferences available alongside project facts; test budget truncation,
+   model applicability, conflicts, and mixed visibility levels. Verify that
+   bounded FTS candidates retain the best results under the final ranker and
+   that index failures do not silently remove lexical recall.
+4. **Prove quality on real work and growing stores.** Add reviewed traces,
+   provider-token/model-answer measurements, and cold/warm SQLite benchmarks
+   before claiming semantic gains, token savings, or production scalability.
+5. **Add knowledge-gap assessment after its prerequisites and evaluation.**
+   Keep `fibbrain_assess` as a planned interface until relevance, trust,
+   routing, and false-known behavior have measurable acceptance criteria.
 
 ## P0: Evaluation Framework
 
-This is the top priority. Without evaluation there is no way to show that
-FibMind beats `AGENTS.md`, a fixed hot memory, or other memory implementations.
+### Available now
 
-### New Layout
+- [x] Fixed JSON datasets and validation.
+- [x] Six baselines: `no_memory`, `agents_md`, `hermes_hot`,
+  `fibmind_current`, `fibmind_hybrid`, and `fibmind_budgeted`.
+- [x] Recall@K, MRR, context answerability, no-relevant accuracy,
+  irrelevant/stale pollution, forbidden hits, estimated tokens, and P50/P95.
+- [x] Table/JSON reports and a non-regression gate in `evals/floor.json`.
+- [x] Hand-labelled repository-history cases, including Chinese and negative
+  queries, with source commits.
+- [x] `evals.import_dsh_session` for candidate session datasets and
+  `evals.runner --answers` for reviewed model answers and provider token usage.
 
-```text
-evals/
-├── datasets/
-│   ├── project_history.json
-│   ├── stale_memory.json
-│   ├── conflicting_memory.json
-│   └── cross_session.json
-├── runner.py
-├── metrics.py
-└── baselines.py
+The eight datasets are `project_history`, `stale_memory`,
+`conflicting_memory`, `cross_project`, `cross_session`, `git_history`,
+`session_review`, and `real_coding_benchmark`. Together they contain
+**33 cases**. Coding-scenario fixtures and auto-labelled imports do not replace
+independently reviewed live-session evidence.
+
+### Reproducible snapshot
+
+Run from the repository root:
+
+```bash
+.venv/bin/python -m evals.runner --format table --output .fibmind/eval-report.json
+.venv/bin/python -m evals.gate
 ```
 
-### Scenarios
+Results checked on 2026-10-27 with default parameters (`top_k=5`,
+`max_context_chars=5200`):
 
-- Recover a past design decision across sessions;
-- Find the cause of a given bug and its verification command;
-- Do not return stale content when old and new memories conflict;
-- Personal memories of different owners must not leak into each other;
-- Do not force a recall when no relevant memory exists;
-- Still find rare but important information after long accumulation.
+| Baseline | Recall@K | MRR | Context answerability | No-relevant accuracy | Mean estimated tokens |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| No memory | 0.0000 | 0.0000 | 0.0000 | 1.0000 | 0.00 |
+| Static AGENTS.md | 0.0345 | 0.0345 | 0.0345 | 0.7500 | 11.67 |
+| Hermes-style hot memory | 0.3793 | 0.3276 | 0.3793 | 0.7500 | 49.88 |
+| FibMind current | 1.0000 | 1.0000 | 0.8966 | 1.0000 | 95.70 |
+| FibMind hybrid | 1.0000 | 1.0000 | 0.8966 | 1.0000 | 95.70 |
+| FibMind budgeted | 0.9310 | 0.8218 | 0.6207 | 0.7500 | 69.85 |
 
-### Metrics
+Current and hybrid both have stale pollution **0**, forbidden-case rate **0**,
+and irrelevant injection **0.2596**. The budgeted path has irrelevant injection
+**0.3990**. Hybrid uses offline feature hashing in this suite; matching the
+lexical baseline does not demonstrate a semantic retrieval improvement.
 
-- `Recall@K`;
-- `MRR`;
-- Final answer accuracy;
-- Irrelevant-memory injection rate;
-- Stale-memory pollution rate;
-- Context input tokens;
-- Query latency P50/P95.
+The CI floor currently gates **`fibmind_current` only**: Recall@K ≥ 1.0,
+MRR ≥ 0.98, no-relevant accuracy ≥ 1.0, stale pollution = 0, and forbidden-case
+rate = 0. Do not lower the floor to make a change pass.
 
-### Baselines
+Context answerability is a fixture-term proxy, not model-answer accuracy.
+Estimated tokens are not provider billing. Baselines use the in-memory engine,
+so their latency does not include persistent-store startup, full-forest loads,
+or native-host overhead.
 
-1. No memory;
-2. `AGENTS.md` only;
-3. Hermes-style fixed hot memory;
-4. Current FibMind keyword search;
-5. Optimized FibMind.
+### Remaining acceptance
 
-### Acceptance
-
-- The evaluation can be rerun with fixed data and fixed parameters;
-- The report shows accuracy, pollution, tokens, and latency together;
-- Initial suggested target: with no drop in final answer accuracy, cut
-  dynamic-memory context tokens by at least 30%. Calibrate this threshold once
-  the first round of baseline data is available.
+- [ ] Import complete real agent sessions, retain provenance, and independently
+  review relevant, irrelevant, stale, conflicting, and isolated cases.
+- [ ] Commit reviewed same-model answers and actual input/output token usage
+  for comparable baselines, with explicit coverage.
+- [ ] Measure automatic write precision, correction/revocation behavior, and
+  long-term recall after repeated review/compression.
+- [ ] Add persistent SQLite and native-host evaluation paths.
+- [ ] Calibrate the proposed 30% context-token saving target without a drop in
+  answer accuracy; the current tight-budget result does not meet that goal.
 
 ## P1: Project Structure and Identity Model
 
-The first cut covers only the identity fields and unified visibility; the
-implementation plan is in [`docs/plans/02-identity.md`](docs/plans/02-identity.md). Move
-modules only after `is_visible` is stable, and do not mix the split into the
-same change as the identity rules.
+### Available now
 
-> Status (2026-09-18): step one is done. The visibility rules moved to
-> `visibility.py` (`is_visible` / `identity_key` / `promotion_identity`, pure
-> functions; `FibMind.is_visible` only delegates); event replay moved to
-> `replay.py` (one handler per `EventOp`; `rebuild_from_log` calls
-> `apply_event`). `graph.py` went from 1400 → 1260 lines, with the public API
-> unchanged. Next candidates, ordered by how clean the boundary is:
-> folding/compression (the `compress_overflow` family), forgetting/log redaction
-> (the `forget` family), and evidence propagation
-> (`record_outcome` / `_propagate_refutation`).
+- [x] `visibility.py` centralizes scope, owner, lifecycle, and working-context
+  rules; direct recall and graph expansion share them.
+- [x] `replay.py` reconstructs semantic state from events.
+- [x] `workspace_id`, `project_id`, `session_id`, and `task_id` are stored
+  fields; `revision` supports optional optimistic concurrency checks.
+- [x] Agent-facing node-ID mutations and graph roots are visibility-checked.
+- [x] `working_context.py` derives stable labels from the canonical workspace,
+  git branch, explicit overrides, and `.fibmind-project.json`.
+- [x] Broader personal visibility requires explicit `context_level=user` or
+  `workspace`; legacy records keep exact matching.
 
-`graph.py` currently handles writes, lifecycle, compression, graph traversal,
-permission filtering, knowledge promotion, and event replay all at once. Adding
-retrieval and automatic summarization on top would make it hard to maintain, so
-the boundaries are split first.
+The same human owner is used across hosts. Application names are provenance in
+`metadata.host`, never separate memory owners. Session scratch follows the
+existing same-session or shared-task rule inside the working-context boundary.
 
-### Target Layout
+### Remaining acceptance
 
-```text
-src/fibmind/
-├── domain/
-│   ├── models.py
-│   ├── events.py
-│   └── policies.py
-├── ingestion/
-│   ├── admission.py
-│   ├── dedup.py
-│   └── security.py
-├── retrieval/
-│   ├── lexical.py
-│   ├── semantic.py
-│   ├── fusion.py
-│   └── graph_expand.py
-├── governance/
-│   ├── evidence.py
-│   ├── lifecycle.py
-│   └── knowledge.py
-├── context/
-│   ├── hot_memory.py
-│   ├── planner.py
-│   └── renderer.py
-├── storage/
-│   ├── sqlite.py
-│   └── repository.py
-├── service.py
-└── mcp_server.py
-```
+- [ ] Extend isolation/replay tests through compression, protected replacement,
+  conflict resolution, knowledge propagation, and deletion.
+- [ ] Separate folding, evidence propagation, and log redaction from
+  `graph.py` while preserving public APIs and the conformance fixture.
+- [ ] Keep branch, commit, and source-file provenance consistent across manual
+  writes, session review, and distillation. These are not all dedicated fields
+  today.
+- [ ] Preserve read-only behavior for background, normal search, and warm
+  recall; keep cache updates distinct from evidence.
 
-Split in steps, keeping the existing public API and tests working throughout;
-there is no need to move every module at once.
-
-### Data Model Extensions
-
-- `workspace_id`;
-- `project_id`;
-- `session_id`;
-- `task_id`;
-- `branch`;
-- `commit_sha`;
-- `source_uri`;
-- `content_hash`;
-- `valid_from` / `valid_until`;
-- `status`: `active` / `stale` / `refuted` / `forgotten`;
-- `memory_kind`: `preference` / `decision` / `error` / `requirement` / `summary` / `knowledge`.
-
-### Isolation Rules
-
-- Without an explicit owner, do not read all personal memories by default;
-- Project, workspace, and owner filtering must be applied uniformly at the
-  retrieval entry point;
-- Graph expansion must not bypass the visibility rules that apply to direct
-  retrieval.
-
-### Acceptance
-
-- Retrieval, governance, context, and storage can be replaced independently;
-- `graph.py` no longer carries every business responsibility;
-- Project, session, branch, and user isolation are fully tested;
-- Existing MCP tools stay compatible.
+The proposed directory split is an architectural direction, not today's
+layout. Extract one responsibility at a time rather than combining a package
+reorganization with visibility changes.
+See [the identity plan](docs/plans/02-identity.md).
 
 ## P2: Hybrid Retrieval
 
-> Status (2026-09): a first version has landed. `retrieval.py` replaces the full
-> scan with an inverted index + BM25; an optional `EmbeddingProvider` (offline
-> hashing / OpenAI-compatible) is fused in via RRF; `fibmind_explain_recall`
-> reports each result's signals and the reasons candidates were excluded. P95 is
-> about 48 ms at 10,000 nodes, and the fixed evaluation is unchanged at Recall@K
-> 1.0 / stale pollution 0 / forbidden hits 0. FTS5 tables were not adopted: the
-> in-memory inverted index already meets the target, and it avoids maintaining
-> two indexes across the SQLite and JSON backends. Persisting the vector cache is
-> left for later.
->
-> Gate passed (measured 2026-10-09): `fibmind_hybrid` (hashing vectors +
-> prefix-4 token features + RRF) now matches `fibmind_current` with
-> Recall@K 1.0, MRR 1.0, and accuracy on queries with no relevant memory at
-> 1.0000 (up from 0.5000), while irrelevant injection matches keyword baseline
-> at 0.2679 (down from 0.3420). The noise floor calibration (min_similarity=0.25)
-> and multi-modal RRF normalization successfully solved negative query leakage.
+### Available now
 
-The current full keyword scan suits a prototype, not a long-term memory store
-that keeps growing. The target is a pluggable retrieval pipeline of "lexical
-recall + semantic recall + metadata filtering + evidence-based ranking".
+- [x] In-memory inverted index and BM25 with title, confidence, and recency
+  signals.
+- [x] SQLite FTS5 is integrated into normal recall as a candidate filter, with
+  incremental insert/update/delete and older-schema backfill.
+- [x] Shared tokenization supports CJK queries and code/file/symbol anchors.
+- [x] Optional offline hashing or OpenAI-compatible embeddings, RRF fusion,
+  and lexical operation when the embedding provider fails.
+- [x] SQLite vector cache keyed by provider and content hash.
+- [x] `fibmind_explain_recall` reports ranking signals and exclusion reasons.
 
-### P2.1 SQLite FTS5
-
-- Build an FTS5 index over titles, bodies, tags, and categories;
-- Rank with BM25;
-- Define a repeatable Chinese tokenization strategy;
-- Update the index incrementally on write, revise, and forget;
-- Support filtering by project, owner, time, kind, and status.
-
-### P2.2 Semantic Embedding
-
-Define a pluggable interface:
-
-```python
-class EmbeddingProvider:
-    def embed(self, texts: list[str]) -> list[list[float]]: ...
-```
-
-Requirements:
-
-- Support local embeddings;
-- Support OpenAI-compatible embeddings;
-- Fall back to pure FTS5 when embeddings are disabled;
-- Cache vectors by `content_hash`;
-- A provider failure must not break basic lexical retrieval.
-
-### P2.3 Fusion Ranking
+The current flow is:
 
 ```text
 Query
- ├── BM25 Top 30
- ├── Vector Top 30
- ├── Metadata and visibility filtering
- └── RRF fusion
-       ├── confidence weighting
-       ├── freshness / validity
-       ├── relation boost
-       └── rerank → Top K
+ ├── visibility/lifecycle/category eligibility
+ ├── lexical candidates → optional SQLite FTS5 pruning → BM25
+ ├── optional vector candidates
+ └── RRF / title / confidence / recency / anchor signals
+       └── Top K → optional graph expansion → budgeted rendering
 ```
 
-Graph relations are used only to supplement recall, trace sources, and weight
-ranking; they are no longer the primary retrieval entry point.
+### Remaining acceptance
 
-### Explainable Recall
-
-Add `fibmind_explain_recall`, which returns:
-
-- Why each result matched;
-- The matched terms;
-- Whether a candidate came from BM25, vectors, or graph expansion;
-- The confidence and source evidence used;
-- Why older memories were excluded.
-
-### Acceptance
-
-- Queries no longer load and traverse every node each time;
-- Hybrid retrieval beats the current keyword baseline on the P0 datasets;
-- Performance tests exist for 10,000 and 100,000 memories;
-- Every recall result can explain its source and ranking signals.
+- [ ] Test candidate limits against the final ranking, including many common
+  terms, strong title/anchor matches, and more than one visibility domain.
+- [ ] Make FTS index failures distinguishable from genuine empty matches and
+  verify a useful lexical fallback.
+- [ ] Evaluate a real semantic provider on reviewed cross-language/paraphrase
+  cases; feature hashing is not a semantic model.
+- [ ] Benchmark 10,000 and 100,000 memories, including cold/warm SQLite reads,
+  writes, vector-cache reuse, and concurrent clients.
+- [ ] Move filtering and candidate loading toward storage-level lazy access
+  while preserving the single visibility policy.
 
 ## P3: Token Budget and Two-Tier Memory
 
-> Status (2026-09): a first version has landed. `recall` renders in three
-> sections under a token budget (hot / search / expand) and returns
-> `budget.used_tokens`, per-section usage, and truncation reasons; the counter is
-> pluggable and defaults to a deterministic estimate. L0 hot memory is selected
-> by kind (preference / requirement / decision / knowledge) and confidence,
-> frozen as a `hot` node for the session, and refreshed for the next session
-> after review. The evaluation adds `fibmind_budgeted` (a hard 120-token budget +
-> hot memory up front): on the small fixed datasets Recall@K stays 1.0, but MRR
-> is 0.84, answerability 0.67, and irrelevant injection 0.44 — the cost of the
-> always-on prefix is counted as-is. The 30% savings threshold has to be
-> calibrated on real traces (the S1 import); the current datasets are too small
-> to tell.
+### Available now
 
-Upgrade the current character-length limit to a model token budget, and combine
-Hermes-style stable hot memory with FibMind's on-demand long-term recall.
+- [x] `TokenCounter`, deterministic `EstimatingCounter`, and a callable
+  adapter for external tokenizers.
+- [x] Recall sections for hot memory, direct search, and graph expansion,
+  bounded by the configured counter.
+- [x] Budget reports include usage, section costs, truncation reasons, and
+  rendered node IDs.
+- [x] Session L0 snapshots are frozen until refresh; warm reuse does not write
+  a new snapshot.
+- [x] `fibbrain_context` separately renders profile and task background under
+  a budget without creating goals, episodes, or hot snapshots.
 
-### L0 Hot Memory
+The budget applies to rendered `text`, not the complete MCP JSON response.
+The current default is a deterministic estimate; its strict limit is not a
+guarantee about a model's tokenizer or billed input.
 
-Injected automatically at session start:
+### Remaining acceptance
 
-- Stable user preferences;
-- Fixed project conventions;
-- Frequently used environment information;
-- Key project constraints.
-
-Rules:
-
-- Default budget of roughly 800–1200 tokens;
-- Strict capacity limit;
-- A frozen snapshot is used within a session;
-- The next snapshot is updated after the session ends;
-- When full, merge, replace, or reject writes; it must not grow without bound.
-
-### L1 Dynamic Long-Term Memory
-
-Recalled on demand for the current task:
-
-- Past decisions and their rationale;
-- Bugs, causes, and fixes;
-- Test results;
-- Requirement changes;
-- commit/branch context;
-- Known risks and open issues.
-
-### Context Planner
-
-```text
-Total budget
-├── Hot memory budget
-├── Direct hit budget
-├── Relation expansion budget
-├── Raw evidence budget
-└── Safety margin
-```
-
-Features:
-
-- Count tokens for the target model;
-- Choose the next memory by marginal value;
-- Merge similar content;
-- When over budget, keep high-confidence raw evidence first;
-- Return actual usage, the budget, and truncation reasons.
-
-### Acceptance
-
-- Results never exceed the specified token count;
-- The hot-memory snapshot stays stable within a session;
-- Output `used_tokens`, `budget_tokens`, and the token cost of each memory;
-- Verify token savings in the P0 evaluation instead of only comparing character
-  length.
+- [ ] Provide a supported model-tokenizer integration and identify the counter
+  in every report.
+- [ ] Calibrate hot/direct/expanded allocation on real traces; prevent a
+  standing prefix from displacing more useful task evidence.
+- [ ] Keep conditions, exceptions, and source evidence usable after truncation.
+- [ ] Show token savings with no loss in independently judged answer accuracy.
+- [ ] Measure the new profile/task background path separately from the older
+  hot/search/expand baseline.
 
 ## P4: Automatic Memory Loop
 
-> Status (2026-09): the first half has landed (S2): `observe` persists to a
-> session-scoped episode; `fibbrain_review_session` deterministically extracts
-> decisions / errors / corrections / risks / verification / changed files /
-> summary / procedures (S3), with three modes (candidates / approve / auto), and
-> is idempotent; there is a `pending` status with approve / reject tools. The
-> native DSH plugin (`integrations/dsh/`) triggers review automatically on
-> `agent/turn-stopping` and observes automatically on `tools/result`. Semantic
-> near-duplicate detection and conflicting-version detection (automating
-> VERSION_OF) are not done.
+### Available now
 
-Removes the current reliance on the agent calling `fibmind_append` on its own
-initiative.
+- [x] `fibbrain_remember` combines admission and writing.
+- [x] Admission skips raw dumps, empty speculation, exact duplicates, and
+  high token-overlap duplicates with a negation guard.
+- [x] `fibbrain_observe` persists session episodes.
+- [x] `fibbrain_review_session` extracts decisions, errors, corrections,
+  risks, verification, changed files, summaries, and procedures.
+- [x] Review modes are `candidates`, `approve`, and `auto`; repeated review
+  is idempotent. Pending memories have approve/reject tools.
+- [x] The native DSH plugin observes tool results, reviews on turn end, and
+  publishes mature procedures as skills.
+- [x] Explicit conflict marking/resolution and pending `VERSION_OF`
+  replacements are available.
 
-### Write Admission
+Token overlap is a lexical near-duplicate heuristic, not semantic
+deduplication. Conflict handling is explicit; automatic discovery of
+contradictory versions has not landed. Review artifacts retain source node
+IDs, but still need to carry their source files/commands into usable metadata.
 
-Add `MemoryAdmissionPolicy`.
+### Remaining acceptance
 
-Worth saving:
-
-- Stable user preferences;
-- Important design decisions and their rationale;
-- User corrections;
-- Verified causes of errors;
-- Information that cannot easily be rediscovered;
-- Conventions that stay valuable across sessions.
-
-Skipped by default:
-
-- Transient conversation;
-- Large raw logs;
-- Information that can be rediscovered quickly from the code;
-- Exact duplicates;
-- Speculation with no conclusion.
-
-### Deduplication and Conflict Handling
-
-- Content-hash deduplication;
-- Semantic near-duplicate detection;
-- Detecting old and new versions of the same fact;
-- On conflict, create `VERSION_OF` or trigger a revise;
-- Two contradictory facts must never both stay active.
-
-### Session Review
-
-New MCP tools:
-
-- `fibmind_commit_session`;
-- `fibmind_review_pending`;
-- `fibmind_approve_memory`;
-- `fibmind_reject_memory`.
-
-Extracted after a session ends:
-
-- objective;
-- key decisions;
-- changed files;
-- tests;
-- unresolved risks;
-- user corrections;
-- knowledge promotion candidates.
-
-Three modes are supported:
-
-1. Write automatically;
-2. Approve before writing;
-3. Generate candidates only, without saving.
-
-### Acceptance
-
-- Automatic writes are idempotent;
-- Rerunning Session Review produces no duplicate memories;
-- Wrongly admitted memories can be rejected or revoked;
-- Automatic write accuracy is part of the P0 evaluation.
+- [ ] Copy verification and file anchors from episode events to review outputs.
+- [ ] Add semantic near-duplicate detection and conservative version/conflict
+  suggestions without merging opposite claims.
+- [ ] Measure admission precision, review completeness, repeat-review
+  idempotence, and rejection/revocation on reviewed real sessions.
+- [ ] Ensure pending replacements cannot supersede a base that changed after
+  they were proposed.
+- [ ] Preserve caller identity and host provenance across every automatic path.
 
 ## P5: Summarization, Knowledge Governance, Security, and Observability
 
-> Status (2026-09): a first version has landed (S7). `Summarizer` / `Planner` are
-> pluggable (`distill.py`); the default is still deterministic, and the LLM
-> version records model / prompt_version / sources and can be regenerated from
-> the log. When supporting nodes are refuted, derived knowledge loses confidence
-> in proportion to its surviving support, and becomes `stale` once all support is
-> gone. Writes are scanned for secrets / injection / invisible Unicode
-> (`safety.py`). `fibbrain_tune` uses confirmed vs refuted evidence to propose one
-> bounded weight adjustment, adopts it only if it passes the P0 evaluation gate,
-> and logs every attempt. `fibbrain_revalidation_candidates` lists knowledge and
-> procedures that have gone unconfirmed for a long time (output only).
-> `fibmind_status` reports kinds / pending / invalidated knowledge / outcome
-> counts / weights / tuning history. Not done: backup, restore, and export; a
-> database encryption interface; automatic adjustment of the admit threshold
-> (pressure is only reported, never tightened automatically).
+### Available now
 
-### Real Summarization
+- [x] Pluggable `Summarizer` / `Planner` interfaces.
+- [x] Default excerpt folding, optional structured distillation, and a callable
+  summarizer with model/prompt/source provenance and a fidelity check.
+- [x] Knowledge promotion requires at least three distinct active supporters;
+  an optional cross-provenance gate requires multiple sessions/hosts or
+  verification evidence.
+- [x] Refuted support reduces derived-knowledge confidence and can retire the
+  derived claim.
+- [x] Admission/background scanning for secrets, injection patterns, and
+  invisible Unicode.
+- [x] `fibbrain_tune` proposes bounded ranking-weight changes behind the
+  fixed evaluation gate and records attempts.
+- [x] `fibbrain_revalidation_candidates` lists old unconfirmed knowledge and
+  procedures; it does not revalidate them automatically.
+- [x] `fibmind_status` reports store/lifecycle/index/embedding state and
+  governance counts.
 
-Replace the current excerpt concatenation with a pluggable Summarizer. A summary
-must:
+The default summarizer still concatenates excerpts. A callable adapter is not
+a bundled LLM service. Named outcomes and provenance make evidence auditable;
+they do not establish that the supplied check is relevant to every claim.
 
-- Keep facts and the rationale behind decisions;
-- Keep sources such as files, commits, and tests;
-- Distinguish facts, speculation, and open questions;
-- Not summarize conflicting memories into a definite conclusion;
-- Be regenerable from the raw events;
-- Record the model, prompt version, and input sources used.
+### Remaining acceptance
 
-### Knowledge Lifecycle
+- [ ] Preserve directives, exceptions, anchors, applicability, and memory kind
+  in every compression path, including fallback and regeneration.
+- [ ] Replace maximum-source-confidence inheritance with evidence that remains
+  valid under mixed support, correction, refutation, and deletion.
+- [ ] Verify replay equivalence after all lifecycle operations and redaction of
+  forgotten content from source events and derived summaries.
+- [ ] Provide tested backup, restore, export, and disaster-recovery commands.
+- [ ] Define an optional database-encryption interface.
+- [ ] Add query hit/empty rates, injected tokens, latency, admission/revocation
+  rates, and hot-versus-dynamic contribution to diagnostics.
+- [ ] Keep automatic threshold tuning gated; admission-pressure adjustment and
+  autonomous revalidation remain unimplemented.
 
-- Promotion requires multiple independent pieces of evidence;
-- Evidence can be withdrawn;
-- When a supporting memory is refuted, the confidence of derived knowledge is
-  lowered automatically;
-- When a new version appears, the old knowledge is marked stale;
-- It can explain which memories a piece of knowledge was derived from;
-- Knowledge that has gone unconfirmed for a long time is periodically
-  revalidated.
+## P6: Reflex and Knowledge-Gap Assessment
 
-### Security
+### Reflex available now
 
-Checked before writing:
+- [x] `fibbrain_verify` / `fibmind-verify` execute commands and record
+  `confirmed`, `refuted`, or `inconclusive`.
+- [x] Target-file matching applies to both successful and failed checks;
+  environment failures, zero tests, and missing output assertions are handled.
+- [x] `fibbrain_reflex` can return a high-confidence answer or mature
+  procedure, with opt-in step execution and fallback on failure.
+- [x] Preconditions check conflicts, recorded file hashes, optional file
+  existence, and model-generation metadata.
+- [x] `fibmind_revise(protect_verified=True)` stages a pending replacement;
+  `expected_version` rejects stale edits.
 
-- API keys, tokens, passwords, and private keys;
-- Prompt injection;
-- Invisible Unicode;
-- Oversized content and malicious metadata;
-- owner/project boundary violations.
+### Remaining reflex acceptance
 
-Also provided:
+- [ ] Execute `Procedure.verify` and apply verification diagnosis before
+  confirming procedure success, including zero steps and inconclusive output.
+- [ ] Pass an explicit caller workspace through MCP to file checks and command
+  execution rather than relying on the server's current directory.
+- [ ] Handle missing commands, timeouts, and other execution failures through a
+  consistent circuit breaker.
+- [ ] Require measured relevance as well as confidence before bypassing the
+  model, and test false direct answers.
+- [ ] Verify protected replacement behavior under concurrent edits and replay.
 
-- Write approval;
-- Deletion audit;
-- Backup, restore, and export;
-- Redaction of sensitive fields;
-- An extension interface for local database encryption.
+### Metacognition: design only
 
-### Observability
+[The metacognition plan](docs/plans/06-metacognition.md) proposes
+`fibbrain_assess`, evidence-based `known` / `uncertain` / `contradicted` /
+`unknown` classifications, and routing to memory, code, verification, the
+user, or external search. The MCP tool and assessment evaluation are not
+implemented.
 
-- Query count, hit rate, and empty-recall rate;
-- Tokens injected per context;
-- How many times each memory is used, confirmed, and refuted;
-- Recall latency;
-- Acceptance and revocation rates of automatic writes;
-- Hit contribution of hot memory versus long-term memory.
+- [ ] Recheck G0 prerequisites against today's code: recall hits already expose
+  confidence/status; review anchors and caller workspace binding remain open.
+- [ ] Implement deterministic classification and a pluggable aspect-decomposition
+  interface that cannot grant trust.
+- [ ] Add a separate gap dataset and gate false-known rate before integrating
+  assessment into planning, coordination, or recall.
+- [ ] Persist unresolved questions and measure whether later evidence fills
+  gaps or refutes a previously trusted assessment.
 
-Add `fibmind_status` and a diagnostics command showing store size, index state,
-memories awaiting approval, invalidated knowledge, and recent evaluation
-results.
+## P7: Cross-Application User Context
 
-## Deferred
+### Available now
 
-Not prioritized until P0–P3 are complete:
+- [x] `fibbrain_context` returns bounded background, evidence labels,
+  rendered-memory provenance, `has_task_context`, and reusable `state`.
+- [x] Standing user preferences can cross projects; workspace/project facts
+  remain at their explicit level. Application names are host provenance.
+- [x] Context excludes inactive, pending, conflicted, unsafe, and internal
+  planning records without writing goals, snapshots, episodes, or evidence.
+- [x] `fibmind-config` generates Codex/Claude Code/AGY configuration and
+  instructions; `fibmind-connect` previews registration and backs up settings
+  before applying.
+- [x] The generator defaults to `memory`; direct server startup defaults to
+  `full`. This repository uses `full` for its AGENTS workflow.
+- [x] Independent stdio MCP-client tests cover shared persistence, visibility,
+  provenance, and read-only context.
 
-- More Fibonacci layers;
-- More graph relation types;
-- A complex visual editor;
-- A remote distributed graph database;
-- Multi-tenant SaaS;
-- Agents generating large numbers of relation edges automatically;
-- Fibonacci parameter tuning.
+### Remaining acceptance
 
-None of these directly shows more accurate recall or lower token use.
+- [ ] Make native Codex, Claude Code, and AGY checks repeatable and record their
+  results separately from protocol integration tests.
+- [ ] Cover profile selection under many high-confidence project preferences,
+  compression, changing applicability, and very small budgets.
+- [ ] Exercise existing-label overrides, canonical paths, worktrees, missing
+  native conversation IDs, and partial registration recovery.
+- [ ] Document and verify daemon connections independently from the generated
+  stdio registrations.
+
+Use the host's actual conversation ID; omit it and avoid session-scope actions
+when it is unavailable. Do not invent IDs or bypass host approval settings.
+See [the integration guide](docs/cross-application-memory.md) and
+[the cross-application plan](docs/plans/07-cross-app-memory.md).
 
 ## Release Milestones
 
-### v0.2 — Retrieval MVP
+| Milestone | Required evidence before release |
+| --- | --- |
+| v0.2 — Retrieval MVP | P0–P3 gates on reviewed traces; owner/project isolation and replay checks; reliable candidate fallback; model-token budgets; demonstrated retrieval benefit without an accuracy regression. |
+| v0.3 — Automatic Memory | Quantified admission/review quality; idempotent capture; approval/revocation; conservative conflict/version handling; reliable verification and protected revisions. |
+| v1.0 — Governed Memory | Traceable and regenerable summaries; sound evidence invalidation; backup/restore/export and diagnostics; repeatable native-host acceptance; benefits on long-running real projects. |
 
-Scope: P0–P3.
+Metacognition, if exposed in a release, additionally needs its own false-known
+and routing gates. Implemented slices can be useful before a milestone passes;
+their presence alone does not advance the version.
 
-Release conditions:
+## Deferred
 
-- Hybrid retrieval beats the current keyword baseline;
-- The token budget can be strictly enforced;
-- Hot memory and dynamic long-term memory work together;
-- owner/project isolation tests pass;
-- Reproducible reports on effectiveness, tokens, and latency exist.
+Until correctness and real-workload value are demonstrated:
 
-### v0.3 — Automatic Memory
+- More Fibonacci layers or parameter tuning.
+- More relation types or automatic generation of large edge sets.
+- A complex visual editor.
+- Remote distributed graph storage, cross-device synchronization, or
+  multi-tenant SaaS.
+- Autonomous background consolidation or execution beyond the measured gates.
 
-Scope: P4.
-
-Release conditions:
-
-- Session Review is idempotent;
-- Automatic admission, deduplication, and conflict handling work;
-- Approval mode is supported;
-- Automatic write quality has a quantitative report.
-
-### v1.0 — Governed Memory
-
-Scope: P5.
-
-Release conditions:
-
-- Summaries are traceable and regenerable;
-- Derived knowledge supports evidence-invalidation propagation;
-- Security scanning, backup/restore, and diagnostics are complete;
-- Benefits are demonstrated in long-term evaluation on real projects.
-
-## Next Evolution: Coding Agent Memory Layer (v0.2 - v1.0)
-
-For the next-generation detailed engineering specifications, evidence attribution hardening, FTS5-driven lazy retrieval, incremental transactions, and real-world benchmark plan, see:
-[`docs/plans/05-coding-agent-memory-spec.md`](docs/plans/05-coding-agent-memory-spec.md).
+Detailed design background remains in
+[the plan index](docs/plans/README.md),
+[the coding-agent memory specification](docs/plans/05-coding-agent-memory-spec.md),
+[metacognition](docs/plans/06-metacognition.md), and
+[cross-application memory](docs/plans/07-cross-app-memory.md).
+Some plans describe earlier snapshots; the implementation and current
+acceptance checklist above determine what is available today.
