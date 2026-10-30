@@ -1,0 +1,208 @@
+{
+  "name": "knowledge_gaps",
+  "description": "Metacognitive gap benchmark: distinguishes what the brain knows, what is uncertain, what is refuted, and what is unknown.",
+  "memories": [
+    {
+      "id": "mem_partial_overlap",
+      "category": "architecture",
+      "title": "Recall related memories from forest trees",
+      "content": "Use recall to search through graph trees and retrieve nodes for context pack.",
+      "tags": ["recall", "forest", "context"],
+      "scope": "knowledge",
+      "confidence": 0.75,
+      "confirmations": 3,
+      "sessions": 2
+    },
+    {
+      "id": "mem_unchecked_verify",
+      "category": "procedure",
+      "title": "Run database migrations with alembic",
+      "content": "Run alembic upgrade head to apply schema migrations safely to PostgreSQL.",
+      "tags": ["alembic", "migrations", "database"],
+      "scope": "personal",
+      "confidence": 0.0,
+      "metadata": {
+        "command": "alembic upgrade head"
+      }
+    },
+    {
+      "id": "mem_unchecked_caution",
+      "category": "decision",
+      "title": "Docker container memory allocation limit",
+      "content": "Set docker container memory limit to 4GB to prevent host system OOM errors.",
+      "tags": ["docker", "memory", "limit"],
+      "scope": "personal",
+      "confidence": 0.0
+    },
+    {
+      "id": "mem_confirmed_fresh",
+      "category": "decision",
+      "title": "Refresh access token via OAuth refresh token grant",
+      "content": "When access token expires, refresh access token via OAuth refresh token grant.",
+      "tags": ["auth", "oauth", "token", "refresh"],
+      "scope": "personal",
+      "confidence": 0.75,
+      "confirmations": 2,
+      "sessions": 2,
+      "last_confirmation": "2026-10-15T00:00:00Z"
+    },
+    {
+      "id": "mem_file_drift",
+      "category": "decision",
+      "title": "Validate JWT claims format and issuer signature",
+      "content": "Validate JWT claims format and issuer signature in src/jwt_validator.py.",
+      "tags": ["jwt", "claims", "signature", "issuer"],
+      "scope": "personal",
+      "confidence": 0.75,
+      "confirmations": 2,
+      "sessions": 2,
+      "last_confirmation": "2026-10-15T00:00:00Z",
+      "metadata": {
+        "files": ["src/jwt_validator.py"],
+        "file_hashes": {
+          "src/jwt_validator.py": "0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      }
+    },
+    {
+      "id": "mem_refuted",
+      "category": "decision",
+      "title": "Disable SSL verification during local requests tests",
+      "content": "Disable SSL verification with verify=False during local requests testing.",
+      "tags": ["ssl", "verification", "requests", "security"],
+      "scope": "personal",
+      "confidence": 0.0,
+      "status": "refuted",
+      "status_reason": "refuted by security audit"
+    },
+    {
+      "id": "mem_conflicted_a",
+      "category": "decision",
+      "title": "Synchronous webhook delivery processing",
+      "content": "Use synchronous requests for webhook delivery processing to simplify debugging.",
+      "tags": ["webhook", "synchronous", "delivery"],
+      "scope": "personal",
+      "confidence": 0.0,
+      "metadata": {
+        "conflicted": true,
+        "conflict_reason": "asynchronous queue is required for webhook resilience"
+      }
+    },
+    {
+      "id": "mem_half_covered",
+      "category": "architecture",
+      "title": "PostgreSQL connection pool max size configuration",
+      "content": "Configure PostgreSQL connection pool max size to 20 connections max.",
+      "tags": ["postgresql", "connection", "pool"],
+      "scope": "knowledge",
+      "confidence": 0.75,
+      "confirmations": 2,
+      "sessions": 2,
+      "last_confirmation": "2026-10-15T00:00:00Z"
+    },
+    {
+      "id": "mem_chinese_mixed",
+      "category": "decision",
+      "title": "Redis 缓存穿透与布隆过滤器配置",
+      "content": "Redis 缓存穿透保护应配合布隆过滤器配置，提前拦截非法查询。",
+      "tags": ["redis", "缓存穿透", "布隆过滤器"],
+      "scope": "knowledge",
+      "confidence": 0.75,
+      "confirmations": 2,
+      "sessions": 2,
+      "last_confirmation": "2026-10-15T00:00:00Z"
+    }
+  ],
+  "cases": [
+    {
+      "id": "case_partial_negative",
+      "goal": "Kubernetes pod horizontal autoscaler deployment policy",
+      "expect_verdict": "unknown",
+      "expect_known_ids": [],
+      "expect_uncertain_ids": [],
+      "expect_contradicted_ids": [],
+      "expect_routes": ["model"]
+    },
+    {
+      "id": "case_unchecked_verify",
+      "goal": "run database migrations with alembic upgrade head",
+      "expect_verdict": "partial",
+      "expect_known_ids": [],
+      "expect_uncertain_ids": ["mem_unchecked_verify"],
+      "expect_contradicted_ids": [],
+      "expect_routes": ["verify"]
+    },
+    {
+      "id": "case_unchecked_caution",
+      "goal": "docker container memory allocation limit setting",
+      "expect_verdict": "partial",
+      "expect_known_ids": [],
+      "expect_uncertain_ids": ["mem_unchecked_caution"],
+      "expect_contradicted_ids": [],
+      "expect_routes": []
+    },
+    {
+      "id": "case_confirmed_fresh",
+      "goal": "refresh access token via OAuth refresh token grant",
+      "expect_verdict": "known",
+      "expect_known_ids": ["mem_confirmed_fresh"],
+      "expect_uncertain_ids": [],
+      "expect_contradicted_ids": [],
+      "expect_routes": []
+    },
+    {
+      "id": "case_file_drift",
+      "goal": "validate JWT claims format and issuer signature",
+      "expect_verdict": "partial",
+      "expect_known_ids": [],
+      "expect_uncertain_ids": ["mem_file_drift"],
+      "expect_contradicted_ids": [],
+      "expect_routes": ["code"]
+    },
+    {
+      "id": "case_refuted",
+      "goal": "disable SSL verification during local requests tests",
+      "expect_verdict": "partial",
+      "expect_known_ids": [],
+      "expect_uncertain_ids": [],
+      "expect_contradicted_ids": ["mem_refuted"],
+      "expect_routes": ["avoid"]
+    },
+    {
+      "id": "case_conflicted",
+      "goal": "synchronous webhook delivery processing handling",
+      "expect_verdict": "partial",
+      "expect_known_ids": [],
+      "expect_uncertain_ids": ["mem_conflicted_a"],
+      "expect_contradicted_ids": [],
+      "expect_routes": ["resolve"]
+    },
+    {
+      "id": "case_half_covered",
+      "goal": "PostgreSQL connection pool max size configuration and Redis cluster replication topology in topology.py",
+      "expect_verdict": "partial",
+      "expect_known_ids": ["mem_half_covered"],
+      "expect_uncertain_ids": [],
+      "expect_contradicted_ids": [],
+      "expect_routes": ["code"]
+    },
+    {
+      "id": "case_chinese_mixed",
+      "goal": "Redis 缓存穿透与布隆过滤器配置",
+      "expect_verdict": "known",
+      "expect_known_ids": ["mem_chinese_mixed"],
+      "expect_uncertain_ids": [],
+      "expect_contradicted_ids": [],
+      "expect_routes": []
+    },
+    {
+      "id": "case_preference_question",
+      "goal": "Should we prefer pytest or unittest for coding conventions?",
+      "expect_verdict": "unknown",
+      "expect_known_ids": [],
+      "expect_uncertain_ids": [],
+      "expect_contradicted_ids": [],
+      "expect_routes": ["ask"]
+    }
+  ]
+}

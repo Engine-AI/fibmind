@@ -18,6 +18,7 @@ import os
 import sqlite3
 import struct
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -133,7 +134,16 @@ class OpenAICompatibleEmbeddingProvider:
         )
         if self.api_key:
             request.add_header("Authorization", f"Bearer {self.api_key}")
-        with urllib.request.urlopen(request, timeout=self.timeout) as response:  # noqa: S310
+        parsed = urllib.parse.urlsplit(self.url)
+        host = (parsed.hostname or "").lower()
+        is_loopback = host in {"127.0.0.1", "localhost", "::1"} or host.startswith("127.")
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({})) if is_loopback else None
+        cm = (
+            opener.open(request, timeout=self.timeout)
+            if opener is not None
+            else urllib.request.urlopen(request, timeout=self.timeout)
+        )  # noqa: S310
+        with cm as response:
             payload = json.loads(response.read().decode("utf-8"))
         rows = sorted(payload["data"], key=lambda item: item.get("index", 0))
         vectors = [[float(value) for value in row["embedding"]] for row in rows]

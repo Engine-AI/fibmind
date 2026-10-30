@@ -38,6 +38,7 @@ from fibmind.visibility import ContextLevel, context_level, identity_key, is_vis
 # accumulates rather than deciding outright, so one lucky pass does not make a
 # memory authoritative and one flake does not erase it.
 CONFIDENCE_STEP = 0.25
+RING3_CONFIDENCE_CAP = 0.6
 
 # Content stored in the log in place of a forgotten node's text. Replay must not
 # resurrect what a user asked to have deleted.
@@ -236,7 +237,32 @@ class FibMind:
             self.compress_overflow(category)
         return node.id
 
-    def set_status(self, node_id: str, status: MemoryStatus, reason: str) -> MemoryNode:
+    def _unfold_healthy_sources(self, summary_node_id: str) -> list[str]:
+        matching = [
+            s
+            for s in self.nodes.values()
+            if s.folded_into == summary_node_id
+            and s.status == MemoryStatus.ACTIVE
+            and not s.metadata.get("upstream_refuted")
+        ]
+        unfolded_ids: list[str] = []
+        for s in sorted(matching, key=lambda item: item.id):
+            s.folded_into = None
+            unfolded_ids.append(s.id)
+        return unfolded_ids
+
+    def unfold_node(self, node_id: str, reason: str = "unfolded") -> list[str]:
+        """Retire summary node and unfold its healthy source memories."""
+        self._require_node(node_id)
+        healthy = [
+            s.id
+            for s in sorted(self.nodes.values(), key=lambda item: item.id)
+            if s.folded_into == node_id and s.status == MemoryStatus.ACTIVE and not s.metadata.get("upstream_refuted")
+        ]
+        self.set_status(node_id, MemoryStatus.STALE, reason)
+        return healthy
+
+    def set_status(self, node_id: str, status: MemoryStatus | str, reason: str | None = None) -> MemoryNode:
         """Move a node between lifecycle states, recording why.
 
         ``mark_stale`` is the common case; this is the general form used by the
@@ -244,20 +270,28 @@ class FibMind:
         (``pending`` → ``stale``) an automatically extracted memory.
         """
         node = self._require_node(node_id)
-        if not reason or not reason.strip():
+        effective_reason = (reason or "").strip()
+        if not effective_reason:
             raise ValueError("reason must explain the status change")
-        node.status = MemoryStatus(status)
-        node.status_reason = reason
+        target_status = MemoryStatus(status)
+        node.status = target_status
+        node.status_reason = effective_reason
         node.updated_at = utc_now()
-        self._record(
-            EventOp.SET_STATUS,
-            {
-                "node_id": node_id,
-                "status": node.status.value,
-                "reason": reason,
-                "updated_at": node.updated_at.isoformat(),
-            },
-        )
+        payload: dict[str, Any] = {
+            "node_id": node_id,
+            "status": node.status.value,
+            "reason": effective_reason,
+            "updated_at": node.updated_at.isoformat(),
+        }
+        if node.node_type in (NodeType.COMPRESSED, NodeType.SUMMARY, NodeType.ARCHIVE) and target_status in (
+            MemoryStatus.STALE,
+            MemoryStatus.REFUTED,
+        ):
+            unfolded_ids = self._unfold_healthy_sources(node_id)
+            if unfolded_ids:
+                payload["unfolded_source_ids"] = unfolded_ids
+
+        self._record(EventOp.SET_STATUS, payload)
         return node
 
     def _auto_link_similar(self, node: MemoryNode) -> None:
@@ -363,6 +397,8 @@ class FibMind:
         source: str,
         note: str | None = None,
         session_id: str | None = None,
+        *,
+        trust_ring: str | None = None,
     ) -> MemoryNode:
         """Attach external evidence about whether a memory is correct.
 
@@ -376,13 +412,46 @@ class FibMind:
         if not source or not source.strip():
             raise ValueError("source must name what produced the verdict")
 
+        effective_ring = trust_ring.strip().lower() if isinstance(trust_ring, str) else None
+        if effective_ring is not None and effective_ring not in {"ring0", "ring3"}:
+            raise ValueError(f"Invalid trust_ring '{trust_ring}'; must be 'ring0', 'ring3', or None")
+
         version_targets = self._version_targets(node_id)
+        if (
+            verdict == Verdict.CONFIRMED
+            and node.status == MemoryStatus.PENDING
+            and version_targets
+            and effective_ring != "ring3"
+        ):
+            base_rev = node.metadata.get("base_revision")
+            if base_rev is not None:
+                for target_id in version_targets:
+                    old_node = self.nodes.get(target_id)
+                    if old_node is not None and old_node.revision != int(base_rev):
+                        raise ConflictError(
+                            f"Conflict: superseded node '{target_id}' is at revision {old_node.revision}, "
+                            f"expected base_revision {base_rev}"
+                        )
         if verdict == Verdict.CONFIRMED:
-            node.confidence = max(0.0, min(1.0, node.confidence + CONFIDENCE_STEP))
+            if effective_ring == "ring3":
+                if node.confidence < RING3_CONFIDENCE_CAP:
+                    node.confidence = min(RING3_CONFIDENCE_CAP, node.confidence + CONFIDENCE_STEP)
+            else:
+                node.confidence = max(0.0, min(1.0, node.confidence + CONFIDENCE_STEP))
+                if (
+                    effective_ring == "ring0"
+                    and node.status == MemoryStatus.PENDING
+                    and node.metadata.get("supersedes_node_id")
+                ):
+                    self.set_status(node.id, MemoryStatus.ACTIVE, f"promoted after ring0 confirmation via {source}")
+                    node.metadata["promoted_from_shadow"] = True
+                    old_id = str(node.metadata["supersedes_node_id"])
+                    if old_id in self.nodes and self.nodes[old_id].status == MemoryStatus.ACTIVE:
+                        self.set_status(old_id, MemoryStatus.STALE, f"superseded by verified revision {node.id}")
+                elif node.status == MemoryStatus.PENDING and version_targets:
+                    node.status = MemoryStatus.ACTIVE
+                    node.status_reason = f"verified by {source}"
             node.confidence_source = source
-            if node.status == MemoryStatus.PENDING and version_targets:
-                node.status = MemoryStatus.ACTIVE
-                node.status_reason = f"verified by {source}"
         elif verdict == Verdict.REFUTED:
             node.confidence = max(0.0, min(1.0, node.confidence - CONFIDENCE_STEP))
             node.confidence_source = source
@@ -391,30 +460,168 @@ class FibMind:
         elif verdict == Verdict.INCONCLUSIVE:
             # Inconclusive outcome does not alter confidence or mark status as refuted
             pass
+        if trust_ring is not None:
+            node.metadata["last_trust_ring"] = effective_ring
         node.updated_at = utc_now()
-        self._record(
-            EventOp.OBSERVE,
-            {
-                "node_id": node_id,
-                "verdict": verdict.value,
-                "source": source,
-                "note": note,
-                "confidence": node.confidence,
-                "status": node.status.value,
-                "status_reason": node.status_reason,
-                "session_id": optional_id(session_id),
-                "updated_at": node.updated_at.isoformat(),
-            },
-        )
-        if verdict == Verdict.CONFIRMED and version_targets:
+        observe_payload: dict[str, Any] = {
+            "node_id": node_id,
+            "verdict": verdict.value,
+            "source": source,
+            "note": note,
+            "confidence": node.confidence,
+            "status": node.status.value,
+            "status_reason": node.status_reason,
+            "session_id": optional_id(session_id),
+            "updated_at": node.updated_at.isoformat(),
+        }
+        if trust_ring is not None:
+            observe_payload["trust_ring"] = effective_ring
+        if node.metadata.get("promoted_from_shadow"):
+            observe_payload["metadata_patch"] = {"promoted_from_shadow": True}
+        self._record(EventOp.OBSERVE, observe_payload)
+        if verdict == Verdict.CONFIRMED and version_targets and node.status == MemoryStatus.ACTIVE:
+            base_rev = node.metadata.get("base_revision")
             for target_id in version_targets:
                 old_node = self.nodes.get(target_id)
                 if old_node is not None and old_node.status == MemoryStatus.ACTIVE:
-                    self.mark_stale(target_id, f"superseded by verified revision {node_id}")
+                    if base_rev is None or old_node.revision == int(base_rev):
+                        self.mark_stale(target_id, f"superseded by verified revision {node_id}")
         elif verdict == Verdict.REFUTED:
             self._propagate_refutation(node)
+            self._invalidate_dependents(node_id, source=source)
             self._clear_resolved_conflicts(node_id)
         return node
+
+    def synthesize_conflict(
+        self,
+        node_id_a: str,
+        node_id_b: str,
+        *,
+        title: str,
+        content: str,
+        conditions_a: list[str] | tuple[str, ...],
+        conditions_b: list[str] | tuple[str, ...],
+        source: str,
+    ) -> MemoryNode:
+        """Synthesize two conflicting memories into a higher-order conditional truth.
+
+        Resolves dialectical opposition by scoping conflicting assertions under their
+        respective valid conditions, folding both thesis and antithesis into a synthesized
+        node that links them as version/derivation predecessors.
+        """
+        node_a = self._require_node(node_id_a)
+        node_b = self._require_node(node_id_b)
+
+        if not title or not title.strip():
+            raise ValueError("title must not be empty")
+        if not content or not content.strip():
+            raise ValueError("content must not be empty")
+        if not source or not source.strip():
+            raise ValueError("source must not be empty")
+
+        cond_a = [str(c).strip() for c in conditions_a if str(c).strip()]
+        cond_b = [str(c).strip() for c in conditions_b if str(c).strip()]
+
+        synth_tags = sorted(node_a.tags | node_b.tags | {"synthesized"})
+        synth_meta: dict[str, Any] = {
+            "synthesized_from": [node_id_a, node_id_b],
+            "synthesis_source": source,
+            "conditions": list(dict.fromkeys([*cond_a, *cond_b])),
+            "branches": [
+                {"node_id": node_id_a, "title": node_a.title, "content": node_a.content, "conditions": cond_a},
+                {"node_id": node_id_b, "title": node_b.title, "content": node_b.content, "conditions": cond_b},
+            ],
+        }
+
+        for key in ("files", "changed_files", "symbols"):
+            merged_list: list[str] = []
+            for node in (node_a, node_b):
+                val = node.metadata.get(key)
+                if isinstance(val, (list, tuple, set)):
+                    for item in val:
+                        s = str(item).strip()
+                        if s and s not in merged_list:
+                            merged_list.append(s)
+                elif isinstance(val, str) and val.strip():
+                    s = val.strip()
+                    if s not in merged_list:
+                        merged_list.append(s)
+            if merged_list:
+                synth_meta[key] = merged_list
+
+        if "context_level" in node_a.metadata:
+            synth_meta["context_level"] = node_a.metadata["context_level"]
+        elif "context_level" in node_b.metadata:
+            synth_meta["context_level"] = node_b.metadata["context_level"]
+
+        synth_id = self.append(
+            category=node_a.category,
+            title=title,
+            content=content,
+            tags=synth_tags,
+            metadata=synth_meta,
+            scope=node_a.scope,
+            owner=node_a.owner,
+            workspace_id=node_a.workspace_id,
+            project_id=node_a.project_id,
+            session_id=node_a.session_id,
+            task_id=node_a.task_id,
+            auto_link=False,
+        )
+        synth_node = self.nodes[synth_id]
+
+        self.link_nodes(synth_id, node_id_a, RelationType.DERIVED_FROM, weight=1.0)
+        self.link_nodes(synth_id, node_id_b, RelationType.DERIVED_FROM, weight=1.0)
+        self.link_nodes(synth_id, node_id_a, RelationType.VERSION_OF, weight=1.0)
+        self.link_nodes(synth_id, node_id_b, RelationType.VERSION_OF, weight=1.0)
+
+        for k in ("conflicted", "conflict_reason", "potential_conflicts"):
+            node_a.metadata.pop(k, None)
+            node_b.metadata.pop(k, None)
+        node_a.metadata["conditions"] = cond_a
+        node_b.metadata["conditions"] = cond_b
+        node_a.folded_into = synth_id
+        node_b.folded_into = synth_id
+        node_a.updated_at = utc_now()
+        node_b.updated_at = utc_now()
+
+        self._record(
+            EventOp.FOLD,
+            {
+                "into_node_id": synth_id,
+                "source_node_ids": [node_id_a, node_id_b],
+                "source_layer": node_a.layer,
+                "target_layer": synth_node.layer,
+                "source_metadata_patches": {
+                    node_id_a: {"conditions": list(node_a.metadata.get("conditions", []))},
+                    node_id_b: {"conditions": list(node_b.metadata.get("conditions", []))},
+                },
+                "source_metadata_removes": ["conflicted", "conflict_reason", "potential_conflicts"],
+            },
+        )
+
+        synth_node.confidence = round(
+            min(RING3_CONFIDENCE_CAP, max(node_a.confidence, node_b.confidence, 0.25)),
+            4,
+        )
+        synth_node.confidence_source = f"synthesized via {source}"
+        synth_node.updated_at = utc_now()
+
+        self._record(
+            EventOp.OBSERVE,
+            {
+                "node_id": synth_id,
+                "verdict": Verdict.CONFIRMED.value,
+                "source": f"synthesized via {source}",
+                "confidence": synth_node.confidence,
+                "status": synth_node.status.value,
+                "status_reason": synth_node.status_reason,
+                "session_id": optional_id(synth_node.session_id),
+                "updated_at": synth_node.updated_at.isoformat(),
+            },
+        )
+
+        return synth_node
 
     def derived_knowledge(self, node_id: str) -> list[MemoryNode]:
         """Knowledge nodes that cite ``node_id`` as a supporter (DERIVED_FROM)."""
@@ -481,6 +688,159 @@ class FibMind:
                 },
             )
 
+        # Propagate refutation to summary nodes linked via RelationType.SUMMARY_OF
+        summary_candidate_ids: set[str] = set()
+        for edge_id in self.reverse_adjacency.get(supporter.id, set()):
+            edge = self.edges.get(edge_id)
+            if edge is not None and edge.relation_type == RelationType.SUMMARY_OF:
+                summary_candidate_ids.add(edge.from_node_id)
+
+        for summary_id in sorted(summary_candidate_ids):
+            summary_node = self.nodes.get(summary_id)
+            if summary_node is None:
+                continue
+            if summary_node.node_type not in (NodeType.COMPRESSED, NodeType.SUMMARY, NodeType.ARCHIVE):
+                continue
+            if summary_node.status != MemoryStatus.ACTIVE:
+                continue
+
+            source_edges = [
+                self.edges[eid]
+                for eid in self.adjacency.get(summary_node.id, set())
+                if eid in self.edges and self.edges[eid].relation_type == RelationType.SUMMARY_OF
+            ]
+            if not source_edges:
+                continue
+
+            all_sources = [self.nodes[e.to_node_id] for e in source_edges if e.to_node_id in self.nodes]
+            active_sources = [item for item in all_sources if item.status == MemoryStatus.ACTIVE]
+
+            share = len(active_sources) / len(all_sources) if all_sources else 0.0
+            summary_node.confidence = round(summary_node.confidence * share, 4)
+            summary_node.confidence_source = f"source refuted: {supporter.id}"
+            reason = None
+            if not active_sources:
+                summary_node.status = MemoryStatus.STALE
+                reason = f"all {len(all_sources)} summarized source memories were refuted"
+                summary_node.status_reason = reason
+            summary_node.updated_at = utc_now()
+            self._record(
+                EventOp.OBSERVE,
+                {
+                    "node_id": summary_node.id,
+                    "verdict": "propagated",
+                    "source": summary_node.confidence_source,
+                    "note": reason,
+                    "confidence": summary_node.confidence,
+                    "status": summary_node.status.value,
+                    "status_reason": summary_node.status_reason,
+                    "supporter_id": supporter.id,
+                    "active_supporters": len(active_sources),
+                    "total_supporters": len(all_sources),
+                    "updated_at": summary_node.updated_at.isoformat(),
+                },
+            )
+
+    def _invalidate_dependents(self, source_node_id: str, source: str, max_hops: int = 3) -> list[str]:
+        """Cascade belief revision multi-hop along DERIVED_FROM and SUMMARY_OF edges when a node is refuted."""
+        visited: set[str] = {source_node_id}
+        invalidated: list[str] = []
+        queue: deque[tuple[str, int]] = deque([(source_node_id, 1)])
+
+        while queue:
+            current_id, hop = queue.popleft()
+            if hop > max_hops:
+                continue
+
+            for edge_id in sorted(self.reverse_adjacency.get(current_id, set())):
+                edge = self.edges.get(edge_id)
+                if edge is None or edge.to_node_id != current_id:
+                    continue
+                if edge.relation_type not in (RelationType.DERIVED_FROM, RelationType.SUMMARY_OF):
+                    continue
+
+                dep_id = edge.from_node_id
+                if dep_id in visited:
+                    continue
+
+                dep = self.nodes.get(dep_id)
+                if dep is None or dep.status != MemoryStatus.ACTIVE:
+                    continue
+
+                visited.add(dep_id)
+
+                if dep.scope == MemoryScope.KNOWLEDGE:
+                    supporters = self.supporters_of(dep.id)
+                    untainted_active = [
+                        s
+                        for s in supporters
+                        if s.status == MemoryStatus.ACTIVE and not s.metadata.get("upstream_refuted")
+                    ]
+                    if len(supporters) > 1 and len(untainted_active) > 0 and hop == 1:
+                        continue
+
+                    dep.confidence = 0.0
+                    self.set_status(
+                        dep.id,
+                        MemoryStatus.STALE,
+                        f"supporting memory {source_node_id} was refuted ({source})",
+                    )
+                    invalidated.append(dep.id)
+                    if hop < max_hops:
+                        queue.append((dep.id, hop + 1))
+                elif dep.node_type in (NodeType.COMPRESSED, NodeType.SUMMARY, NodeType.ARCHIVE):
+                    source_edges = [
+                        self.edges[eid]
+                        for eid in self.adjacency.get(dep.id, set())
+                        if eid in self.edges and self.edges[eid].relation_type == RelationType.SUMMARY_OF
+                    ]
+                    active_sources = [
+                        self.nodes[e.to_node_id]
+                        for e in source_edges
+                        if e.to_node_id in self.nodes and self.nodes[e.to_node_id].status == MemoryStatus.ACTIVE
+                    ]
+                    if active_sources and hop == 1 and dep.confidence > 0.0:
+                        continue
+
+                    dep.confidence = 0.0
+                    self.set_status(
+                        dep.id,
+                        MemoryStatus.STALE,
+                        f"supporting memory {source_node_id} was refuted ({source})",
+                    )
+                    invalidated.append(dep.id)
+                    if hop < max_hops:
+                        queue.append((dep.id, hop + 1))
+                else:
+                    upstream_list = list(dep.metadata.get("upstream_refuted") or [])
+                    if source_node_id not in upstream_list:
+                        upstream_list.append(source_node_id)
+                        dep.metadata["upstream_refuted"] = upstream_list
+
+                    if dep.confidence > 0.25:
+                        dep.confidence = 0.25
+                        dep.confidence_source = f"upstream_refuted:{source_node_id}"
+                        dep.updated_at = utc_now()
+                        self._record(
+                            EventOp.OBSERVE,
+                            {
+                                "node_id": dep.id,
+                                "verdict": Verdict.INCONCLUSIVE.value,
+                                "source": f"cascade_invalidation:{source_node_id}",
+                                "note": f"upstream dependency {source_node_id} refuted ({source})",
+                                "confidence": dep.confidence,
+                                "status": dep.status.value,
+                                "status_reason": dep.status_reason,
+                                "metadata_patch": {"upstream_refuted": list(upstream_list)},
+                                "updated_at": dep.updated_at.isoformat(),
+                            },
+                        )
+                    invalidated.append(dep.id)
+                    if hop < max_hops:
+                        queue.append((dep.id, hop + 1))
+
+        return invalidated
+
     def outcome_counts(self, node_id: str) -> dict[str, int]:
         """Tally the evidence recorded against one node, from the log.
 
@@ -506,22 +866,9 @@ class FibMind:
 
     def mark_stale(self, node_id: str, reason: str) -> MemoryNode:
         """Retire an outdated memory without deleting its provenance."""
-        node = self._require_node(node_id)
         if not reason or not reason.strip():
             raise ValueError("reason must explain why the memory is stale")
-        node.status = MemoryStatus.STALE
-        node.status_reason = reason
-        node.updated_at = utc_now()
-        self._record(
-            EventOp.SET_STATUS,
-            {
-                "node_id": node_id,
-                "status": node.status.value,
-                "reason": reason,
-                "updated_at": node.updated_at.isoformat(),
-            },
-        )
-        return node
+        return self.set_status(node_id, MemoryStatus.STALE, reason)
 
     def reassign_owner(self, node_id: str, owner: str | None, reason: str) -> MemoryNode:
         """Move a memory to another owner, keeping the old one as ``metadata.host``.
@@ -1000,10 +1347,32 @@ class FibMind:
             for node in overflow:
                 groups.setdefault(identity_key(node), []).append(node)
             for group in groups.values():
-                if next_layer is None:
-                    self._archive_nodes(group)
-                else:
-                    self._compress_nodes(category, layer, next_layer, group)
+                shielded = [n for n in group if n.confidence > RING3_CONFIDENCE_CAP or n.scope == MemoryScope.KNOWLEDGE]
+                compressible = [n for n in group if n not in shielded]
+
+                for node in shielded:
+                    if next_layer is None:
+                        self._archive_nodes([node])
+                    else:
+                        if node.node_type == NodeType.RAW:
+                            node.node_type = NodeType.CONCEPT
+                        self.move_node_to_layer(node, next_layer)
+                        node.updated_at = utc_now()
+                        self._record(
+                            EventOp.PROMOTE,
+                            {
+                                "node_id": node.id,
+                                "node_type": node.node_type.value,
+                                "layer": node.layer,
+                                "updated_at": node.updated_at.isoformat(),
+                            },
+                        )
+
+                if compressible:
+                    if next_layer is None:
+                        self._archive_nodes(compressible)
+                    else:
+                        self._compress_nodes(category, layer, next_layer, compressible)
 
     def search_from(
         self,
@@ -1251,31 +1620,113 @@ class FibMind:
             return ""
         title = f"{category} {source_layer} compression ({len(source_nodes)} nodes)"
         distilled = self.summarizer.summarize(source_nodes)
-        summary = distilled.text
+        summary_text = distilled.text
+        provenance = dict(distilled.provenance) if isinstance(distilled.provenance, dict) else {}
+
+        from fibmind.distill import StructuredSummarizer, verify_distillation_fidelity
+        from fibmind.retrieval import extract_node_anchors
+
+        passed, missing = verify_distillation_fidelity(source_nodes, summary_text)
+        fidelity_repaired = False
+        if not passed and missing:
+            repair_lines: list[str] = []
+            all_anchors: set[str] = set()
+            all_exceptions: list[str] = []
+            structured = StructuredSummarizer()
+            for n in source_nodes:
+                all_anchors.update(extract_node_anchors(n))
+                dist = structured.distill_node(n)
+                for exc in dist.exceptions:
+                    s_exc = exc.strip()
+                    if s_exc and s_exc not in all_exceptions:
+                        all_exceptions.append(s_exc)
+            if all_anchors:
+                repair_lines.append(f"  • PreservedAnchors: {', '.join(sorted(all_anchors))}")
+            for exc in all_exceptions:
+                repair_lines.append(f"  • Exceptions: {exc}")
+            if repair_lines:
+                summary_text = summary_text.rstrip() + "\n" + "\n".join(repair_lines)
+            provenance["fidelity_repaired"] = True
+            provenance["repaired_items"] = list(missing)
+            fidelity_repaired = True
+
         node_type = NodeType.COMPRESSED if target_layer == "compressed" else NodeType.SUMMARY
         if target_layer == "long_term":
             node_type = NodeType.ARCHIVE
 
+        total_source_weight = sum(max(1, node.memory_weight) for node in source_nodes)
+        weighted_confidence = (
+            round(
+                sum(node.confidence * max(1, node.memory_weight) for node in source_nodes) / total_source_weight,
+                4,
+            )
+            if source_nodes and total_source_weight > 0
+            else 0.0
+        )
+        all_verified = bool(source_nodes) and all(node.confidence > 0.0 for node in source_nodes)
+        has_unverified = any(node.confidence == 0.0 for node in source_nodes)
+        has_verified = any(node.confidence > 0.0 for node in source_nodes)
+
+        if has_unverified and has_verified:
+            weighted_confidence = min(weighted_confidence, RING3_CONFIDENCE_CAP)
+            epistemic_mode = "mixed_support_bounded"
+        elif all_verified:
+            epistemic_mode = "all_verified"
+        else:
+            epistemic_mode = "unverified"
+
+        conf_sources = sorted({str(node.confidence_source) for node in source_nodes if node.confidence_source})
+        summary_conf_source = f"derived_from:{','.join(conf_sources)}" if all_verified and conf_sources else None
+
+        merged_meta: dict[str, Any] = {
+            "source_layer": source_layer,
+            "source_node_ids": [node.id for node in source_nodes],
+            "source_memory_weight": sum(node.memory_weight for node in source_nodes),
+            "distillation": provenance,
+            "epistemic_mode": epistemic_mode,
+        }
+        if fidelity_repaired:
+            merged_meta["fidelity_repaired"] = True
+        for list_key in ("files", "changed_files", "symbols", "conditions", "exceptions"):
+            collected: list[str] = []
+            for node in source_nodes:
+                val = node.metadata.get(list_key)
+                if isinstance(val, (list, tuple, set)):
+                    for item in val:
+                        s = str(item).strip()
+                        if s and s not in collected:
+                            collected.append(s)
+                elif isinstance(val, str) and val.strip():
+                    s = val.strip()
+                    if s not in collected:
+                        collected.append(s)
+            if collected:
+                merged_meta[list_key] = collected
+
+        kinds = {node.memory_kind for node in source_nodes if node.memory_kind is not None}
+        inherited_kind = (
+            next(iter(kinds))
+            if len(kinds) == 1
+            else infer_memory_kind(category, source_nodes[0].scope if source_nodes else MemoryScope.PERSONAL)
+        )
+
         compressed = MemoryNode(
             title=title,
-            content=summary,
+            content=summary_text,
             category=category,
             node_type=node_type,
             layer=target_layer,
             tags=set().union(*(node.tags for node in source_nodes)) if source_nodes else set(),
-            metadata={
-                "source_layer": source_layer,
-                "source_node_ids": [node.id for node in source_nodes],
-                "source_memory_weight": sum(node.memory_weight for node in source_nodes),
-                "distillation": distilled.provenance,
-            },
+            metadata=merged_meta,
             scope=source_nodes[0].scope if source_nodes else MemoryScope.PERSONAL,
             owner=source_nodes[0].owner if source_nodes else None,
             workspace_id=source_nodes[0].workspace_id if source_nodes else None,
             project_id=source_nodes[0].project_id if source_nodes else None,
             session_id=source_nodes[0].session_id if source_nodes else None,
             task_id=source_nodes[0].task_id if source_nodes else None,
-            confidence=max((node.confidence for node in source_nodes), default=0.0),
+            confidence=weighted_confidence,
+            confidence_source=summary_conf_source,
+            memory_kind=inherited_kind,
             memory_weight=sum(node.memory_weight for node in source_nodes),
         )
 

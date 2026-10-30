@@ -49,9 +49,10 @@ class ContextHit:
     source: str  # SOURCE_SEARCH or SOURCE_EXPAND
     depth: int = 0
     matched_terms: tuple[str, ...] = field(default_factory=tuple)
+    via_relation: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data = {
             "node_id": self.node.id,
             "title": self.node.title,
             "category": self.node.category,
@@ -62,6 +63,7 @@ class ContextHit:
             "status": self.node.status.value,
             "confidence": round(self.node.confidence, 4),
             "confidence_source": self.node.confidence_source,
+            "memory_kind": self.node.memory_kind.value if self.node.memory_kind else None,
             "workspace_id": self.node.workspace_id,
             "project_id": self.node.project_id,
             "session_id": self.node.session_id,
@@ -72,6 +74,9 @@ class ContextHit:
             "matched_terms": list(self.matched_terms),
             "excerpt": _excerpt(self.node.content),
         }
+        if self.via_relation is not None:
+            data["via_relation"] = self.via_relation
+        return data
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,8 +131,14 @@ def _excerpt(content: str, limit: int = EXCERPT_CHARS) -> str:
     return f"{flat[: limit - 3]}..."
 
 
-def _line(hit: ContextHit) -> str:
-    base = f"- [{hit.node.category}] {hit.node.title}: {_excerpt(hit.node.content)}"
+def _line(hit: ContextHit, goal: str = "") -> str:
+    if hit.via_relation == "contradicts":
+        base = f"- [{hit.node.category}][CONTRADICTS] {hit.node.title}: {_excerpt(hit.node.content)}"
+    elif hit.source == SOURCE_EXPAND and hit.via_relation:
+        base = f"- [{hit.node.category} via {hit.via_relation}] {hit.node.title}: {_excerpt(hit.node.content)}"
+    else:
+        base = f"- [{hit.node.category}] {hit.node.title}: {_excerpt(hit.node.content)}"
+
     meta = hit.node.metadata or {}
     conds = meta.get("conditions") or meta.get("preconditions")
     excs = meta.get("exceptions") or meta.get("risks") or meta.get("pitfalls")
@@ -140,6 +151,16 @@ def _line(hit: ContextHit) -> str:
         extras.append(f"Exceptions: {'; '.join(str(e) for e in excs)}")
     elif isinstance(excs, str) and excs.strip():
         extras.append(f"Exceptions: {excs.strip()}")
+
+    if goal and goal.strip() and isinstance(meta.get("branches"), list) and meta["branches"]:
+        from fibmind.distill import StructuredSummarizer
+
+        distilled = StructuredSummarizer().distill_node(hit.node, goal=goal)
+        if distilled.active_branch is not None:
+            cond_str = ", ".join(str(c) for c in distilled.active_branch.get("conditions", []))
+            branch_title = distilled.active_branch.get("title", "")
+            extras.append(f"ActiveBranch ({cond_str}): {branch_title}")
+
     if extras:
         return f"{base} [{' | '.join(extras)}]"
     return base
@@ -169,6 +190,7 @@ def _render_sections(
     counter: TokenCounter,
     total: int,
     line_formatter: Callable[[ContextHit], str] = _line,
+    gaps: str | None = None,
 ) -> tuple[str, BudgetReport]:
     """Render each section inside its budget; unused budget flows downward.
 
@@ -207,6 +229,18 @@ def _render_sections(
         report_sections[name] = {"budget": allotted, "used": spent, "kept": kept, "offered": len(hits)}
         used += spent
         carry = max(0, available - spent)
+    if gaps:
+        separator = 1 if lines else 0
+        gap_line, cost, cut = _fit(gaps, carry - separator, counter)
+        if gap_line:
+            lines.append(gap_line)
+            spent = cost + separator
+            used += spent
+            carry = max(0, carry - spent)
+            report_sections["gaps"] = {"budget": carry + spent, "used": spent, "kept": 1, "offered": 1}
+        else:
+            report_sections["gaps"] = {"budget": carry, "used": 0, "kept": 0, "offered": 1}
+            truncated.append({"section": "gaps", "reason": "over_budget"})
     return "\n".join(lines), BudgetReport(
         budget_tokens=total,
         used_tokens=used,
@@ -236,6 +270,7 @@ def build_context(
     hot: list[MemoryNode] | None = None,
     hot_budget_tokens: int | None = None,
     counter: TokenCounter = DEFAULT_COUNTER,
+    gaps: str | None = None,
 ) -> ContextPack:
     """Assemble a context pack for ``goal`` inside a token budget.
 
@@ -314,6 +349,7 @@ def build_context(
                         score=0.0,
                         source=SOURCE_EXPAND,
                         depth=expansion.depth,
+                        via_relation=expansion.via_relation.value if expansion.via_relation is not None else None,
                     )
                 )
     elif reinforce:
@@ -350,6 +386,8 @@ def build_context(
         ],
         counter,
         total_budget,
+        line_formatter=lambda h: _line(h, goal=goal),
+        gaps=gaps,
     )
     if budget_tokens is None and len(text) > max_chars:
         # Compatibility: an explicit character cap is still honoured exactly.

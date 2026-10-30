@@ -89,6 +89,9 @@ Every `fibbrain_*` tool accepts the identity quintet `owner`, `workspace_id`,
 | tool | question | persists |
 | --- | --- | --- |
 | `fibbrain_context(goal, identity, workspace_path, budget_tokens)` | Which user background and relevant memories should this harness know? | no semantic writes: no goals, hot snapshots, or episodes |
+| `fibbrain_assess(goal, top_k, workspace_path, identity)` | What do I know and trust, what is uncertain, and what is unknown? | with a `session_id`: yes, an `assess` event in `episode` |
+| `fibbrain_entity(target, identity, workspace_path)` | What invariants, procedures, pitfalls, and drift apply to this entity? | no |
+| `fibbrain_consolidate(auto_mark_drift, identity, workspace_path)` | Has the environment drifted, and should stale memories be consolidated? | when `auto_mark_drift`: yes, drift demotion observation |
 | `fibbrain_plan(objective \| goal_id, identity)` | What am I doing, in what order? | yes: a `goal` node tagged `fibbrain-goal`, JSON document with `kind: fibbrain_goal` |
 | `fibbrain_recall(goal, identity, top_k, depth, budget_tokens, include_hot)` | What do I already know, inside this many tokens? | first call in a session persists the hot snapshot |
 | `fibbrain_hot(identity, refresh)` | What is this session's standing preamble? | yes: a `scope=session` node in category `hot` |

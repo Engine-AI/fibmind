@@ -1,12 +1,34 @@
 """FibBrain cognitive runtime, backed by the FibMind memory engine."""
 
-from fibmind.admission import AdmitDecision, AdmitVerdict, MemoryCandidate, decide_admission
+from fibmind.admission import (
+    AdmitDecision,
+    AdmitVerdict,
+    MemoryCandidate,
+    decide_admission,
+    detect_potential_conflicts,
+    detect_version_predecessors,
+    discover_knowledge_clusters,
+    propose_conflict_synthesis,
+)
+from fibmind.assessment import (
+    FRESHNESS_DAYS,
+    KNOWN_COVERAGE,
+    RELEVANCE_FLOOR,
+    TRUST_FLOOR,
+    DeterministicAssessor,
+    calibrate_trust_floor,
+    classify,
+    route_uncertain,
+    route_unknown,
+)
 from fibmind.brain import AdviseDecision, AdviseVerdict, BrainState, FibBrain, ObservedEvent, brain_state
 from fibmind.context import BudgetReport, ContextHit, ContextPack, build_context
 from fibmind.distill import (
+    Aspect,
     CallableSummarizer,
     DeterministicPlanner,
     ExcerptSummarizer,
+    GapAssessor,
     Planner,
     StructuredDistillation,
     StructuredSummarizer,
@@ -21,8 +43,15 @@ from fibmind.embedding import (
     OpenAICompatibleEmbeddingProvider,
     provider_from_env,
 )
+from fibmind.entity import (
+    build_entity_profile,
+    extract_code_imports,
+    extract_entity_targets,
+    extract_python_imports,
+    resolve_transitive_imports,
+)
 from fibmind.fibonacci import DEFAULT_LAYER_POLICY, FibonacciLayerPolicy, fib_capacities, fibonacci_numbers
-from fibmind.graph import FibMind, SearchHit
+from fibmind.graph import RING3_CONFIDENCE_CAP, FibMind, SearchHit
 from fibmind.models import (
     LOG_VERSION,
     ConflictError,
@@ -42,28 +71,49 @@ from fibmind.models import (
     infer_memory_kind,
     optional_id,
 )
-from fibmind.planning import BrainGoal, GoalStatus, PlanStep, StepStatus, infer_capabilities, synthesize_plan
-from fibmind.procedure import Procedure, render_skill, render_tool
-from fibmind.ranking import ScoredHit, rank_nodes, tokenize
-from fibmind.reflex import ReflexDecision, check_node_preconditions, compute_file_hashes, run_reflex
-from fibmind.retrieval import Candidate, LexicalIndex, RankingWeights, retrieve
+from fibmind.planning import (
+    BrainGoal,
+    GoalStatus,
+    PlanStep,
+    StepStatus,
+    advance_goal_steps,
+    infer_capabilities,
+    synthesize_plan,
+)
+from fibmind.procedure import Procedure, parse_skill_markdown, render_skill, render_tool, sync_skills
+from fibmind.ranking import ScoredHit, normalize_cjk, rank_nodes, tokenize
+from fibmind.reflex import (
+    ReflexDecision,
+    auto_ground_metadata,
+    check_node_preconditions,
+    compute_file_hashes,
+    compute_symbol_hashes,
+    diagnose_temporal_drift,
+    locate_symbol_spans,
+    run_reflex,
+)
+from fibmind.retrieval import Candidate, LexicalIndex, RankingWeights, epistemic_topology_boost, retrieve
 from fibmind.review import ReviewCandidate, ReviewMode, digest_episode, extract_candidates
 from fibmind.safety import SafetyFinding, SafetyReport, scan_candidate, scan_text
 from fibmind.service import MemoryService
 from fibmind.storage import JsonStore, MemoryStore, SqliteStore, open_store
 from fibmind.tokens import CallableCounter, EstimatingCounter, TokenCounter, estimate_tokens
 from fibmind.tuning import EvidenceProfile, Proposal, gate, profile_evidence, propose
+from fibmind.verify import revalidate_memories
+from fibmind.working_context import resolve_git_commit, working_context
 
 __all__ = [
     "AdmitDecision",
     "AdmitVerdict",
     "AdviseDecision",
     "AdviseVerdict",
+    "Aspect",
     "BrainGoal",
     "BrainState",
     "BudgetReport",
     "CallableSummarizer",
     "ConflictError",
+    "DeterministicAssessor",
     "DeterministicPlanner",
     "ExcerptSummarizer",
     "CallableCounter",
@@ -75,6 +125,8 @@ __all__ = [
     "EmbeddingCache",
     "EmbeddingProvider",
     "EstimatingCounter",
+    "FRESHNESS_DAYS",
+    "GapAssessor",
     "HashingEmbeddingProvider",
     "LexicalIndex",
     "OpenAICompatibleEmbeddingProvider",
@@ -85,6 +137,7 @@ __all__ = [
     "GoalStatus",
     "FibonacciLayerPolicy",
     "JsonStore",
+    "KNOWN_COVERAGE",
     "LOG_VERSION",
     "MemoryCandidate",
     "MemoryEvent",
@@ -104,6 +157,8 @@ __all__ = [
     "Planner",
     "Procedure",
     "ReflexDecision",
+    "RELEVANCE_FLOOR",
+    "RING3_CONFIDENCE_CAP",
     "RelationType",
     "ReviewCandidate",
     "ReviewMode",
@@ -119,16 +174,38 @@ __all__ = [
     "StepStatus",
     "TokenCounter",
     "TraversalDirection",
+    "TRUST_FLOOR",
     "Verdict",
+    "advance_goal_steps",
+    "auto_ground_metadata",
     "brain_state",
     "build_context",
+    "build_entity_profile",
+    "calibrate_trust_floor",
     "check_node_preconditions",
+    "classify",
     "compute_file_hashes",
+    "compute_symbol_hashes",
     "decide_admission",
+    "detect_potential_conflicts",
+    "detect_version_predecessors",
+    "diagnose_temporal_drift",
+    "discover_knowledge_clusters",
+    "epistemic_topology_boost",
     "estimate_tokens",
     "digest_episode",
     "extract_candidates",
+    "extract_code_imports",
+    "extract_entity_targets",
+    "extract_python_imports",
     "infer_capabilities",
+    "locate_symbol_spans",
+    "normalize_cjk",
+    "parse_skill_markdown",
+    "propose_conflict_synthesis",
+    "resolve_git_commit",
+    "resolve_transitive_imports",
+    "revalidate_memories",
     "synthesize_plan",
     "fib_capacities",
     "gate",
@@ -140,12 +217,16 @@ __all__ = [
     "optional_id",
     "provider_from_env",
     "rank_nodes",
+    "route_uncertain",
+    "route_unknown",
     "run_reflex",
     "scan_candidate",
     "scan_text",
     "retrieve",
     "render_skill",
     "render_tool",
+    "sync_skills",
     "tokenize",
     "verify_distillation_fidelity",
+    "working_context",
 ]

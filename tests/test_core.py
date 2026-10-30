@@ -7,6 +7,10 @@ from fibmind import (
     EdgeDirection,
     FibMind,
     JsonStore,
+    MemoryCandidate,
+    MemoryScope,
+    MemoryService,
+    MemoryStatus,
     NodeType,
     RelationType,
     TraversalDirection,
@@ -255,6 +259,83 @@ class FibMindTests(unittest.TestCase):
 
         restored_hits = restored.search_from(first, depth=1)
         self.assertIn(second, {hit.node.id for hit in restored_hits})
+
+    def test_summary_of_cascade_refutation_and_replay(self) -> None:
+        memory = FibMind()
+        s1 = memory.append("test", "Fact 1", "Fact 1 content")
+        s2 = memory.append("test", "Fact 2", "Fact 2 content")
+        s3 = memory.append("test", "Fact 3", "Fact 3 content")
+
+        # Create a compressed summary node summarizing s1, s2, s3
+        summary_id = memory._compress_nodes(
+            "test", "raw", "compressed", [memory.nodes[s1], memory.nodes[s2], memory.nodes[s3]]
+        )
+        summary_node = memory.nodes[summary_id]
+        summary_node.confidence = 1.0
+
+        # Refute s1
+        memory.record_outcome(s1, Verdict.REFUTED, source="test_runner")
+        self.assertEqual(memory.nodes[s1].status, MemoryStatus.REFUTED)
+
+        # Summary node confidence should be scaled by active sources (2/3)
+        self.assertEqual(summary_node.confidence, round(1.0 * (2 / 3), 4))
+        self.assertIn("source refuted", summary_node.confidence_source)
+        self.assertEqual(summary_node.status, MemoryStatus.ACTIVE)
+
+        # Refute s2
+        memory.record_outcome(s2, Verdict.REFUTED, source="test_runner")
+        self.assertEqual(summary_node.confidence, round(0.6667 * (1 / 3), 4))
+        self.assertEqual(summary_node.status, MemoryStatus.ACTIVE)
+
+        # Refute s3 (all sources refuted now)
+        memory.record_outcome(s3, Verdict.REFUTED, source="test_runner")
+        self.assertEqual(summary_node.confidence, 0.0)
+        self.assertEqual(summary_node.status, MemoryStatus.STALE)
+        self.assertIn("all 3 summarized source memories were refuted", summary_node.status_reason)
+
+        # Replay consistency: rebuild_from_log should reconstruct the exact same state!
+        rebuilt = FibMind.rebuild_from_log(memory.events)
+        rebuilt_summary = rebuilt.nodes[summary_id]
+        self.assertEqual(rebuilt_summary.status, MemoryStatus.STALE)
+        self.assertEqual(rebuilt_summary.confidence, 0.0)
+        self.assertEqual(rebuilt_summary.status_reason, summary_node.status_reason)
+
+    def test_detect_potential_conflicts_and_service_remember(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = MemoryService(Path(tmpdir) / "test.db")
+
+            # 1. Store base active memory
+            r1 = service.remember(
+                MemoryCandidate(
+                    category="decision",
+                    title="SQLite concurrency pragma",
+                    content="Always enable PRAGMA journal_mode=WAL on SQLite connections.",
+                    scope=MemoryScope.PERSONAL,
+                    owner="abbila",
+                ),
+                metadata={"files": ["src/storage.py"]},
+            )
+            node1_id = r1["node_id"]
+            self.assertNotIn("potential_conflicts", r1)
+
+            # 2. Store conflicting memory with opposing negation
+            r2 = service.remember(
+                MemoryCandidate(
+                    category="decision",
+                    title="SQLite concurrency pragma",
+                    content="Never enable PRAGMA journal_mode=WAL on SQLite connections.",
+                    scope=MemoryScope.PERSONAL,
+                    owner="abbila",
+                ),
+                metadata={"files": ["src/storage.py"]},
+            )
+            node2_id = r2["node_id"]
+            self.assertIn("potential_conflicts", r2)
+            self.assertIn(node1_id, r2["potential_conflicts"])
+
+            # Verify persisted node metadata also contains potential_conflicts
+            inspected = service.inspect(node2_id, identity={"owner": "abbila"})
+            self.assertEqual(inspected["metadata"]["potential_conflicts"], [node1_id])
 
 
 if __name__ == "__main__":

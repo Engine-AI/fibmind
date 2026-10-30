@@ -45,3 +45,67 @@ def working_context(workspace_path: str) -> dict[str, str | None]:
         elif value and all(c in "0123456789abcdef" for c in value.lower()):
             task_id = f"detached:{value[:12]}"
     return {**labels, "task_id": task_id}
+
+
+def resolve_git_commit(workspace_path: str | Path) -> str | None:
+    """Resolve the current 12-char git commit SHA from workspace repository refs.
+
+    Inspects loose refs, packed-refs, and detached HEAD in pure Python without
+    running git CLI commands.
+    """
+    try:
+        path = Path(workspace_path).expanduser().resolve()
+        if not path.is_dir():
+            if path.is_file():
+                path = path.parent
+            else:
+                return None
+        root = next((p for p in (path, *path.parents) if (p / ".git").exists()), None)
+        if root is None:
+            return None
+        git = root / ".git"
+        if git.is_file():
+            val = git.read_text(encoding="utf-8").strip()
+            if val.startswith("gitdir:"):
+                git = (root / val.removeprefix("gitdir:").strip()).resolve()
+            else:
+                return None
+        if not git.is_dir():
+            return None
+
+        head = git / "HEAD"
+        if not head.is_file():
+            return None
+        head_val = head.read_text(encoding="utf-8").strip()
+        if not head_val:
+            return None
+
+        # 1. Detached HEAD or direct hex SHA
+        clean_head = head_val.lower()
+        if len(clean_head) >= 12 and all(c in "0123456789abcdef" for c in clean_head):
+            return clean_head[:12]
+
+        # 2. Symbolic ref
+        if head_val.startswith("ref:"):
+            ref_rel = head_val.removeprefix("ref:").strip()
+            # Loose ref
+            loose = git / ref_rel
+            if loose.is_file():
+                sha = loose.read_text(encoding="utf-8").strip().lower()
+                if len(sha) >= 12 and all(c in "0123456789abcdef" for c in sha):
+                    return sha[:12]
+            # Packed refs
+            packed = git / "packed-refs"
+            if packed.is_file():
+                for line in packed.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if not line or line.startswith("#") or line.startswith("^"):
+                        continue
+                    parts = line.split()
+                    if len(parts) >= 2 and parts[1] == ref_rel:
+                        sha = parts[0].strip().lower()
+                        if len(sha) >= 12 and all(c in "0123456789abcdef" for c in sha):
+                            return sha[:12]
+    except Exception:
+        return None
+    return None

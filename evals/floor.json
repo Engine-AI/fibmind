@@ -8,5 +8,14 @@
   "max": {
     "stale_pollution_rate": 0.0,
     "forbidden_case_rate": 0.0
+  },
+  "gaps": {
+    "false_known_rate": 0.0,
+    "verdict_accuracy": 0.9
+  },
+  "kernel": {
+    "dao_epistemology_score": 1.0,
+    "qi_grounding_score": 1.0,
+    "aios_mmu_score": 1.0
   }
 }

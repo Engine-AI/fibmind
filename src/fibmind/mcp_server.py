@@ -19,8 +19,11 @@ from __future__ import annotations
 import argparse
 import functools
 import inspect
+import json
 import os
 import sys
+import urllib.parse
+import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -192,6 +195,117 @@ def build_server(
     brain = brain or FibBrain(service)
     mcp = MCPServer("fibmind")
     tool = _tool_registrar(mcp, defaults or IdentityDefaults(), MEMORY_TOOLS if profile == "memory" else None)
+
+    @mcp.resource("fibmind://status")
+    def fibmind_status_resource() -> str:
+        return json.dumps(service.status(), ensure_ascii=False)
+
+    @mcp.resource("fibmind://hot/{owner}/{workspace_id}/{project_id}")
+    def fibmind_hot_resource(owner: str, workspace_id: str, project_id: str) -> str:
+        return json.dumps(
+            brain.hot_snapshot(state=BrainState(owner=owner, workspace_id=workspace_id, project_id=project_id)),
+            ensure_ascii=False,
+        )
+
+    @mcp.resource("fibmind://entity/{owner}/{workspace_id}/{project_id}/{target}")
+    def fibmind_entity_resource(owner: str, workspace_id: str, project_id: str, target: str) -> str:
+        return json.dumps(
+            brain.entity_profile(
+                target, state=BrainState(owner=owner, workspace_id=workspace_id, project_id=project_id)
+            ),
+            ensure_ascii=False,
+        )
+
+    @mcp.resource("fibmind://procedures/{owner}/{workspace_id}/{project_id}")
+    def fibmind_procedures_resource(owner: str, workspace_id: str, project_id: str) -> str:
+        return json.dumps(
+            brain.render(
+                "*",
+                state=BrainState(owner=owner, workspace_id=workspace_id, project_id=project_id),
+                min_maturity="verified",
+            ),
+            ensure_ascii=False,
+        )
+
+    @mcp.resource("fibmind://mmu/{session_id}")
+    def fibmind_mmu_resource(session_id: str) -> str:
+        return json.dumps(
+            {
+                "session_id": session_id,
+                "step": brain._load_session_step(session_id),
+                "pages": brain._load_session_pages(session_id),
+                "pinned_pages": sorted(brain._load_session_pinned(session_id)),
+                "last_step": brain._load_session_last_step(session_id),
+            },
+            ensure_ascii=False,
+        )
+
+    @mcp.resource("fibmind://node/{node_id}")
+    def fibmind_node_resource(node_id: str) -> str:
+        return json.dumps(service.inspect(node_id), ensure_ascii=False)
+
+    @mcp.resource("fibmind://plan/{owner}/{workspace_id}/{project_id}")
+    def fibmind_plan_resource(owner: str, workspace_id: str, project_id: str) -> str:
+        st = BrainState(owner=owner, workspace_id=workspace_id, project_id=project_id)
+        identity = st.identity()
+
+        def _read_goals(memory: Any) -> list[dict[str, Any]]:
+            from fibmind.planning import is_goal_node, parse_goal_document
+
+            goals = []
+            for node in memory.nodes.values():
+                if is_goal_node({"category": node.category, "tags": node.tags}) and memory.is_visible(
+                    node,
+                    owner=identity["owner"],
+                    workspace_id=identity["workspace_id"],
+                    project_id=identity["project_id"],
+                ):
+                    parsed = parse_goal_document(node.id, node.content, node.title)
+                    goals.append(parsed.to_dict())
+            return goals
+
+        return json.dumps({"goals": service.read(_read_goals), "state": identity}, ensure_ascii=False)
+
+    @mcp.resource("fibmind://ipc/{session_id}")
+    def fibmind_ipc_resource(session_id: str) -> str:
+        return json.dumps(
+            {
+                "session_id": session_id,
+                "messages": brain.poll_ipc(session_id, unread_only=False, mark_read=False),
+            },
+            ensure_ascii=False,
+        )
+
+    @mcp.resource("fibmind://conflicts/{owner}/{workspace_id}/{project_id}")
+    def fibmind_conflicts_resource(owner: str, workspace_id: str, project_id: str) -> str:
+        st = BrainState(owner=owner, workspace_id=workspace_id, project_id=project_id)
+        consolidated = brain.consolidate(state=st, auto_mark_drift=False)
+        return json.dumps(
+            {
+                "conflicts": consolidated.get("conflicts", []),
+                "state": consolidated.get("state", st.identity()),
+            },
+            ensure_ascii=False,
+        )
+
+    @mcp.resource("fibmind://clusters/{owner}/{workspace_id}/{project_id}")
+    def fibmind_clusters_resource(owner: str, workspace_id: str, project_id: str) -> str:
+        st = BrainState(owner=owner, workspace_id=workspace_id, project_id=project_id)
+        if hasattr(service, "discover_knowledge_clusters"):
+            try:
+                clusters = service.discover_knowledge_clusters(identity=st.identity(), auto_promote=False)
+            except TypeError:
+                clusters = service.discover_knowledge_clusters(identity=st.identity())
+            return json.dumps(clusters, ensure_ascii=False)
+        return json.dumps({"clusters": [], "state": st.identity()}, ensure_ascii=False)
+
+    @mcp.resource("fibmind://processes/{workspace_id}/{project_id}")
+    def fibmind_processes_resource(workspace_id: str, project_id: str) -> str:
+        return json.dumps(
+            brain.process_table(workspace_id=workspace_id, project_id=project_id),
+            ensure_ascii=False,
+            indent=2,
+        )
 
     @tool()
     def fibmind_append(
@@ -597,6 +711,8 @@ def build_server(
         session_id: str | None = None,
         task_id: str | None = None,
         workspace_path: str | None = None,
+        delta_only: bool = False,
+        include_kernel_routing: bool = False,
     ) -> dict[str, Any]:
         """Read relevant human background for Codex, Claude Code, AGY, or any harness.
 
@@ -611,15 +727,33 @@ def build_server(
         IDs or server defaults take precedence. Reuse returned ``state`` when
         remembering or checking a memory later.
         """
-        return brain.context(
+        st = _state(owner, workspace_id, project_id, session_id, task_id, workspace_path)
+        res = brain.context(
             goal,
-            state=_state(owner, workspace_id, project_id, session_id, task_id, workspace_path),
+            state=st,
             top_k=top_k,
             profile_top_k=profile_top_k,
             budget_tokens=budget_tokens,
             min_relevance=min_relevance,
             model_id=model_id,
+            delta_only=delta_only,
+            cwd=workspace_path,
         )
+        if include_kernel_routing and goal.strip():
+            step = brain.kernel_step(
+                goal,
+                state=st,
+                workspace_root=workspace_path,
+                delta_only=delta_only,
+                budget_tokens=budget_tokens,
+            )
+            res["kernel_routing"] = {
+                "dispatch_mode": step["dispatch_mode"],
+                "bypass_llm": step["bypass_llm"],
+                "next_actions": step["next_actions"],
+                "verdict": step["assessment"]["verdict"],
+            }
+        return res
 
     @tool()
     def fibbrain_recall(
@@ -629,11 +763,14 @@ def build_server(
         max_chars: int = 2000,
         budget_tokens: int | None = None,
         include_hot: bool = True,
+        include_gaps: bool = False,
+        workspace_path: str | None = None,
         owner: str | None = None,
         workspace_id: str | None = None,
         project_id: str | None = None,
         session_id: str | None = None,
         task_id: str | None = None,
+        delta_only: bool = False,
     ) -> dict[str, Any]:
         """Recall what the brain already knows about a goal, inside a token budget.
 
@@ -646,12 +783,88 @@ def build_server(
         """
         return brain.recall(
             goal,
-            state=_state(owner, workspace_id, project_id, session_id, task_id),
+            state=_state(owner, workspace_id, project_id, session_id, task_id, workspace_path),
             top_k=top_k,
             depth=depth,
             max_chars=max_chars,
             budget_tokens=budget_tokens,
             include_hot=include_hot,
+            include_gaps=include_gaps,
+            delta_only=delta_only,
+        )
+
+    @tool()
+    def fibbrain_assess(
+        goal: str,
+        top_k: int = 8,
+        workspace_path: str | None = None,
+        workspace_root: str | None = None,
+        owner: str | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Assess metacognitive state: what is known, uncertain, contradicted, or unknown about a goal.
+
+        Returns knowledge coverage, evidence states, uncertainty reasons, and minimum-cost
+        verification routes (avoid -> verify -> code -> resolve -> ask -> search -> model).
+        """
+        cwd = workspace_root or workspace_path
+        state = _state(owner, workspace_id, project_id, session_id, task_id, cwd)
+        return brain.assess(
+            goal,
+            state=state,
+            top_k=top_k,
+            workspace_root=cwd,
+        )
+
+    @tool()
+    def fibbrain_entity(
+        target: str,
+        workspace_path: str | None = None,
+        workspace_root: str | None = None,
+        owner: str | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Aggregate an entity world model view for a file path or code symbol.
+
+        Returns invariants (decisions/requirements), procedures, pitfalls (refuted/error memories),
+        active conflicts, verification commands, and environmental file drift.
+        """
+        cwd = workspace_root or workspace_path
+        state = _state(owner, workspace_id, project_id, session_id, task_id, cwd)
+        return brain.entity_profile(
+            target,
+            state=state,
+            workspace_root=cwd,
+        )
+
+    @tool()
+    def fibbrain_consolidate(
+        auto_mark_drift: bool = True,
+        workspace_path: str | None = None,
+        workspace_root: str | None = None,
+        owner: str | None = None,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Audit environment for file drift and consolidate active memories.
+
+        Scans file hashes against disk, demotes drifted memories from known state,
+        summarizes unresolved conflicts and revalidation candidates, and refreshes hot memory.
+        """
+        cwd = workspace_root or workspace_path
+        state = _state(owner, workspace_id, project_id, session_id, task_id, cwd)
+        return brain.consolidate(
+            state=state,
+            workspace_root=cwd,
+            auto_mark_drift=auto_mark_drift,
         )
 
     @tool()
@@ -923,8 +1136,10 @@ def build_server(
         inputs: dict[str, str] | None = None,
         min_confidence: float = 0.75,
         min_maturity: str = "verified",
+        min_relevance: float = 0.25,
         model_id: str | None = None,
         require_files_exist: bool = False,
+        workspace_path: str | None = None,
         owner: str | None = None,
         workspace_id: str | None = None,
         project_id: str | None = None,
@@ -941,11 +1156,13 @@ def build_server(
         """
         return brain.reflex(
             goal,
-            state=_state(owner, workspace_id, project_id, session_id, task_id),
+            state=_state(owner, workspace_id, project_id, session_id, task_id, workspace_path),
             execute=execute,
             inputs=inputs,
             min_confidence=min_confidence,
             min_maturity=min_maturity,
+            min_relevance=min_relevance,
+            cwd=workspace_path,
             model_id=model_id,
             require_files_exist=require_files_exist,
         )
@@ -962,6 +1179,7 @@ def build_server(
         project_id: str | None = None,
         session_id: str | None = None,
         task_id: str | None = None,
+        trust_ring: str | None = None,
     ) -> dict[str, Any]:
         """Record that a memory turned out right or wrong.
 
@@ -975,6 +1193,7 @@ def build_server(
             note=note,
             goal=goal,
             state=_state(owner, workspace_id, project_id, session_id, task_id),
+            trust_ring=trust_ring,
         )
 
     @tool()
@@ -985,6 +1204,7 @@ def build_server(
         source: str | None = None,
         target_files: list[str] | None = None,
         assertion_patterns: list[str] | None = None,
+        workspace_path: str | None = None,
         owner: str | None = None,
         workspace_id: str | None = None,
         project_id: str | None = None,
@@ -1000,6 +1220,7 @@ def build_server(
         """
         from fibmind.verify import run_command_and_reflect
 
+        resolved = _state(owner, workspace_id, project_id, session_id, task_id, workspace_path)
         return run_command_and_reflect(
             command,
             node_id=node_id,
@@ -1008,11 +1229,14 @@ def build_server(
             target_files=target_files,
             assertion_patterns=assertion_patterns,
             store_path=service._store.path,
-            owner=owner,
-            workspace_id=workspace_id,
-            project_id=project_id,
-            session_id=session_id,
-            task_id=task_id,
+            service=service,
+            brain=brain,
+            owner=resolved.owner,
+            workspace_id=resolved.workspace_id,
+            project_id=resolved.project_id,
+            session_id=resolved.session_id,
+            task_id=resolved.task_id,
+            cwd=workspace_path,
         )
 
     @tool()
@@ -1175,14 +1399,16 @@ def run_server(
             "Pass --allow-insecure-remote to override."
         )
 
-    if transport == "sse":
+    if transport in ("sse", "streamable-http"):
+        import hmac
+
         import anyio
         import uvicorn
         from starlette.middleware.base import BaseHTTPMiddleware
         from starlette.responses import JSONResponse
         from starlette.routing import Route
 
-        app = server.sse_app(host=host)
+        app = server.sse_app(host=host) if transport == "sse" else server.streamable_http_app(host=host)
 
         if token:
             expected_token = token
@@ -1194,48 +1420,14 @@ def run_server(
                     auth = request.headers.get("authorization", "")
                     query_token = request.query_params.get("token", "")
                     passed_token = auth[7:].strip() if auth.startswith("Bearer ") else query_token
-                    if not passed_token or passed_token != expected_token:
+                    if not passed_token or not hmac.compare_digest(passed_token, expected_token):
                         return JSONResponse({"error": "Unauthorized: invalid or missing daemon token"}, status_code=401)
                     return await call_next(request)
 
             app.add_middleware(TokenAuthMiddleware)
 
         async def health_endpoint(request: Any) -> JSONResponse:
-            return JSONResponse({"status": "ok", "service": "fibmind", "transport": "sse"})
-
-        app.routes.append(Route("/health", health_endpoint))
-        app.routes.append(Route("/", health_endpoint))
-
-        config = uvicorn.Config(app, host=host, port=port, log_level="info")
-        uvicorn_server = uvicorn.Server(config)
-        anyio.run(uvicorn_server.serve)
-    elif transport == "streamable-http":
-        import anyio
-        import uvicorn
-        from starlette.middleware.base import BaseHTTPMiddleware
-        from starlette.responses import JSONResponse
-        from starlette.routing import Route
-
-        app = server.streamable_http_app(host=host)
-
-        if token:
-            expected_token = token
-
-            class TokenAuthMiddleware(BaseHTTPMiddleware):
-                async def dispatch(self, request: Any, call_next: Any) -> Any:
-                    if request.url.path in ("/health",):
-                        return await call_next(request)
-                    auth = request.headers.get("authorization", "")
-                    query_token = request.query_params.get("token", "")
-                    passed_token = auth[7:].strip() if auth.startswith("Bearer ") else query_token
-                    if not passed_token or passed_token != expected_token:
-                        return JSONResponse({"error": "Unauthorized: invalid or missing daemon token"}, status_code=401)
-                    return await call_next(request)
-
-            app.add_middleware(TokenAuthMiddleware)
-
-        async def health_endpoint(request: Any) -> JSONResponse:
-            return JSONResponse({"status": "ok", "service": "fibmind", "transport": "streamable-http"})
+            return JSONResponse({"status": "ok", "service": "fibmind", "transport": transport})
 
         app.routes.append(Route("/health", health_endpoint))
         app.routes.append(Route("/", health_endpoint))
@@ -1277,6 +1469,58 @@ def main(argv: list[str] | None = None) -> None:
         allow_insecure_remote=args.allow_insecure_remote,
         token=args.token,
     )
+
+
+def is_loopback_host(host: str) -> bool:
+    """Check if a host string refers to a local loopback interface."""
+    if not host:
+        return False
+    clean = host.strip().strip("[]").lower()
+    if clean in {"127.0.0.1", "localhost", "::1"}:
+        return True
+    if clean.startswith("127."):
+        return True
+    return False
+
+
+def open_loopback_url(
+    url_or_req: str | urllib.request.Request,
+    timeout: float = 2.0,
+) -> Any:
+    """Open a URL, bypassing system HTTP/HTTPS proxies if target is a loopback address."""
+    if isinstance(url_or_req, urllib.request.Request):
+        url = url_or_req.full_url
+    else:
+        url = str(url_or_req)
+    parsed = urllib.parse.urlsplit(url)
+    host = parsed.hostname or ""
+    if is_loopback_host(host):
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        return opener.open(url_or_req, timeout=timeout)
+    return urllib.request.urlopen(url_or_req, timeout=timeout)  # noqa: S310
+
+
+def probe_daemon(
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    timeout: float = 1.0,
+) -> dict[str, Any] | None:
+    """Probe if a FibMind memory daemon is actively running on the given host/port."""
+    url = f"http://{host}:{port}/health"
+    try:
+        with open_loopback_url(url, timeout=timeout) as resp:
+            if resp.status == 200:
+                content = resp.read().decode("utf-8")
+                try:
+                    data = json.loads(content)
+                    if isinstance(data, dict):
+                        return data
+                    return {"status": "ok", "raw": content}
+                except Exception:
+                    return {"status": "ok", "raw": content}
+    except Exception:
+        pass
+    return None
 
 
 def daemon_main(argv: list[str] | None = None) -> None:

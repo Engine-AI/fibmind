@@ -17,7 +17,7 @@ from typing import Any
 from fibmind.context import build_context
 from fibmind.embedding import EmbeddingCache, HashingEmbeddingProvider
 from fibmind.graph import FibMind
-from fibmind.models import MemoryScope
+from fibmind.models import MemoryNode, MemoryScope
 
 
 @dataclass(frozen=True, slots=True)
@@ -279,6 +279,22 @@ class FibMindCurrentBaseline(Baseline):
             if fixture.stale:
                 self.memory.mark_stale(node_id, "evaluation fixture marks this memory stale")
 
+    def _resolve_fixture_ids(self, node: MemoryNode, visited: set[str] | None = None) -> list[str]:
+        if visited is None:
+            visited = set()
+        if node.id in visited:
+            return []
+        visited.add(node.id)
+        out: list[str] = []
+        fixture_id = node.metadata.get("eval_id")
+        if fixture_id is not None:
+            out.append(str(fixture_id))
+        for source_id in node.metadata.get("source_node_ids", []):
+            source_node = self.memory.nodes.get(source_id)
+            if source_node is not None:
+                out.extend(self._resolve_fixture_ids(source_node, visited))
+        return out
+
     def retrieve(self, case: EvaluationCase, top_k: int) -> RetrievalResult:
         started_at = perf_counter()
         scopes = {MemoryScope(scope) for scope in case.scopes} if case.scopes is not None else None
@@ -297,9 +313,9 @@ class FibMindCurrentBaseline(Baseline):
         )
         ids: list[str] = []
         for hit in pack.hits:
-            fixture_id = hit.node.metadata.get("eval_id")
-            if fixture_id is not None and fixture_id not in ids:
-                ids.append(str(fixture_id))
+            for fid in self._resolve_fixture_ids(hit.node):
+                if fid not in ids:
+                    ids.append(fid)
         return self._result(case, started_at, ids, pack.text)
 
 
@@ -356,9 +372,10 @@ class FibMindBudgetedBaseline(FibMindCurrentBaseline):
         assert pack.budget is not None and pack.budget.used_tokens <= self.budget_tokens
         ids: list[str] = []
         for node_id in pack.budget.rendered_node_ids:
-            fixture_id = self.memory.nodes[node_id].metadata.get("eval_id")
-            if fixture_id is not None and fixture_id not in ids:
-                ids.append(str(fixture_id))
+            if node_id in self.memory.nodes:
+                for fid in self._resolve_fixture_ids(self.memory.nodes[node_id]):
+                    if fid not in ids:
+                        ids.append(fid)
         return self._result(case, started_at, ids, pack.text)
 
     def _fixture(self, fixture_id: str) -> MemoryFixture:

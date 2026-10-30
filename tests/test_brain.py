@@ -187,13 +187,70 @@ class FibBrainTests(unittest.TestCase):
 
     def test_review_memories_are_recalled_next_session_but_episode_is_not(self) -> None:
         self._observe_a_session()
-        self.brain.review_session(_state(), mode="auto")
+        report = self.brain.review_session(_state(), mode="auto")
         next_session = _state(session_id="sess-2")
 
         hits = self.brain.recall("which command verified the upload retry fix", state=next_session)["hits"]
         self.assertTrue(any(hit["category"] == "verification" for hit in hits))
         self.assertFalse(any(hit["category"] == "episode" for hit in hits))
         self.assertEqual(self.brain.review_session(next_session, mode="candidates")["candidates"], 0)
+
+        # Verify file and command anchors were preserved in written candidate metadata
+        verif_item = next(item for item in report["written"] if item["category"] == "verification")
+        verif_node = self.brain.memory.inspect(verif_item["node_id"])
+        self.assertEqual(verif_node["metadata"].get("command"), ".venv/bin/pytest -q")
+
+        code_item = next(item for item in report["written"] if item["category"] == "code")
+        code_node = self.brain.memory.inspect(code_item["node_id"])
+        self.assertIn("src/upload.py", code_node["metadata"].get("files", []))
+
+    def test_compress_nodes_preserves_weighted_confidence_and_metadata(self) -> None:
+        state = _state()
+        n1 = self.brain.remember(
+            "decision",
+            "Retry backoff cap",
+            "Cap retry backoff at 8s",
+            metadata={"files": ["src/upload.py"], "exceptions": ["Exclude streaming uploads"]},
+            state=state,
+        )
+        self.brain.reflect("confirmed", "pytest", node_id=n1["node_id"], state=state)
+        verified_conf = self.brain.memory.inspect(n1["node_id"])["confidence"]
+        self.assertGreater(verified_conf, 0.0)
+
+        n2 = self.brain.remember(
+            "decision",
+            "Retry jitter seed",
+            "Use deterministic jitter seed in tests",
+            metadata={"files": ["tests/test_upload.py"]},
+            state=state,
+        )
+        n3 = self.brain.remember(
+            "decision",
+            "Retry status codes",
+            "Retry on HTTP 429 and 503 status codes",
+            state=state,
+        )
+        n4 = self.brain.remember(
+            "decision",
+            "Retry timeout header",
+            "Respect Retry-After header when present",
+            state=state,
+        )
+
+        # Compress the 4 nodes inside the memory forest
+        def _do_compress(m):
+            sources = [m.nodes[nid] for nid in (n1["node_id"], n2["node_id"], n3["node_id"], n4["node_id"])]
+            cid = m._compress_nodes("decision", "raw", "compressed", sources)
+            return m.nodes[cid]
+
+        compressed = self.brain.memory.run(_do_compress)
+        self.assertIsNotNone(compressed)
+        # Weighted confidence across 1 verified + 3 unverified nodes must be strictly below single verified_conf
+        self.assertGreater(compressed.confidence, 0.0)
+        self.assertLess(compressed.confidence, verified_conf)
+        self.assertIn("src/upload.py", compressed.metadata.get("files", []))
+        self.assertIn("tests/test_upload.py", compressed.metadata.get("files", []))
+        self.assertIn("Exclude streaming uploads", compressed.metadata.get("exceptions", []))
 
     def test_advise_allows_unknown_actions(self) -> None:
         decision = self.brain.advise("web_search", state=_state())

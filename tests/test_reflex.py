@@ -12,6 +12,7 @@ from pathlib import Path
 from fibmind import (
     AdmitVerdict,
     BrainState,
+    ConflictError,
     FibBrain,
     MemoryService,
     MemoryStatus,
@@ -271,6 +272,180 @@ class ReflexAndAuditTests(unittest.TestCase):
             state=_state(),
         )
         self.assertEqual(negated["verdict"], AdmitVerdict.WRITE.value)
+
+    def test_cross_level_duplicate_admission(self) -> None:
+        user_pref = self.brain.remember(
+            "preference",
+            "Concise Chinese responses",
+            "Always reply in concise Chinese with clickable file links",
+            context_level="user",
+            state=_state(),
+        )
+        self.assertEqual(user_pref["verdict"], AdmitVerdict.WRITE.value)
+
+        # Saving the exact same preference at project level should detect the user-level duplicate
+        proj_dup = self.brain.remember(
+            "preference",
+            "Concise Chinese responses",
+            "Always reply in concise Chinese with clickable file links",
+            context_level="project",
+            state=_state(),
+        )
+        self.assertEqual(proj_dup["verdict"], AdmitVerdict.SKIP.value)
+        self.assertEqual(proj_dup["duplicate_node_id"], user_pref["node_id"])
+
+    def test_reflex_procedure_verify_clause_and_inconclusive_execution(self) -> None:
+        # 1. Procedure whose step passes (exit 0) but verify command fails (exit 1)
+        proc_bad_verify = self.brain.remember_procedure(
+            "Run migration with failing verify",
+            "Execute schema migration and verify table count",
+            steps=[f"{sys.executable} -c \"print('migration step ok')\""],
+            verify=f"{sys.executable} -c \"import sys; sys.stderr.write('AssertionError: table missing\\n'); sys.exit(1)\"",
+            when=["schema", "migration", "verify"],
+            tools=["alembic"],
+            state=_state(),
+        )
+        self.brain.reflect(
+            "confirmed", "initial_seed", node_id=proc_bad_verify["node_id"], state=_state(session_id="s1")
+        )
+
+        tripped = self.brain.reflex(
+            "execute schema migration and verify table count",
+            state=_state(),
+            execute=True,
+        )
+        self.assertFalse(tripped["bypass_llm"])
+        self.assertEqual(tripped["mode"], "circuit_breaker_tripped")
+        self.assertEqual(tripped["node_id"], proc_bad_verify["node_id"])
+
+        # 2. Procedure whose step produces an inconclusive result ("collected 0 items")
+        proc_inconc = self.brain.remember_procedure(
+            "Run empty test suite",
+            "Execute the empty unit test suite",
+            steps=[f"{sys.executable} -c \"print('collected 0 items')\""],
+            when=["empty", "unit", "suite"],
+            tools=["pytest"],
+            state=_state(),
+        )
+        self.brain.reflect("confirmed", "initial_seed", node_id=proc_inconc["node_id"], state=_state(session_id="s1"))
+        before_conf = self.service.inspect(proc_inconc["node_id"], identity=_state().identity())["confidence"]
+
+        inconc_res = self.brain.reflex(
+            "execute the empty unit test suite",
+            state=_state(),
+            execute=True,
+        )
+        self.assertFalse(inconc_res["bypass_llm"])
+        self.assertEqual(inconc_res["mode"], "inconclusive_execution")
+        after_conf = self.service.inspect(proc_inconc["node_id"], identity=_state().identity())["confidence"]
+        self.assertEqual(before_conf, after_conf)
+
+    def test_shadow_revision_conflict_when_base_modified(self) -> None:
+        written = self.brain.remember(
+            "decision",
+            "Connection pool limit",
+            "Set max_connections=20 on the pool",
+            state=_state(),
+        )
+        orig_id = written["node_id"]
+        self.brain.reflect("confirmed", "pytest", node_id=orig_id, state=_state())
+
+        shadow = self.service.revise(
+            orig_id,
+            content="Set max_connections=50 on the pool",
+            protect_verified=True,
+            identity=_state().identity(),
+        )
+        shadow_id = shadow["node_id"]
+
+        # Another writer directly revises the original node (bumping its revision)
+        self.service.revise(
+            orig_id,
+            content="Set max_connections=35 on the pool",
+            protect_verified=False,
+            identity=_state().identity(),
+        )
+
+        # Confirming the stale shadow revision must now raise ConflictError
+        with self.assertRaises(ConflictError):
+            self.brain.reflect("confirmed", "pytest", node_id=shadow_id, state=_state())
+
+    def test_reflex_fast_path_a_endorsed_with_metacognition(self) -> None:
+        written = self.brain.remember(
+            "decision",
+            "Redis cache TTL policy",
+            "Always set TTL to 3600 seconds on user session tokens in Redis.",
+            state=_state(),
+        )
+        node_id = written["node_id"]
+        # Confirm twice so confidence reaches 0.5 >= trust_floor (0.5)
+        self.brain.reflect("confirmed", "pytest", node_id=node_id, state=_state())
+        self.brain.reflect("confirmed", "integration_test", node_id=node_id, state=_state())
+
+        reflex = self.brain.reflex(
+            "Redis cache TTL policy",
+            state=_state(),
+            min_confidence=0.2,
+        )
+        self.assertTrue(reflex["bypass_llm"])
+        self.assertEqual(reflex["mode"], "direct_answer")
+        self.assertIn("assessment_verdict", reflex["distillation"])
+        self.assertEqual(reflex["distillation"]["assessment_verdict"], "known")
+        self.assertIn("known_coverage", reflex["distillation"])
+        self.assertGreater(reflex["distillation"]["known_coverage"], 0.0)
+
+    def test_reflex_fast_path_a_vetoed_by_contradicted_memory(self) -> None:
+        # Active verified memory
+        active = self.brain.remember(
+            "decision",
+            "Server timeout limit",
+            "Configure server timeout to 60 seconds for gateway.",
+            state=_state(),
+        )
+        self.brain.reflect("confirmed", "manual_check", node_id=active["node_id"], state=_state())
+
+        # Contradicted / refuted memory matching the same goal
+        bad = self.brain.remember(
+            "decision",
+            "Server timeout deprecated setting",
+            "Configure server timeout to 5 seconds for gateway.",
+            state=_state(),
+        )
+        self.brain.reflect("refuted", "load_test_failure", node_id=bad["node_id"], state=_state())
+
+        # Calling reflex on server timeout should be vetoed by contradicted memory
+        res = self.brain.reflex(
+            "Configure server timeout for gateway",
+            state=_state(),
+            min_confidence=0.2,
+        )
+        self.assertFalse(res["bypass_llm"])
+        self.assertEqual(res["mode"], "llm_fallback")
+        veto_warnings = [
+            w for w in res["precondition_warnings"] if "metacognition veto: contradicted memory" in w.get("reason", "")
+        ]
+        self.assertTrue(len(veto_warnings) >= 1)
+
+    def test_reflex_fast_path_a_vetoed_by_conflicted_uncertain_candidate(self) -> None:
+        # Create an active memory marked as conflicted in metadata
+        conflicted_node = self.brain.remember(
+            "decision",
+            "Database connection pooling size",
+            "Set connection pool size to 50 connections.",
+            metadata={"conflicted": True, "conflict_reason": "opposing spec"},
+            state=_state(),
+        )
+        self.brain.reflect("confirmed", "doc_check", node_id=conflicted_node["node_id"], state=_state())
+
+        res = self.brain.reflex(
+            "Database connection pooling size",
+            state=_state(),
+            min_confidence=0.2,
+        )
+        self.assertFalse(res["bypass_llm"])
+        self.assertEqual(res["mode"], "llm_fallback")
+        warnings = [w for w in res["precondition_warnings"] if "conflicted" in w.get("reason", "")]
+        self.assertTrue(len(warnings) >= 1)
 
 
 if __name__ == "__main__":

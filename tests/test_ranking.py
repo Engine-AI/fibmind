@@ -3,7 +3,7 @@
 import unittest
 
 from fibmind import FibMind
-from fibmind.ranking import ScoredHit, rank_nodes, tokenize
+from fibmind.ranking import ScoredHit, normalize_cjk, rank_nodes, tokenize
 
 
 class TokenizeTests(unittest.TestCase):
@@ -136,6 +136,32 @@ class RankNodesTests(unittest.TestCase):
         self.assertEqual(hits[0].node.title, "登录故障")
         self.assertIn("登录", hits[0].matched_terms)
         self.assertIn("令牌", hits[0].matched_terms)
+
+    def test_normalize_cjk_converts_traditional_to_simplified(self) -> None:
+        trad = "在推進系統設計與架構評測時，應檢索數據庫與緩存節點狀態，並驗證內存與鎖機制的邊界條件。"
+        simp = "在推进系统设计与架构评测时，应检索数据库与缓存节点状态，并验证内存与锁机制的边界条件。"
+        self.assertEqual(normalize_cjk(trad), simp)
+
+    def test_tokenize_normalizes_traditional_cjk(self) -> None:
+        self.assertEqual(tokenize("推進架構評測"), tokenize("推进架构评测"))
+
+    def test_cjk_bidirectional_ranking_traditional_query_simplified_memory(self) -> None:
+        memory = FibMind()
+        memory.append("架构", "数据库连接池优化", "高并发下优化数据库连接池与缓存节点")
+
+        # Query in Traditional Chinese retrieves simplified Chinese memory
+        hits = rank_nodes(memory.nodes.values(), "檢索數據庫與緩存節點狀態")
+        self.assertGreater(len(hits), 0)
+        self.assertEqual(hits[0].node.title, "数据库连接池优化")
+
+    def test_cjk_bidirectional_ranking_simplified_query_traditional_memory(self) -> None:
+        memory = FibMind()
+        memory.append("架構", "異步任務調度與重試機制", "當線程池阻塞時應觸發重試機制並記錄審計日誌")
+
+        # Query in Simplified Chinese retrieves traditional Chinese memory
+        hits = rank_nodes(memory.nodes.values(), "异步任务调度与重试")
+        self.assertGreater(len(hits), 0)
+        self.assertEqual(hits[0].node.title, "異步任務調度與重試機制")
 
 
 if __name__ == "__main__":

@@ -123,6 +123,8 @@ class LexicalIndex:
         self.terms: dict[str, dict[str, int]] = {}  # node_id -> term -> tf
         self.title_terms: dict[str, set[str]] = {}
         self.lengths: dict[str, int] = {}
+        self.anchors: dict[str, set[str]] = defaultdict(set)
+        self.node_anchors: dict[str, set[str]] = {}
         self.total_length = 0
 
     def __len__(self) -> int:
@@ -148,6 +150,10 @@ class LexicalIndex:
         self.total_length += length
         for term in counts:
             self.postings[term].add(node.id)
+        node_anchors = extract_node_anchors(node)
+        self.node_anchors[node.id] = set(node_anchors)
+        for anchor in node_anchors:
+            self.anchors[anchor].add(node.id)
 
     def remove(self, node_id: str) -> None:
         counts = self.terms.pop(node_id, None)
@@ -161,15 +167,36 @@ class LexicalIndex:
                     self.postings.pop(term, None)
         self.title_terms.pop(node_id, None)
         self.total_length -= self.lengths.pop(node_id, 0)
+        old_anchors = self.node_anchors.pop(node_id, None)
+        if old_anchors:
+            for anchor in old_anchors:
+                bucket = self.anchors.get(anchor)
+                if bucket is not None:
+                    bucket.discard(node_id)
+                    if not bucket:
+                        self.anchors.pop(anchor, None)
 
     def rebuild(self, nodes: Iterable[MemoryNode]) -> None:
         self.postings = defaultdict(set)
         self.terms = {}
         self.title_terms = {}
         self.lengths = {}
+        self.anchors = defaultdict(set)
+        self.node_anchors = {}
         self.total_length = 0
         for node in nodes:
             self.add(node)
+
+    def nodes_for_anchor(self, target: str) -> set[str]:
+        """Return node IDs associated with the target path or symbol in O(1)."""
+        if not target or not str(target).strip():
+            return set()
+        clean = str(target).strip().lower()
+        base = Path(clean).name.lower()
+        found = set(self.anchors.get(clean, set()))
+        if base and base != clean:
+            found |= self.anchors.get(base, set())
+        return found
 
     def candidates(self, query_terms: set[str]) -> set[str]:
         found: set[str] = set()
@@ -218,6 +245,7 @@ class Candidate:
     rrf: float = 0.0
     relevance: float = 0.0  # fused relevance in [0, 1]
     symbol_boost: float = 0.0
+    topology_boost: float = 0.0
     confidence: float = 0.0
     recency: float = 0.0
     score: float = 0.0
@@ -241,6 +269,7 @@ class Candidate:
             "rrf": round(self.rrf, 6),
             "relevance": round(self.relevance, 4),
             "symbol_boost": round(self.symbol_boost, 4),
+            "topology_boost": round(self.topology_boost, 4),
             "confidence": round(self.confidence, 4),
             "confidence_source": self.node.confidence_source,
             "recency": round(self.recency, 4),
@@ -299,6 +328,15 @@ def symbol_match_boost(query: str, node: MemoryNode) -> float:
             matched += 1
     if matched > 0:
         return min(0.15, 0.05 * matched)
+    return 0.0
+
+
+def epistemic_topology_boost(node: MemoryNode) -> float:
+    meta = node.metadata or {}
+    if meta.get("drift_detected") or meta.get("upstream_refuted"):
+        return -0.10
+    if "synthesized" in node.tags or (node.node_type == NodeType.CONCEPT and node.confidence > 0.6):
+        return 0.05
     return 0.0
 
 
@@ -412,14 +450,20 @@ def retrieve(
         report["fts_accelerated"] = True
     elif getattr(memory, "fts_searcher", None) is not None:
         try:
-            hits = memory.fts_searcher(query, limit=LEXICAL_TOP_N * 3, eligible_node_ids=eligible)
+            hits = memory.fts_searcher(query, limit=max(LEXICAL_TOP_N * 3, len(eligible)), eligible_node_ids=eligible)
             if hits is not None:
-                fts_candidate_ids = set(hits)
                 report["fts_accelerated"] = True
-        except Exception:
+                if hits:
+                    fts_candidate_ids = set(hits)
+        except Exception as exc:
+            report["fts_error"] = f"{type(exc).__name__}: {exc}"
             fts_candidate_ids = None
 
-    lexical_node_ids = eligible if fts_candidate_ids is None else eligible.intersection(fts_candidate_ids)
+    lexical_node_ids = (
+        eligible
+        if fts_candidate_ids is None or not eligible.intersection(fts_candidate_ids)
+        else eligible.intersection(fts_candidate_ids)
+    )
 
     for node_id in lexical_node_ids:
         node = memory.nodes.get(node_id)
@@ -527,12 +571,16 @@ def retrieve(
         candidate.symbol_boost = symbol_match_boost(query, candidate.node)
         if candidate.symbol_boost > 0 and "symbol" not in candidate.sources:
             candidate.sources.append("symbol")
+        candidate.topology_boost = epistemic_topology_boost(candidate.node)
+        if candidate.topology_boost > 0 and "topology" not in candidate.sources:
+            candidate.sources.append("topology")
         candidate.score = (
             candidate.relevance
             + candidate.title_coverage * weights.title
             + candidate.confidence * weights.confidence
             + candidate.recency * weights.recency
             + candidate.symbol_boost
+            + candidate.topology_boost
         )
         if candidate.score <= min_score:
             continue

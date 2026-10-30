@@ -54,6 +54,8 @@ class EvidenceProfile:
     refuted_recent: float
     confirmed_title_match: float
     refuted_title_match: float
+    ring0_confirmed: int = 0
+    ring3_confirmed: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -65,6 +67,8 @@ class EvidenceProfile:
                 "confirmed": round(self.confirmed_title_match, 4),
                 "refuted": round(self.refuted_title_match, 4),
             },
+            "ring0_confirmed": self.ring0_confirmed,
+            "ring3_confirmed": self.ring3_confirmed,
         }
 
 
@@ -110,13 +114,19 @@ def profile_evidence(memory: FibMind, recent_days: int = 30) -> EvidenceProfile:
     judgements about that node.
     """
     verdicts: dict[str, set[str]] = {}
+    node_rings: dict[str, set[str]] = {}
     for event in memory.events:
         if event.op != EventOp.OBSERVE:
             continue
         verdict = event.payload.get("verdict")
         if verdict not in (Verdict.CONFIRMED.value, Verdict.REFUTED.value):
             continue
-        verdicts.setdefault(str(event.payload.get("node_id")), set()).add(str(verdict))
+        nid = str(event.payload.get("node_id"))
+        verdicts.setdefault(nid, set()).add(str(verdict))
+        if verdict == Verdict.CONFIRMED.value:
+            ring = event.payload.get("trust_ring")
+            ring_str = "ring3" if ring == "ring3" else "ring0"
+            node_rings.setdefault(nid, set()).add(ring_str)
 
     horizon = utc_now() - timedelta(days=recent_days)
     confirmed: list[Any] = []
@@ -126,6 +136,9 @@ def profile_evidence(memory: FibMind, recent_days: int = 30) -> EvidenceProfile:
         if node is None:
             continue
         (refuted if Verdict.REFUTED.value in seen else confirmed).append(node)
+
+    ring0_confirmed = sum(1 for node in confirmed if "ring0" in node_rings.get(node.id, set()))
+    ring3_confirmed = sum(1 for node in confirmed if node_rings.get(node.id) == {"ring3"})
 
     def mean(values: list[float]) -> float:
         return sum(values) / len(values) if values else 0.0
@@ -148,6 +161,8 @@ def profile_evidence(memory: FibMind, recent_days: int = 30) -> EvidenceProfile:
         refuted_recent=mean([1.0 if node.created_at >= horizon else 0.0 for node in refuted]),
         confirmed_title_match=mean([title_match(node) for node in confirmed]),
         refuted_title_match=mean([title_match(node) for node in refuted]),
+        ring0_confirmed=ring0_confirmed,
+        ring3_confirmed=ring3_confirmed,
     )
 
 
@@ -224,6 +239,8 @@ def gate(
     *,
     evaluate: Callable[[RankingWeights], dict[str, Any]],
     mrr_tolerance: float = MRR_TOLERANCE,
+    check_gaps: bool = False,
+    check_kernel: bool = False,
 ) -> GateResult:
     """Run the suite twice and compare. ``evaluate`` returns one baseline's summary."""
     before = evaluate(baseline_weights)
@@ -244,6 +261,26 @@ def gate(
     worse("stale_pollution_rate", False)
     worse("forbidden_case_rate", False)
     worse("no_relevant_accuracy", True)
+
+    if check_gaps:
+        from evals.gaps_runner import run_gaps_evaluation
+
+        gaps_summary = run_gaps_evaluation()
+        after["gaps"] = gaps_summary
+        if gaps_summary.get("false_known_rate", 0.0) > 0.0:
+            reasons.append(f"gaps false_known_rate {gaps_summary.get('false_known_rate')} > 0.0")
+        if gaps_summary.get("verdict_accuracy", 0.0) < 0.9:
+            reasons.append(f"gaps verdict_accuracy {gaps_summary.get('verdict_accuracy')} < 0.9")
+
+    if check_kernel:
+        from evals.kernel_runner import run_kernel_evaluation
+
+        kernel_summary = run_kernel_evaluation()
+        after["kernel"] = kernel_summary
+        for k_name, k_score in kernel_summary.items():
+            if k_score < 1.0:
+                reasons.append(f"kernel {k_name} score {k_score:.4f} < 1.0")
+
     return GateResult(passed=not reasons, baseline=before, candidate=after, reasons=reasons)
 
 

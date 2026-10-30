@@ -36,27 +36,95 @@ class MemoryStore(Protocol):
     def revision(self) -> str: ...
 
 
-def _snapshot_value(value: dict[str, Any]) -> str:
+def _snapshot_value(value: Any) -> str:
     """Freeze mutable metadata and event payloads for a transaction diff."""
+    if isinstance(value, str):
+        return value
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _snapshot_node(node: MemoryNode) -> tuple:
+    return (
+        node.title,
+        node.content,
+        node.category,
+        node.node_type.value,
+        node.layer,
+        node.created_at,
+        node.updated_at,
+        tuple(sorted(node.tree_ids)),
+        tuple(sorted(node.tags)),
+        _snapshot_value(node.metadata) if node.metadata else "",
+        node.scope.value,
+        node.owner,
+        node.workspace_id,
+        node.project_id,
+        node.session_id,
+        node.task_id,
+        node.status.value,
+        node.status_reason,
+        node.memory_kind.value if node.memory_kind else None,
+        node.revision,
+        node.familiarity,
+        node.access_count,
+        node.confidence,
+        node.confidence_source,
+        node.folded_into,
+        node.memory_weight,
+    )
+
+
+def _snapshot_tree(tree: MemoryTree) -> tuple:
+    return (
+        tree.category,
+        tree.title,
+        tree.root_node_id,
+        tree.created_at,
+        _snapshot_value(tree.metadata) if tree.metadata else "",
+    )
+
+
+def _snapshot_edge(edge: Edge) -> tuple:
+    return (
+        edge.from_node_id,
+        edge.to_node_id,
+        edge.relation_type.value,
+        edge.weight,
+        edge.direction.value,
+        edge.created_at,
+        _snapshot_value(edge.metadata) if edge.metadata else "",
+    )
+
+
+def _snapshot_event(event: MemoryEvent) -> tuple:
+    return (
+        event.seq,
+        event.op.value,
+        _snapshot_value(event.payload) if event.payload else "",
+        event.created_at,
+    )
 
 
 @dataclass(frozen=True, slots=True)
 class _StoreSnapshot:
-    nodes: dict[str, str]
-    trees: dict[str, str]
-    edges: dict[str, str]
-    events: dict[str, str]
+    nodes: dict[str, tuple]
+    trees: dict[str, tuple]
+    edges: dict[str, tuple]
+    events: dict[str, tuple]
     category_roots: dict[str, str]
+    event_count: int = 0
+    last_event_snap: tuple | None = None
 
     @classmethod
     def capture(cls, memory: FibMind) -> _StoreSnapshot:
         return cls(
-            nodes={key: _snapshot_value(node.to_dict()) for key, node in memory.nodes.items()},
-            trees={key: _snapshot_value(tree.to_dict()) for key, tree in memory.trees.items()},
-            edges={key: _snapshot_value(edge.to_dict()) for key, edge in memory.edges.items()},
-            events={event.id: _snapshot_value(event.to_dict()) for event in memory.events},
+            nodes={key: _snapshot_node(node) for key, node in memory.nodes.items()},
+            trees={key: _snapshot_tree(tree) for key, tree in memory.trees.items()},
+            edges={key: _snapshot_edge(edge) for key, edge in memory.edges.items()},
+            events={event.id: _snapshot_event(event) for event in memory.events},
             category_roots=dict(memory.category_roots),
+            event_count=len(memory.events),
+            last_event_snap=_snapshot_event(memory.events[-1]) if memory.events else None,
         )
 
 
@@ -384,13 +452,19 @@ class SqliteStore:
     def read_setting(self, key: str) -> Any | None:
         with self._connect() as connection:
             row = connection.execute("SELECT value FROM meta WHERE key = ?", (f"setting:{key}",)).fetchone()
-        return json.loads(row["value"]) if row else None
+        if not row:
+            return None
+        try:
+            return json.loads(row["value"])
+        except (json.JSONDecodeError, TypeError):
+            return row["value"]
 
     def write_setting(self, key: str, value: Any) -> None:
+        serialized = json.dumps(value, ensure_ascii=False)
         with self._connect() as connection:
             connection.execute(
                 "INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-                (f"setting:{key}", json.dumps(value, ensure_ascii=False)),
+                (f"setting:{key}", serialized),
             )
 
     def load(self) -> FibMind:
@@ -483,26 +557,38 @@ class SqliteStore:
         changed_nodes = [
             node
             for node in memory.nodes.values()
-            if before is None or _snapshot_value(node.to_dict()) != before.nodes.get(node.id)
+            if before is None or _snapshot_node(node) != before.nodes.get(node.id)
         ]
         changed_trees = [
             tree
             for tree in memory.trees.values()
-            if before is None or _snapshot_value(tree.to_dict()) != before.trees.get(tree.id)
+            if before is None or _snapshot_tree(tree) != before.trees.get(tree.id)
         ]
         changed_edges = [
             edge
             for edge in memory.edges.values()
-            if before is None or _snapshot_value(edge.to_dict()) != before.edges.get(edge.id)
-        ]
-        changed_events = [
-            event
-            for event in memory.events
-            if before is None or _snapshot_value(event.to_dict()) != before.events.get(event.id)
+            if before is None or _snapshot_edge(edge) != before.edges.get(edge.id)
         ]
         deleted_nodes = set(before.nodes) - set(memory.nodes) if before else set()
         deleted_trees = set(before.trees) - set(memory.trees) if before else set()
         deleted_edges = set(before.edges) - set(memory.edges) if before else set()
+
+        if (
+            before is not None
+            and not deleted_nodes
+            and len(memory.events) >= before.event_count
+            and (
+                before.event_count == 0
+                or _snapshot_event(memory.events[before.event_count - 1]) == before.last_event_snap
+            )
+        ):
+            changed_events = list(memory.events[before.event_count :])
+        else:
+            changed_events = [
+                event
+                for event in memory.events
+                if before is None or _snapshot_event(event) != before.events.get(event.id)
+            ]
         roots_changed = before is None or before.category_roots != memory.category_roots
         if before is not None and not any(
             (

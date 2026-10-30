@@ -426,6 +426,43 @@ class VerifyLoopTests(unittest.TestCase):
         )
         self.assertEqual(verdict_ok, "confirmed")
 
+    def test_verify_timeout_and_missing_binary_are_inconclusive(self) -> None:
+        with tempfile.NamedTemporaryFile(suffix=".db") as f:
+            store_path = Path(f.name)
+            service = MemoryService(store_path)
+            node = MemoryNode(
+                id="mem_timeout_test",
+                title="Long running verification",
+                content="Ensure command timeouts and missing binaries do not crash verify",
+                category="decision",
+                node_type=NodeType.CONCEPT,
+            )
+
+            def _init(m: FibMind) -> None:
+                m.nodes[node.id] = node
+
+            service.run(_init)
+
+            # 1. Missing binary -> exit_code 127, verdict inconclusive
+            res_missing = run_command_and_reflect(
+                ["/nonexistent/binary/fibmind_missing_cmd_xyz"],
+                node_id="mem_timeout_test",
+                service=service,
+            )
+            self.assertEqual(res_missing["exit_code"], 127)
+            self.assertEqual(res_missing["verdict"], "inconclusive")
+
+            # 2. Timeout -> exit_code 124, verdict inconclusive
+            res_timeout = run_command_and_reflect(
+                [sys.executable, "-c", "import time; time.sleep(5)"],
+                node_id="mem_timeout_test",
+                timeout=1.0,
+                service=service,
+            )
+            self.assertEqual(res_timeout["exit_code"], 124)
+            self.assertEqual(res_timeout["verdict"], "inconclusive")
+            self.assertIn("timed out", res_timeout["note"])
+
 
 if __name__ == "__main__":
     unittest.main()

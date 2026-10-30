@@ -88,10 +88,16 @@ def _apply_link(memory: FibMind, event: MemoryEvent, payload: dict[str, Any]) ->
 
 
 def _apply_fold(memory: FibMind, event: MemoryEvent, payload: dict[str, Any]) -> None:
+    patches = payload.get("source_metadata_patches") or {}
+    removes = payload.get("source_metadata_removes") or []
     for node_id in payload.get("source_node_ids", []):
         node = memory.nodes.get(node_id)
         if node is not None:
             node.folded_into = payload["into_node_id"]
+            for rem_key in removes:
+                node.metadata.pop(rem_key, None)
+            if node_id in patches and isinstance(patches[node_id], dict) and patches[node_id].get("conditions"):
+                node.metadata["conditions"] = patches[node_id]["conditions"]
 
 
 def _apply_revise(memory: FibMind, event: MemoryEvent, payload: dict[str, Any]) -> None:
@@ -129,6 +135,11 @@ def _apply_observe(memory: FibMind, event: MemoryEvent, payload: dict[str, Any])
     elif payload.get("verdict") == Verdict.REFUTED.value:
         node.status = MemoryStatus.REFUTED
         node.status_reason = payload.get("note") or f"refuted by {payload.get('source')}"
+    if isinstance(payload.get("metadata_patch"), dict):
+        node.metadata.update(payload["metadata_patch"])
+    if isinstance(payload.get("metadata_remove"), list):
+        for key in payload["metadata_remove"]:
+            node.metadata.pop(key, None)
     if payload.get("updated_at"):
         node.updated_at = datetime.fromisoformat(payload["updated_at"])
     if node.status == MemoryStatus.REFUTED:
@@ -151,6 +162,9 @@ def _apply_observe(memory: FibMind, event: MemoryEvent, payload: dict[str, Any])
             if not still_conflicted:
                 other.metadata.pop("conflicted", None)
                 other.metadata.pop("conflict_reason", None)
+    for uid in payload.get("unfolded_source_ids") or ():
+        if uid in memory.nodes:
+            memory.nodes[uid].folded_into = None
 
 
 def _apply_set_status(memory: FibMind, event: MemoryEvent, payload: dict[str, Any]) -> None:
@@ -158,8 +172,13 @@ def _apply_set_status(memory: FibMind, event: MemoryEvent, payload: dict[str, An
     if node is not None:
         node.status = MemoryStatus(payload["status"])
         node.status_reason = payload.get("reason")
+        if isinstance(payload.get("metadata_patch"), dict):
+            node.metadata.update(payload["metadata_patch"])
         if payload.get("updated_at"):
             node.updated_at = datetime.fromisoformat(payload["updated_at"])
+    for uid in payload.get("unfolded_source_ids") or ():
+        if uid in memory.nodes:
+            memory.nodes[uid].folded_into = None
 
 
 def _apply_promote(memory: FibMind, event: MemoryEvent, payload: dict[str, Any]) -> None:

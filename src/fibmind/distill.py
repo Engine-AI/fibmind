@@ -36,6 +36,22 @@ class Summarizer(Protocol):
     def summarize(self, nodes: list[MemoryNode]) -> Summary: ...
 
 
+@dataclass(frozen=True, slots=True)
+class Aspect:
+    """An uncovered or decomposing aspect of a goal."""
+
+    aspect: str
+    terms: tuple[str, ...]
+
+
+class GapAssessor(Protocol):
+    """Decompose a goal into aspects and identify potential knowledge gaps."""
+
+    name: str
+
+    def aspects(self, goal: str, query_terms: set[str]) -> list[Aspect]: ...
+
+
 class Planner(Protocol):
     """Turn an objective plus recalled evidence into an ordered goal."""
 
@@ -47,6 +63,7 @@ class Planner(Protocol):
         memories: Iterable[dict[str, Any]],
         status: GoalStatus = GoalStatus.ACTIVE,
         goal_id: str = "",
+        assessment: dict[str, Any] | None = None,
     ) -> BrainGoal: ...
 
 
@@ -78,6 +95,7 @@ class StructuredDistillation:
     exceptions: tuple[str, ...] = ()
     verified_by: tuple[str, ...] = ()
     risk_level: str = "low"
+    active_branch: dict[str, Any] | None = None
 
     def to_text(self) -> str:
         parts = [f"- [RULE] {self.title}: {self.directive}"]
@@ -87,6 +105,10 @@ class StructuredDistillation:
             parts.append(f"  • Exceptions: {'; '.join(self.exceptions)}")
         if self.verified_by:
             parts.append(f"  • VerifiedBy: {'; '.join(self.verified_by)}")
+        if isinstance(self.active_branch, dict):
+            parts.append(
+                f"  • ActiveBranch ({', '.join(str(c) for c in self.active_branch.get('conditions', []))}): {self.active_branch.get('title', '')} — {self.active_branch.get('content', '')}"
+            )
         return "\n".join(parts)
 
 
@@ -96,7 +118,7 @@ class StructuredSummarizer:
 
     name: str = "structured-v1"
 
-    def distill_node(self, node: MemoryNode) -> StructuredDistillation:
+    def distill_node(self, node: MemoryNode, *, goal: str | None = None) -> StructuredDistillation:
         content = node.content.strip()
         lines = [line.strip() for line in content.splitlines() if line.strip()]
 
@@ -144,6 +166,32 @@ class StructuredSummarizer:
         if meta_source:
             verified_by.append(f"source: {meta_source}")
 
+        # 5. Context-Aware Conditional Branch Activation
+        active_branch: dict[str, Any] | None = None
+        if goal and goal.strip() and isinstance(node.metadata.get("branches"), list):
+            branches = [b for b in node.metadata["branches"] if isinstance(b, dict)]
+            if branches:
+                from fibmind.ranking import tokenize
+
+                goal_terms = set(tokenize(goal))
+                best_score = 0
+                best_branch: dict[str, Any] | None = None
+                for b in branches:
+                    branch_text = (
+                        " ".join(str(c) for c in b.get("conditions", []))
+                        + " "
+                        + str(b.get("title", ""))
+                        + " "
+                        + str(b.get("content", ""))
+                    )
+                    b_terms = set(tokenize(branch_text))
+                    score = len(goal_terms & b_terms)
+                    if score > best_score:
+                        best_score = score
+                        best_branch = b
+                if best_score > 0 and best_branch is not None:
+                    active_branch = best_branch
+
         risk = "high" if exceptions else ("medium" if conditions else "low")
 
         return StructuredDistillation(
@@ -153,6 +201,7 @@ class StructuredSummarizer:
             exceptions=tuple(exceptions),
             verified_by=tuple(verified_by),
             risk_level=risk,
+            active_branch=active_branch,
         )
 
     def summarize(self, nodes: list[MemoryNode]) -> Summary:
@@ -180,8 +229,9 @@ class DeterministicPlanner:
         memories: Iterable[dict[str, Any]],
         status: GoalStatus = GoalStatus.ACTIVE,
         goal_id: str = "",
+        assessment: dict[str, Any] | None = None,
     ) -> BrainGoal:
-        return synthesize_plan(objective, memories=memories, status=status, goal_id=goal_id)
+        return synthesize_plan(objective, memories=memories, status=status, goal_id=goal_id, assessment=assessment)
 
 
 def verify_distillation_fidelity(nodes: list[MemoryNode], summary_text: str) -> tuple[bool, list[str]]:

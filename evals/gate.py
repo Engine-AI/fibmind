@@ -53,6 +53,37 @@ def main(argv: list[str] | None = None) -> int:
     watched = sorted({*floor.get("min", {}), *floor.get("max", {})})
     for key in watched:
         print(f"{baseline}.{key} = {summary.get(key)}")
+
+    if "gaps" in floor:
+        from evals.gaps_runner import run_gaps_evaluation
+
+        gaps_floor = floor["gaps"]
+        gaps_summary = run_gaps_evaluation()
+        print(f"gaps.verdict_accuracy = {gaps_summary.get('verdict_accuracy')}")
+        print(f"gaps.false_known_rate = {gaps_summary.get('false_known_rate')}")
+
+        max_false_known = gaps_floor.get("false_known_rate", 0.0)
+        min_verdict_acc = gaps_floor.get("verdict_accuracy", 0.9)
+
+        if gaps_summary.get("false_known_rate", 0.0) > max_false_known:
+            failures.append(
+                f"gaps.false_known_rate: {gaps_summary.get('false_known_rate')} > ceiling {max_false_known}"
+            )
+        if gaps_summary.get("verdict_accuracy", 0.0) < min_verdict_acc:
+            failures.append(f"gaps.verdict_accuracy: {gaps_summary.get('verdict_accuracy')} < floor {min_verdict_acc}")
+
+    if "kernel" in floor:
+        from evals.kernel_runner import run_kernel_evaluation
+
+        kernel_floor = floor["kernel"]
+        kernel_summary = run_kernel_evaluation()
+        for key in sorted(kernel_floor):
+            val = kernel_summary.get(key, 0.0)
+            print(f"kernel.{key} = {val}")
+            minimum = kernel_floor[key]
+            if val < minimum:
+                failures.append(f"kernel.{key}: {val} < floor {minimum}")
+
     if failures:
         print("\nevaluation floor violated:", file=sys.stderr)
         for line in failures:

@@ -14,7 +14,14 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, TypeVar
 
-from fibmind.admission import AdmitVerdict, MemoryCandidate, decide_admission
+from fibmind.admission import (
+    AdmitVerdict,
+    MemoryCandidate,
+    decide_admission,
+    detect_potential_conflicts,
+    detect_version_predecessors,
+    discover_knowledge_clusters,
+)
 from fibmind.context import build_context
 from fibmind.embedding import EmbeddingCache, EmbeddingProvider
 from fibmind.graph import FibMind, SearchHit
@@ -239,9 +246,9 @@ class MemoryService:
 
     @contextmanager
     def _transaction(self) -> Iterator[FibMind]:
-        # A transaction gets its own forest and always invalidates: the cached
-        # one is stale the moment this commits, and handing the in-transaction
-        # forest to later readers would publish uncommitted state.
+        # Invalidate both before and after: before so the transaction loads
+        # fresh rather than handing the caller our cached read snapshot, after
+        # so subsequent reads see the committed state on disk.
         self._invalidate()
         try:
             with self._store.transaction() as memory:
@@ -295,6 +302,52 @@ class MemoryService:
             from fibmind.tuning import tuning_history
 
             history = tuning_history(memory)
+
+            # Metacognition stats from events and nodes
+            assess_records = []
+            for node in memory.nodes.values():
+                if node.category == "episode" and node.metadata.get("kind") == "assess":
+                    assess_records.append((node.created_at, node.session_id, node.metadata.get("payload") or {}))
+
+            assessments_count = len(assess_records)
+            overconfident_count = 0
+            verified_uncertain_count = 0
+            gap_filled_count = 0
+            total_known_count = 0
+
+            for assess_time, sess_id, payload in assess_records:
+                known_ids = set(payload.get("known_ids") or [])
+                uncertain_ids = set(payload.get("uncertain_ids") or [])
+                unknown_aspects = list(payload.get("unknown_aspects") or [])
+                total_known_count += len(known_ids)
+
+                for event in memory.events:
+                    if event.op.value == "observe" and event.created_at >= assess_time:
+                        ev_sess = event.payload.get("session_id")
+                        if sess_id is None or ev_sess == sess_id:
+                            ev_verdict = event.payload.get("verdict")
+                            ev_node = event.payload.get("node_id")
+                            if ev_verdict == "refuted" and ev_node in known_ids:
+                                overconfident_count += 1
+                                known_ids.discard(ev_node)
+                            elif ev_verdict == "confirmed" and ev_node in uncertain_ids:
+                                verified_uncertain_count += 1
+                                uncertain_ids.discard(ev_node)
+
+                if unknown_aspects:
+                    for n in memory.nodes.values():
+                        if n.category not in ("episode", "hot", "goal") and n.created_at >= assess_time:
+                            if sess_id is None or n.session_id == sess_id:
+                                n_text = (n.title + " " + n.content).casefold()
+                                for aspect in list(unknown_aspects):
+                                    if aspect.casefold() in n_text or any(
+                                        t.casefold() in n_text for t in aspect.split()
+                                    ):
+                                        gap_filled_count += 1
+                                        unknown_aspects.remove(aspect)
+
+            p_refuted = round(overconfident_count / total_known_count, 4) if total_known_count > 0 else 0.0
+
             return {
                 "store": str(self._store.path),
                 "nodes": len(memory.nodes),
@@ -319,6 +372,13 @@ class MemoryService:
                     "cached_vectors": len(self._embeddings),
                     "failures": self._embeddings.failures,
                     "last_error": self._embeddings.last_error,
+                },
+                "metacognition": {
+                    "assessments": assessments_count,
+                    "overconfident": overconfident_count,
+                    "verified_uncertain": verified_uncertain_count,
+                    "gap_filled": gap_filled_count,
+                    "p_refuted_given_known": p_refuted,
                 },
             }
 
@@ -411,12 +471,19 @@ class MemoryService:
             payload = decision.to_dict()
             if decision.verdict != AdmitVerdict.WRITE:
                 return payload
+            potential_conflicts = detect_potential_conflicts(memory, candidate, metadata=metadata)
+            version_predecessors = detect_version_predecessors(memory, candidate, metadata=metadata)
+            effective_meta = dict(metadata or {})
+            if potential_conflicts:
+                effective_meta["potential_conflicts"] = potential_conflicts
+            if version_predecessors:
+                effective_meta["version_predecessors"] = version_predecessors
             node_id = memory.append(
                 category=candidate.category,
                 title=candidate.title,
                 content=candidate.content,
                 tags=candidate.tags,
-                metadata=metadata,
+                metadata=effective_meta,
                 scope=candidate.scope,
                 owner=candidate.owner,
                 workspace_id=candidate.workspace_id,
@@ -424,8 +491,30 @@ class MemoryService:
                 session_id=candidate.session_id,
                 task_id=candidate.task_id,
             )
+            for conflict_id in potential_conflicts:
+                memory.link_nodes(
+                    node_id,
+                    conflict_id,
+                    RelationType.CONTRADICTS,
+                    weight=1.0,
+                    direction=EdgeDirection.BIDIRECTIONAL,
+                    metadata={"auto_detected": True},
+                )
+            for pred_id in version_predecessors:
+                memory.link_nodes(
+                    node_id,
+                    pred_id,
+                    RelationType.VERSION_OF,
+                    weight=1.0,
+                    direction=EdgeDirection.DIRECTED,
+                    metadata={"auto_detected": True},
+                )
             payload.update(_node_summary(memory.nodes[node_id]))
             payload["tree_id"] = memory.category_roots[candidate.category]
+            if potential_conflicts:
+                payload["potential_conflicts"] = potential_conflicts
+            if version_predecessors:
+                payload["version_predecessors"] = version_predecessors
             return payload
 
     def inspect(self, node_id: str, *, identity: dict[str, str | None] | None = None) -> dict[str, Any]:
@@ -449,6 +538,7 @@ class MemoryService:
         session_id: str | None = None,
         *,
         identity: dict[str, str | None] | None = None,
+        trust_ring: str | None = None,
     ) -> dict[str, Any]:
         """Attach external evidence for or against a memory.
 
@@ -460,7 +550,14 @@ class MemoryService:
         with self._lock, self._transaction() as memory:
             _require_visible(memory, node_id, identity)
             try:
-                node = memory.record_outcome(node_id, parsed, source=source, note=note, session_id=session_id)
+                node = memory.record_outcome(
+                    node_id,
+                    parsed,
+                    source=source,
+                    note=note,
+                    session_id=session_id,
+                    trust_ring=trust_ring,
+                )
             except KeyError as exc:
                 raise ValueError(str(exc)) from exc
             return _node_summary(node)
@@ -608,6 +705,84 @@ class MemoryService:
                 raise ValueError(str(exc)) from exc
             return _node_summary(memory.nodes[node_id])
 
+    def synthesize_conflict(
+        self,
+        node_id_a: str,
+        node_id_b: str,
+        *,
+        title: str,
+        content: str,
+        conditions_a: list[str] | tuple[str, ...],
+        conditions_b: list[str] | tuple[str, ...],
+        source: str,
+        identity: dict[str, str | None] | None = None,
+    ) -> dict[str, Any]:
+        """Synthesize two conflicting memories under scoped conditions."""
+        _require_text(node_id_a, "node_id_a")
+        _require_text(node_id_b, "node_id_b")
+        _require_text(title, "title")
+        _require_text(content, "content")
+        _require_text(source, "source")
+        with self._lock, self._transaction() as memory:
+            _require_visible(memory, node_id_a, identity)
+            _require_visible(memory, node_id_b, identity)
+            try:
+                synth_node = memory.synthesize_conflict(
+                    node_id_a,
+                    node_id_b,
+                    title=title,
+                    content=content,
+                    conditions_a=conditions_a,
+                    conditions_b=conditions_b,
+                    source=source,
+                )
+            except KeyError as exc:
+                raise ValueError(str(exc)) from exc
+            return {
+                **_node_summary(synth_node),
+                "synthesized_from": [node_id_a, node_id_b],
+            }
+
+    def discover_knowledge_clusters(
+        self,
+        *,
+        identity: dict[str, str | None] | None = None,
+        min_supporters: int = 3,
+        min_sessions: int = 2,
+        auto_promote: bool = False,
+    ) -> dict[str, Any]:
+        """Discover candidate observation clusters across sessions for knowledge induction."""
+        with self._lock, self._transaction() as memory:
+            owner = identity.get("owner") if identity else None
+            workspace_id = identity.get("workspace_id") if identity else None
+            project_id = identity.get("project_id") if identity else None
+            clusters = discover_knowledge_clusters(
+                memory,
+                owner=owner,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                min_supporters=min_supporters,
+                min_sessions=min_sessions,
+            )
+            promoted_nodes: list[dict[str, Any]] = []
+            if auto_promote:
+                for cluster in clusters:
+                    k_id = memory.promote_to_knowledge(
+                        title=cluster["suggested_title"],
+                        content=cluster["suggested_content"],
+                        supporting_node_ids=cluster["supporting_node_ids"],
+                        category=cluster["category"],
+                        threshold=min_supporters,
+                        tags=cluster.get("shared_anchors"),
+                        workspace_id=workspace_id,
+                        project_id=project_id,
+                    )
+                    promoted_nodes.append(_node_summary(memory.nodes[k_id]))
+            return {
+                "clusters": clusters,
+                "promoted": promoted_nodes,
+            }
+
     def link(
         self,
         from_node_id: str,
@@ -753,6 +928,7 @@ class MemoryService:
         budget_tokens: int | None = None,
         hot_node_ids: list[str] | None = None,
         hot_budget_tokens: int | None = None,
+        gaps: str | None = None,
     ) -> dict[str, Any]:
         """Build a context-window-ready memory pack for a task goal.
 
@@ -801,6 +977,7 @@ class MemoryService:
                 budget_tokens=budget_tokens,
                 hot=hot_nodes,
                 hot_budget_tokens=hot_budget_tokens,
+                gaps=gaps,
             ).to_dict()
 
         with self._lock:
